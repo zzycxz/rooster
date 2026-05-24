@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+
+# Runtime / State
+.rooster/
+*.log
+guardian.log
+
+# ─── Secrets ──────────────────────────────────────────────────
+# .env       → 追踪（仅含空占位符，无真实 key，双端共享配置）
+# .env.local → 屏蔽（真实密钥，每台机器本地单独维护）
+.env.local
+.env.*.local
+# ──────────────────────────────────────────────────────────────
+
+# IDE / Editor
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+
+# Generated output / temp
+output/
+tmp/
+*.png
+*_output.*
+*_report.*
+*_result.*
+*_elements.*
+topology_output.txt
+all_windows_diagnostic.txt
+
+# Frontend deps (rebuilt via npm install)
+src/ui/node_modules/
+
+# Deprecated
+*.deprecated
+*.bak

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rooster Dashboard (Dev)</title>
+  <link rel="stylesheet" href="./css/base.css" />
+  <link rel="stylesheet" href="highlight.js/styles/github-dark.css">
+  <script type="module" src="./js/dashboard-entry.js"></script>
+</head>
+
+<body
+  class="bg-slate-900 text-slate-100 h-screen flex flex-col overflow-hidden text-sm"
+  x-data="app()"
+  x-init="init()"
+  x-cloak
+>
+
+<!-- This file is the Vite dev server entry point.
+     The full app is defined in dashboard.html.
+     To develop: cd src/ui && npm run dev
+     The dev server proxies /api and /ws to the Rooster gateway.
+-->
+
+<p class="p-8 text-slate-400">
+  Vite dev mode active. Open the full dashboard at <code>/dashboard</code>.
+  This file is a placeholder for incremental component extraction.
+</p>
+
+</body>
+</html>

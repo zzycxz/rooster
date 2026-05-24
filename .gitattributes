@@ -1,0 +1,19 @@
+# 统一换行符：仓库存储 LF，Windows checkout 时自动转换 CRLF
+* text=auto eol=lf
+
+# 强制 LF 的文本文件
+*.py text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.env text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.sh text eol=lf
+
+# 二进制文件不做换行转换
+*.png binary
+*.jpg binary
+*.pt binary
+*.gguf binary
+*.db binary

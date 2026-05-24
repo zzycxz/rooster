@@ -1,0 +1,93 @@
+/* ── Rooster Dashboard Base Styles ── */
+@import "tailwindcss";
+
+[x-cloak] { display: none !important; }
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Cascadia Code', 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
+}
+
+/* ── Scrollbars ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #0f172a; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* ── Sidebar tabs ── */
+.tab-item  { transition: background 0.12s, color 0.12s; }
+.tab-item:hover { background: rgba(255,255,255,0.05); }
+.tab-active {
+  background: rgba(34,197,94,0.1) !important;
+  color: #4ade80 !important;
+  border-left: 2px solid #4ade80;
+}
+
+/* ── Pipeline nodes ── */
+.pipeline-node { transition: border-color 0.2s, background 0.2s; }
+
+/* ── Chat bubbles ── */
+.bubble-user { background: #1e3a8a; border-radius: 16px 16px 4px 16px; }
+.bubble-ai   { background: #1e293b; border-radius: 16px 16px 16px 4px; border: 1px solid #334155; }
+.bubble-err  { background: rgba(127,29,29,0.4); border: 1px solid #7f1d1d; border-radius: 12px; }
+
+/* ── Bubble content overflow fix ── */
+.bubble-ai, .bubble-user, .bubble-err {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.bubble-ai table, .bubble-user table, .bubble-err table {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.bubble-ai pre, .bubble-user pre, .bubble-err pre {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.bubble-ai code, .bubble-user code, .bubble-err code {
+  word-break: break-all;
+}
+
+/* ── Cursor blink for streaming ── */
+.cursor-blink::after {
+  content: '▋';
+  animation: blink-cur 1s step-end infinite;
+  color: #4ade80;
+}
+@keyframes blink-cur { 0%,100%{opacity:1} 50%{opacity:0} }
+
+/* ── Status pulse ── */
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.pulse { animation: pulse-dot 1.6s ease-in-out infinite; }
+
+/* ── Step cards ── */
+.step-card { transition: border-color 0.15s; }
+.step-card:hover { border-color: #4ade80 !important; }
+
+/* ── Log lines ── */
+.log-line:hover { background: rgba(255,255,255,0.03); }
+
+/* ── JSON viewer ── */
+.json-block {
+  font-size: 11px;
+  background: #020617;
+  border-radius: 4px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #94a3b8;
+  border: 1px solid #1e293b;
+  line-height: 1.6;
+}
+
+/* ── Error badge new blink ── */
+@keyframes badge-blink { 0%,100%{opacity:1} 50%{opacity:0} }
+.badge-new { animation: badge-blink 0.8s step-end 4; }
+
+/* ── Toasts ── */
+@keyframes toast-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes toast-out { from { opacity: 1; } to { opacity: 0; transform: translateX(24px); } }
+.toast-enter { animation: toast-in 0.2s ease-out; }

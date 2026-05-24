@@ -1,0 +1,115 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rooster"
+version = "0.2.1"
+description = "Autonomous multi-agent desktop OS"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{name = "zzycxz"}]
+keywords = ["agent", "automation", "llm", "desktop", "multi-agent"]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    # Web / API
+    "fastapi",
+    "starlette>=1.0.1",  # pin to avoid PYSEC-2026-161 in starlette 1.0.0
+    "uvicorn[standard]",
+    "httpx",
+    "websockets",
+    "requests",
+
+    # Data / Config
+    "pydantic>=2.0",
+    "python-dotenv",
+    "pyyaml",
+    "cachetools",
+    "filelock",
+
+    # LLM / AI
+    "openai>=1.0",
+    "huggingface_hub>=0.20",
+    "rank-bm25",
+
+    # Terminal UI
+    "rich",
+    "loguru",
+
+    # Desktop Automation (cross-platform)
+    "pyautogui",
+    "pyperclip",
+
+    # System Monitoring (cross-platform: Windows/macOS/Linux)
+    "psutil>=5.9",
+
+    # Browser
+    "playwright",
+
+    # Image / Vision
+    "Pillow",
+    "numpy",
+
+    # File Processing
+    "beautifulsoup4",
+    "markdownify",
+    "pandas",
+    "openpyxl",
+    "python-docx",
+    "pypdf",
+
+    # Feishu
+]
+
+[project.urls]
+Homepage = "https://github.com/zzycxz/rooster"
+Repository = "https://github.com/zzycxz/rooster"
+
+[project.optional-dependencies]
+feishu = ["lark-oapi>=1.4.0"]
+vision = ["ultralytics"]
+sandbox = ["e2b-code-interpreter"]
+pdf = ["fpdf2"]
+webhook = ["aiohttp"]
+windows = ["pywin32", "pywinauto"]
+all = ["rooster[vision,sandbox,pdf,windows,webhook]"]
+dev = ["pytest", "pytest-asyncio", "ruff"]
+
+[project.scripts]
+rooster = "src.main:main_cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: marks tests requiring external services",
+    "slow: marks tests as slow (> 1s)",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # line too long — formatter handles this, not linter
+    "E701",  # multiple statements on one line (colon) — `if x: return y` is idiomatic
+    "E731",  # lambda assignment
+    "E741",  # ambiguous variable name
+    "E402",  # module import not at top — often intentional for lazy imports
+    "F401",  # unused import — many are intentional re-exports in __init__.py
+    "F403",  # import star
+    "F405",  # undefined from import star
+    "F841",  # unused variable
+]
