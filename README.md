@@ -137,7 +137,7 @@ rooster/
 ├── .env.local.example          # Secrets template
 ├── pyproject.toml              # Project config & dependencies
 ├── guardian.py                 # Process guardian (lifecycle, port cleanup, auto-restart)
-├── start.bat / start.command   # Platform launch scripts
+├── start.bat                    # Windows launch script (macOS: double-click Rooster.app)
 ├── CONTRIBUTING.md             # Contribution guidelines
 ├── SECURITY.md                 # Security policy
 │
@@ -448,6 +448,18 @@ Dashboard opens automatically at `http://localhost:8765/dashboard`.
 > - Dashboard supports bilingual ZH/EN (Language button at sidebar bottom)
 > - Only one LLM API key is needed to run (Zhipu recommended — has free tier)
 > - Ollama users: install Ollama and pull a model first
+
+### Launching on macOS
+
+| Method | How |
+|:---|:---|
+| **Double-click** | Double-click `Rooster.app` (macOS launcher, venv auto-activated) |
+| **Terminal** | `python3 guardian.py` |
+
+> **macOS Sequoia (15.x) Gatekeeper**: If you see "无法执行，因为你没有正确的访问权限" when
+> double-clicking for the first time, go to **System Settings → Privacy & Security → Security** and click
+> **"Open Anyway"**. This is a one-time approval — subsequent launches work normally.
+> Alternatively, use `python3 guardian.py` from Terminal to bypass Gatekeeper entirely.
 
 ### macOS Notes
 
