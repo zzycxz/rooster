@@ -7,6 +7,7 @@ import logging
 from typing import List, Dict, AsyncGenerator, Optional
 from models.factory import ModelFactory
 from models.base import LLMResponseDelta
+from models.traffic import llm_traffic_controller
 from utils.config import settings
 
 logger = logging.getLogger(__name__)
@@ -306,7 +307,7 @@ class LLMClient:
                 logger.debug(f"⏭️ [Pool] {p} 冷却中，跳过")
                 continue
             limit = settings.PROVIDER_CONTEXT_LIMITS.get(p, 0)
-            if limit > 0 and total_chars > limit:
+            if settings.LLM_PREVENTIVE_CONTEXT_ROUTING and limit > 0 and total_chars > limit:
                 logger.warning(f"⏭️ [Pool] {p} 预测上下文超限 ({total_chars:,} chars > {limit:,})，直接跳过")
                 continue
             yield p
@@ -317,8 +318,10 @@ class LLMClient:
         model = kwargs.pop("model", self.model_name)
 
         if not settings.LLM_FAILOVER_ENABLED:
-            async for delta in self._internal_client.chat_stream(model, messages, **kwargs):
-                yield delta
+            await self._wait_provider_rate_limit(self.provider)
+            async with llm_traffic_controller.slot(self.provider, purpose="llm_stream"):
+                async for delta in self._internal_client.chat_stream(model, messages, **kwargs):
+                    yield delta
             return
 
         last_exc = None
@@ -339,11 +342,12 @@ class LLMClient:
                 async def _do_stream(msgs=send_messages):
                     nonlocal committed
                     yielded_any = False
-                    async for delta in self._internal_client.chat_stream(model, msgs, **kwargs):
-                        if delta.content or delta.tool_calls:
-                            yielded_any = True
-                            committed = True
-                        yield delta
+                    async with llm_traffic_controller.slot(current_p, purpose="llm_stream"):
+                        async for delta in self._internal_client.chat_stream(model, msgs, **kwargs):
+                            if delta.content or delta.tool_calls:
+                                yielded_any = True
+                                committed = True
+                            yield delta
                     if not yielded_any and not committed:
                         raise Exception(f"Empty content from {current_p} (model: {model})")
 
@@ -380,23 +384,28 @@ class LLMClient:
         model = kwargs.pop("model", self.model_name)
 
         if not settings.LLM_FAILOVER_ENABLED:
-            return await self._internal_client.chat_non_stream(model, messages, **kwargs)
+            await self._wait_provider_rate_limit(self.provider)
+            async with llm_traffic_controller.slot(self.provider, purpose="llm_non_stream"):
+                return await self._internal_client.chat_non_stream(model, messages, **kwargs)
 
         last_exc = None
         for current_p in self._iter_pipeline_for(messages):
             try:
-                await self._wait_provider_rate_limit(current_p)
                 model = await self._prepare_provider(current_p)
                 send_messages = (
                     messages
                     if current_p == "mimo"
                     else [{k: v for k, v in m.items() if k != "reasoning_content"} for m in messages]
                 )
+
+                async def _do_non_stream(_m=model, _msgs=send_messages, _kw=dict(kwargs), _provider=current_p):
+                    await self._wait_provider_rate_limit(_provider)
+                    async with llm_traffic_controller.slot(_provider, purpose="llm_non_stream"):
+                        return await self._internal_client.chat_non_stream(_m, _msgs, **_kw)
+
                 result = await self._retry_call(
                     current_p,
-                    lambda _m=model, _msgs=send_messages, _kw=dict(kwargs): self._internal_client.chat_non_stream(
-                        _m, _msgs, **_kw
-                    ),
+                    _do_non_stream,
                 )
                 _reset_provider_fail_count(current_p)
                 return result

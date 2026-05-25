@@ -43,6 +43,7 @@ def create_dashboard_app(
     from .routes.memory import router as memory_router, wire as wire_memory
     from .routes.models import router as models_router, wire as wire_models
     from .routes.system import router as system_router, wire as wire_system
+    from .routes.scheduler import router as scheduler_router, wire as wire_scheduler
     from .ws import router as ws_router, wire as wire_ws
 
     app.include_router(config_router)
@@ -50,6 +51,7 @@ def create_dashboard_app(
     app.include_router(memory_router)
     app.include_router(models_router)
     app.include_router(system_router)
+    app.include_router(scheduler_router)
     app.include_router(ws_router)
 
     # Wire shared state into routers
@@ -57,6 +59,7 @@ def create_dashboard_app(
     wire_memory(rooster_dir)
     wire_models(hf_downloads, hf_download_dir, get_env_local_path)
     wire_system(get_skill_loader, get_env_local_path)
+    wire_scheduler(rooster_dir)
     wire_ws(handle_config_save)
 
     # ── UI directory resolution (used by /dashboard HTML endpoint) ──────
