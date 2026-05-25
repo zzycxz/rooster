@@ -5,10 +5,15 @@
 ### Added
 - `Rooster.app` macOS launcher: single-line AppleScript, auto-activates venv, no extra terminal text
 - Dashboard pre-built `src/ui/dist/` committed to repo (no Node.js needed after clone)
+- Integrated full-featured visual download manager (AriaNg) directly into the Rooster Dashboard interface.
+- Implemented dynamic, zero-hardcoding connections (`getAriaNgUrl`) to automatically bind local Aria2 RPC URL and tokens dynamically from configuration.
+- Synchronized comprehensive English and Chinese translation keys for the Downloader tab and descriptions in both `dashboard.html` and `i18n.js`.
 
 ### Fixed
 - macOS Python SSL certificate verification: auto-set `SSL_CERT_FILE` to certifi bundle in config init
 - start.bat: auto-activate `.venv\Scripts\activate.bat` before running guardian
+- Resolved Steps timeline stream merging issue where AI assistant stream text outputs were displayed word-by-word due to run ID mismatch (snake_case/camelCase keys) and early loops termination on undefined keys.
+- Correctly restored and persisted `run_id` / `runId` in dashboard local storage cache to prevent log caching merge breakages.
 
 ### Changed
 - Remove `start.command` (logic internalized into `Rooster.app`)

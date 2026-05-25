@@ -110,7 +110,7 @@ class FeishuChannel(BaseChannel):
             self.startup_error = str(e)
             # Notify dashboard via log bridge so user sees the failure
             try:
-                from gateway.dashboard_ws import broadcast_event
+                from dashboard.src.dashboard_ws import broadcast_event
                 import asyncio as _aio
 
                 loop = self.main_loop

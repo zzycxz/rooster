@@ -210,8 +210,8 @@ def _preflight_check():
 # ── Interactive setup wizard ────────────────────────────────────────────────
 
 _PROVIDERS = [
-    ("Zhipu AI", "ZHIPU_KEY", "glm-4-flash", "https://open.bigmodel.cn/api/paas/v4"),
-    ("Xiaomi MiMo", "MIMO_KEY", "MiMo-7B", ""),
+    ("Zhipu AI", "ZHIPU_KEY", "GLM5.1", "https://open.bigmodel.cn/api/paas/v4"),
+    ("Xiaomi MiMo", "MIMO_KEY", "mimo-v2.5-pro", ""),
     ("OpenAI-compatible", "CLOUD_KEY", "gpt-4o", "https://api.openai.com/v1"),
     ("Jiutian", "JIUTIAN_KEY", "", ""),
     ("Local model server", "LOCAL_KEY", "local", "http://127.0.0.1:8080/v1"),

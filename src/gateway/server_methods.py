@@ -85,8 +85,10 @@ class MethodHandler:
             return await respond(False, error=error_shape(ErrorCodes.INVALID_REQUEST, "Missing sessionKey"))
 
         # 1. 获取会话与路由适配
-        # 1. Get session and route adaptation
         session = global_session_store.get_or_create(session_id)
+        if message_text:
+            session.add_message(role="user", content=message_text)
+            global_session_store.save_session(session_id)
 
         # 存储 model override（session 级别，前端选择的 provider）
         # Store model override (session-level, provider selected by frontend)
@@ -140,17 +142,22 @@ class MethodHandler:
         for sid, s in sessions.items():
             last_msg = ""
             if s.history:
-                last_msg = s.history[-1].content[:30] + ("..." if len(s.history[-1].content) > 30 else "")
+                # Find the last message that is not a tool response
+                valid_msgs = [m.content for m in s.history if not m.content.startswith("<tool_response")]
+                if valid_msgs:
+                    last_msg = valid_msgs[-1][:30] + ("..." if len(valid_msgs[-1]) > 30 else "")
+                else:
+                    last_msg = s.history[-1].content[:30] + ("..." if len(s.history[-1].content) > 30 else "")
 
             title = s.metadata.get("title", sid)
             # 如果标题包含随机特征或是未命名的 SessionID
             # If the title contains random characteristics or is an unnamed SessionID
             if title == sid or title.startswith("dash_"):
                 if s.history:
-                    # 智能提炼第一条用户输入的消息作为标题
-                    # Intelligently extract the first user message as the title
-                    user_msgs = [m.content for m in s.history if m.role == "user"]
-                    title = user_msgs[0][:15] if user_msgs else last_msg
+                    # 智能提炼第一条真实的用户输入消息作为标题（排除内部工具响应）
+                    # Intelligently extract the first real user message as the title (excluding tool responses)
+                    user_msgs = [m.content for m in s.history if m.role == "user" and not m.content.startswith("<tool_response")]
+                    title = user_msgs[0][:20] if user_msgs else last_msg
                 else:
                     title = "新对话"  # New conversation
 

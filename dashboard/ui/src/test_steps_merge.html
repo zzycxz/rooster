@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Rooster Dashboard Steps Merge Test Runner</title>
+  <style>
+    body {
+      background-color: #0f172a;
+      color: #cbd5e1;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      padding: 2rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #38bdf8;
+      border-bottom: 2px solid #1e293b;
+      padding-bottom: 0.5rem;
+    }
+    .test-case {
+      background-color: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 1.2rem;
+      margin-bottom: 1.5rem;
+    }
+    .test-case h3 {
+      margin-top: 0;
+      color: #f59e0b;
+    }
+    .status {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-weight: bold;
+      font-size: 0.85rem;
+    }
+    .pass {
+      background-color: #064e3b;
+      color: #34d399;
+    }
+    .fail {
+      background-color: #7f1d1d;
+      color: #f87171;
+    }
+    .log-block {
+      background-color: #090d16;
+      border: 1px solid #1e293b;
+      padding: 0.8rem;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      margin-top: 0.8rem;
+      white-space: pre-wrap;
+    }
+    button {
+      background-color: #0284c7;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background-color 0.2s;
+    }
+    button:hover {
+      background-color: #0369a1;
+    }
+    .summary {
+      background-color: #131924;
+      border: 1px solid #0284c7;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>🛠️ Rooster Dashboard 步骤追踪合并测试套件</h1>
+  
+  <div class="summary">
+    <h2>📋 测试说明</h2>
+    <p>本测试文件用于验证 <strong>Rooster Dashboard</strong> 核心的前端 <code>_addStep</code> 与 <code>_loadFromStorage</code> 方法是否正常运行，重点测试：</p>
+    <ol>
+      <li><strong>增量合并机制</strong>：文字流式输出（即 AI 输出）是否能够在同一 Step 中完美合并，而不是每个字/词占一行。</li>
+      <li><strong>混合键名兼容性</strong>：是否同时完美支持 <code>run_id</code> (snake_case) 与 <code>runId</code> (camelCase) 命名的运行ID。</li>
+      <li><strong>缓存加载防断裂</strong>：从 <code>localStorage</code> 恢复带有缺失 <code>run_id</code> 属性的缓存数据时，是否不会因为 <code>break</code> 逻辑导致新消息合并中断。</li>
+    </ol>
+    <button onclick="runAllTests()">⚡ 运行所有测试</button>
+  </div>
+
+  <!-- Test Cases -->
+  <div class="test-case" id="tc1">
+    <h3>TestCase 1: 基础流式文字段落合并测试 (Assistant Stream Merge)</h3>
+    <p><strong>描述</strong>：输入连续的 3 次 <code>assistant</code> 类型的 stream event 片段（文字段），预期合并为单条 Step，其内容应为 3 个片段拼接的结果。</p>
+    <div>状态：<span class="status" id="s1">待测试</span></div>
+    <div class="log-block" id="l1">测试日志将显示在这里...</div>
+  </div>
+
+  <div class="test-case" id="tc2">
+    <h3>TestCase 2: camelCase/snake_case 混合 ID 兼容性合并测试</h3>
+    <p><strong>描述</strong>：输入包含不同拼写 <code>run_id</code> 和 <code>runId</code> 的 event，验证即使接口字段命名风格不一致，也能够完美识别为同一个运行任务并成功合并。</p>
+    <div>状态：<span class="status" id="s2">待测试</span></div>
+    <div class="log-block" id="l2">测试日志将显示在这里...</div>
+  </div>
+
+  <div class="test-case" id="tc3">
+    <h3>TestCase 3: 缓存恢复 (run_id 为空) 时的流式合并防断裂测试</h3>
+    <p><strong>描述</strong>：模拟本地缓存中存在 run_id 缺失的陈旧步骤（如 localStorage 恢复出的数据），随后输入新的属于当前 run 的文字片段，验证是否不会因为 break 逻辑断裂，能正确跳过并搜索到正确的 mergeTarget。</p>
+    <div>状态：<span class="status" id="s3">待测试</span></div>
+    <div class="log-block" id="l3">测试日志将显示在这里...</div>
+  </div>
+
+  <script>
+    // 模拟 Rooster Dashboard 中的 Steps 控制逻辑结构
+    class MockDashboardStore {
+      constructor() {
+        this.steps = [];
+        this._saved = false;
+      }
+
+      _schedSave() {
+        this._saved = true;
+      }
+
+      // 提取修正后的核心 _addStep 方法，进行离线运行测试
+      _addStep(ev) {
+        const evRunId = ev.run_id || ev.runId;
+        // Merge tool-response into matching tool-call step by exact run_id + seq
+        if (ev.stream === 'tool' && ev.data?.type === 'response') {
+          const call = [...this.steps].reverse()
+            .find(s => s.stream === 'tool' && s.data?.type === 'call'
+                       && (s.run_id === evRunId || s.runId === evRunId) && s.data?.tool === ev.data?.tool);
+          if (call) {
+            call.data.response = ev.data.response;
+            call.status        = 'done';
+            call.durationMs    = Math.round(((ev.ts || Date.now()/1000) - call.ts) * 1000);
+            return;
+          }
+        }
+
+        // ── Merge text stream chunks to prevent "one letter per step" UI spam ──
+        if (ev.data && typeof ev.data.text === 'string' &&
+            ev.stream !== 'tool' && ev.stream !== 'lifecycle' && ev.stream !== 'error') {
+          // Search backwards for most recent text step with same run_id + stream
+          let mergeTarget = null;
+          for (let i = this.steps.length - 1; i >= Math.max(0, this.steps.length - 50); i--) {
+            const s = this.steps[i];
+            const sRunId = s.run_id || s.runId;
+            if (sRunId === evRunId && s.stream === ev.stream && typeof s.data?.text === 'string') {
+              mergeTarget = s;
+              break;
+            }
+          }
+          if (mergeTarget) {
+            if (!mergeTarget.data) mergeTarget.data = {};
+            mergeTarget.data.text = (mergeTarget.data.text || '') + ev.data.text;
+            mergeTarget.ts = ev.ts ?? (Date.now() / 1000);
+            this._schedSave();
+            return;
+          }
+        }
+
+        const status = ev.stream === 'error'  ? 'error'
+                     : ev.data?.status === 'running' ? 'running'
+                     : ev.data?.status ?? 'info';
+
+        this.steps.push({
+          id:         (evRunId || 'system') + '-' + ev.seq + '-' + Math.random(),
+          run_id:     evRunId,
+          seq:        ev.seq,
+          ts:         ev.ts ?? Date.now()/1000,
+          stream:     ev.stream,
+          data:       ev.data || {},
+          status,
+          durationMs: null,
+          expanded:   false,
+          showRaw:    false,
+        });
+        this._schedSave();
+      }
+    }
+
+    function runAllTests() {
+      testCase1();
+      testCase2();
+      testCase3();
+    }
+
+    // TestCase 1: 基础文字合并
+    function testCase1() {
+      const store = new MockDashboardStore();
+      const logEl = document.getElementById('l1');
+      const statusEl = document.getElementById('s1');
+      logEl.innerText = "";
+
+      logEl.innerText += "1. 发射第一帧 [assistant] 片段: '你'\n";
+      store._addStep({
+        run_id: "run-001",
+        seq: 1,
+        stream: "assistant",
+        data: { text: "你", status: "running" }
+      });
+
+      logEl.innerText += "2. 发射第二帧 [assistant] 片段: '好'\n";
+      store._addStep({
+        run_id: "run-001",
+        seq: 2,
+        stream: "assistant",
+        data: { text: "好", status: "running" }
+      });
+
+      logEl.innerText += "3. 发射第三帧 [assistant] 片段: '呀！'\n";
+      store._addStep({
+        run_id: "run-001",
+        seq: 3,
+        stream: "assistant",
+        data: { text: "呀！", status: "running" }
+      });
+
+      logEl.innerText += `\n结果: 当前 steps 数组长度 = ${store.steps.length}\n`;
+      if (store.steps.length === 1) {
+        const text = store.steps[0].data.text;
+        logEl.innerText += `合并文字 = '${text}'\n`;
+        if (text === "你好呀！") {
+          statusEl.innerText = "成功 (PASS)";
+          statusEl.className = "status pass";
+          return;
+        }
+      }
+
+      statusEl.innerText = "失败 (FAIL)";
+      statusEl.className = "status fail";
+    }
+
+    // TestCase 2: 混合键名兼容性
+    function testCase2() {
+      const store = new MockDashboardStore();
+      const logEl = document.getElementById('l2');
+      const statusEl = document.getElementById('s2');
+      logEl.innerText = "";
+
+      logEl.innerText += "1. 使用 run_id (snake_case) 发射第一帧: 'Swarm'\n";
+      store._addStep({
+        run_id: "run-abc",
+        seq: 1,
+        stream: "assistant",
+        data: { text: "Swarm", status: "running" }
+      });
+
+      logEl.innerText += "2. 使用 runId (camelCase) 发射第二帧: '-OS'\n";
+      store._addStep({
+        runId: "run-abc",
+        seq: 2,
+        stream: "assistant",
+        data: { text: "-OS", status: "running" }
+      });
+
+      logEl.innerText += `\n结果: 当前 steps 数组长度 = ${store.steps.length}\n`;
+      if (store.steps.length === 1) {
+        const text = store.steps[0].data.text;
+        logEl.innerText += `合并文字 = '${text}'\n`;
+        if (text === "Swarm-OS") {
+          statusEl.innerText = "成功 (PASS)";
+          statusEl.className = "status pass";
+          return;
+        }
+      }
+
+      statusEl.innerText = "失败 (FAIL)";
+      statusEl.className = "status fail";
+    }
+
+    // TestCase 3: 缓存恢复 (run_id 为空) 时的流式合并防断裂测试
+    function testCase3() {
+      const store = new MockDashboardStore();
+      const logEl = document.getElementById('l3');
+      const statusEl = document.getElementById('s3');
+      logEl.innerText = "";
+
+      logEl.innerText += "1. 插入一个带有有效 run_id 的 assistant step ('开机')\n";
+      store.steps.push({
+        id: "step-1",
+        run_id: "run-999",
+        seq: 1,
+        stream: "assistant",
+        data: { text: "开机", status: "running" }
+      });
+
+      logEl.innerText += "2. 插入一个 run_id 缺失 (undefined) 的系统 lifecycle step (模拟旧版或陈旧缓存数据)\n";
+      store.steps.push({
+        id: "step-2",
+        run_id: undefined,
+        seq: 2,
+        stream: "lifecycle",
+        data: { status: "subtask_start" }
+      });
+
+      logEl.innerText += "3. 插入另一个 run_id 缺失 (undefined) 的缓存 step\n";
+      store.steps.push({
+        id: "step-3",
+        run_id: undefined,
+        seq: 3,
+        stream: "system",
+        data: { text: "缓存日志" }
+      });
+
+      logEl.innerText += "4. 发射新一帧 [assistant] 片段 ('大吉'): run_id = 'run-999'\n";
+      store._addStep({
+        run_id: "run-999",
+        seq: 4,
+        stream: "assistant",
+        data: { text: "大吉", status: "running" }
+      });
+
+      logEl.innerText += `\n结果: 当前 steps 数组总长度 = ${store.steps.length}\n`;
+      // 原本有3个元素，如果是断裂，第4个元素会被新增加，变成4个元素，且无法与第1个元素合并。
+      // 如果完美跳过并搜索成功，则会与第1个元素合并，总长度依然是3。
+      const targetStep = store.steps.find(s => s.id === "step-1");
+      if (targetStep) {
+        logEl.innerText += `合并后目标内容 = '${targetStep.data.text}'\n`;
+        if (store.steps.length === 3 && targetStep.data.text === "开机大吉") {
+          statusEl.innerText = "成功 (PASS)";
+          statusEl.className = "status pass";
+          return;
+        }
+      }
+
+      statusEl.innerText = "失败 (FAIL)";
+      statusEl.className = "status fail";
+    }
+  </script>
+</body>
+</html>

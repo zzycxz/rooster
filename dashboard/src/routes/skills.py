@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/skills", tags=["skills"])
 
-# Shared state references — set by server.py during wiring
+# Shared state references — set by app.py during wiring
 _skills_dir: str = ""
 _get_skill_loader_fn = None
 _invalidate_skill_loader_fn = None
@@ -46,7 +46,6 @@ class TestRequest(BaseModel):
 
 
 def wire(skills_dir: str, get_skill_loader_fn, invalidate_skill_loader_fn):
-    """Called by server.py to inject shared state."""
     global _skills_dir, _get_skill_loader_fn, _invalidate_skill_loader_fn
     _skills_dir = skills_dir
     _get_skill_loader_fn = get_skill_loader_fn
@@ -66,68 +65,68 @@ def _invalidate():
 # ---------------------------------------------------------------------------
 CLAWHUB_MARKET: dict = {
     "weather-query": {
-        "emoji": "🌤️",
+        "emoji": "\U0001f324️",
         "category": "utility",
         "description": "智能天气与生活指数分析。并发查询多源天气状况，为用户出行提供地衣级穿衣与防晒建议。",
         "author": "rooster-community",
         "requires": {},
-        "skill_body": "# 🌤️ weather-query\n全球精细化天气实况及生活指数（穿衣、防晒、运动、出行）分析。\n\n## 适用场景\n- 查询当前/未来天气状况\n- 获取生活建议（穿衣/雨伞/防晒指数）\n- 多城市对比天气\n",
+        "skill_body": "# \U0001f324️ weather-query\n全球精细化天气实况及生活指数（穿衣、防晒、运动、出行）分析。\n\n## 适用场景\n- 查询当前/未来天气状况\n- 获取生活建议（穿衣/雨伞/防晒指数）\n- 多城市对比天气\n",
     },
     "translation-helper": {
-        "emoji": "🗣️",
+        "emoji": "\U0001f5e3️",
         "category": "collaboration",
         "description": "多语种同声传译与地道润色。支持 20+ 语种的物理双向互译，智能识别句式语调，提供极其本土化的精修建议。",
         "author": "rooster-community",
         "requires": {},
-        "skill_body": "# 🗣️ translation-helper\n多国语种间超高保真段落级润色与翻译。\n\n## 适用场景\n- 中英/中日/中法等双向互译\n- 商务文书、学术摘要地道化润色\n- 实时字幕式对话翻译\n",
+        "skill_body": "# \U0001f5e3️ translation-helper\n多国语种间超高保真段落级润色与翻译。\n\n## 适用场景\n- 中英/中日/中法等双向互译\n- 商务文书、学术摘要地道化润色\n- 实时字幕式对话翻译\n",
     },
     "financial-analyzer": {
-        "emoji": "📊",
+        "emoji": "\U0001f4ca",
         "category": "finance",
         "description": "企业财报深度解析与投资信号提取。自动抓取年报/季报，输出盈利质量评分、现金流健康度及估值锚点。",
         "author": "rooster-community",
         "requires": {"python_packages": ["pandas", "openpyxl"]},
-        "skill_body": "# 📊 financial-analyzer\n企业财务报告（年报/季报）深度量化分析与投资信号自动提取。\n\n## 适用场景\n- 解析上市公司 PDF/Excel 财报\n- 计算 ROE/ROIC/FCF 等核心指标\n- 生成多维估值锚点与风险警示报告\n\n## 依赖\n- `pandas`: 数据清洗与表格计算\n- `openpyxl`: Excel 财报读取\n",
+        "skill_body": "# \U0001f4ca financial-analyzer\n企业财务报告（年报/季报）深度量化分析与投资信号自动提取。\n\n## 适用场景\n- 解析上市公司 PDF/Excel 财报\n- 计算 ROE/ROIC/FCF 等核心指标\n- 生成多维估值锚点与风险警示报告\n\n## 依赖\n- `pandas`: 数据清洗与表格计算\n- `openpyxl`: Excel 财报读取\n",
     },
     "system-monitor": {
-        "emoji": "🖥️",
+        "emoji": "\U0001f5a5️",
         "category": "system",
         "description": "实时系统健康巡检与异常预警。持续采集 CPU/内存/磁盘/网络指标，自动生成健康仪表板与告警摘要。",
         "author": "rooster-community",
         "requires": {"python_packages": ["psutil"]},
-        "skill_body": "# 🖥️ system-monitor\n本机系统资源实时采集与多维健康评分。\n\n## 适用场景\n- CPU/内存/磁盘/网络多维实时监控\n- 进程资源占用排行与异常检测\n- 自动生成系统健康报告\n\n## 依赖\n- `psutil`: 系统级资源采集\n",
+        "skill_body": "# \U0001f5a5️ system-monitor\n本机系统资源实时采集与多维健康评分。\n\n## 适用场景\n- CPU/内存/磁盘/网络多维实时监控\n- 进程资源占用排行与异常检测\n- 自动生成系统健康报告\n\n## 依赖\n- `psutil`: 系统级资源采集\n",
     },
     "video-compress": {
-        "emoji": "🎬",
+        "emoji": "\U0001f3ac",
         "category": "media",
         "description": "高效音视频转码与压制。调用 FFmpeg 实现批量格式转换、分辨率缩放、码率控制及字幕内嵌。",
         "author": "rooster-community",
         "requires": {"bins": ["ffmpeg"]},
-        "skill_body": "# 🎬 video-compress\n基于 FFmpeg 的高效批量音视频转码与压制工作流。\n\n## 适用场景\n- MP4/MKV/AVI 格式互转\n- 分辨率缩放（4K→1080P）与码率控制\n- 字幕内嵌与音轨提取\n- 批量压缩以减少存储占用\n\n## 依赖\n- `ffmpeg`: 需已安装于系统 PATH\n",
+        "skill_body": "# \U0001f3ac video-compress\n基于 FFmpeg 的高效批量音视频转码与压制工作流。\n\n## 适用场景\n- MP4/MKV/AVI 格式互转\n- 分辨率缩放（4K→1080P）与码率控制\n- 字幕内嵌与音轨提取\n- 批量压缩以减少存储占用\n\n## 依赖\n- `ffmpeg`: 需已安装于系统 PATH\n",
     },
     "knowledge-graph": {
-        "emoji": "🕸️",
+        "emoji": "\U0001f578️",
         "category": "analysis",
         "description": "文本知识图谱自动构建与实体关系抽取。从文档/网页中提取实体、关系与事件，输出可视化图谱 JSON。",
         "author": "rooster-community",
         "requires": {"python_packages": ["networkx"]},
-        "skill_body": "# 🕸️ knowledge-graph\n从非结构化文本自动抽取实体与关系，构建可查询知识图谱。\n\n## 适用场景\n- 论文/报告实体关系自动抽取\n- 企业关系图谱（股东/子公司/产品）构建\n- 事件链路梳理与时间轴推断\n\n## 依赖\n- `networkx`: 图结构存储与路径分析\n",
+        "skill_body": "# \U0001f578️ knowledge-graph\n从非结构化文本自动抽取实体与关系，构建可查询知识图谱。\n\n## 适用场景\n- 论文/报告实体关系自动抽取\n- 企业关系图谱（股东/子公司/产品）构建\n- 事件链路梳理与时间轴推断\n\n## 依赖\n- `networkx`: 图结构存储与路径分析\n",
     },
     "packet-analyzer": {
-        "emoji": "📡",
+        "emoji": "\U0001f4e1",
         "category": "security",
         "description": "网络流量抓包与协议分析。解析 PCAP 文件，统计会话流量分布，识别异常协议与潜在渗透特征。",
         "author": "rooster-community",
         "requires": {"python_packages": ["scapy"]},
-        "skill_body": "# 📡 packet-analyzer\nPCAP 网络抓包解析与异常流量快速诊断。\n\n## 适用场景\n- 解析 .pcap/.pcapng 抓包文件\n- HTTP/DNS/TLS 会话流量统计\n- 识别端口扫描、暴力破解等异常行为特征\n\n## 依赖\n- `scapy`: 网络包解析引擎\n",
+        "skill_body": "# \U0001f4e1 packet-analyzer\nPCAP 网络抓包解析与异常流量快速诊断。\n\n## 适用场景\n- 解析 .pcap/.pcapng 抓包文件\n- HTTP/DNS/TLS 会话流量统计\n- 识别端口扫描、暴力破解等异常行为特征\n\n## 依赖\n- `scapy`: 网络包解析引擎\n",
     },
     "code-reviewer": {
-        "emoji": "🔍",
+        "emoji": "\U0001f50d",
         "category": "development",
         "description": "代码质量深度审查与安全漏洞扫描。检测潜在 Bug、反模式、SQL 注入/XSS 等安全风险，输出带行号的修复建议。",
         "author": "rooster-community",
         "requires": {},
-        "skill_body": "# 🔍 code-reviewer\n多语言代码质量评审与安全漏洞静态分析。\n\n## 适用场景\n- PR 代码差异安全审查\n- SQL 注入 / XSS / 路径遍历漏洞扫描\n- 反模式识别（全局变量、裸 except、硬编码密钥）\n- 输出带行号的精准修复建议\n",
+        "skill_body": "# \U0001f50d code-reviewer\n多语言代码质量评审与安全漏洞静态分析。\n\n## 适用场景\n- PR 代码差异安全审查\n- SQL 注入 / XSS / 路径遍历漏洞扫描\n- 反模式识别（全局变量、裸 except、硬编码密钥）\n- 输出带行号的精准修复建议\n",
     },
     "email-composer": {
         "emoji": "✉️",

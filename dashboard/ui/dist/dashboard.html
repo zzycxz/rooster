@@ -5,11 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>🐓 Rooster Dashboard</title>
   <!-- Base CSS with Tailwind utility generation -->
-  <link rel="stylesheet" href="./css/base.css" />
   <!-- highlight.js theme — bundled by Vite -->
-  <link rel="stylesheet" href="highlight.js/styles/github-dark.css">
   <!-- Alpine.js + marked + DOMPurify + hljs — bundled by Vite -->
-  <script type="module" src="./js/dashboard-entry.js"></script>
   <style>
     [x-cloak] { display: none !important; }
 
@@ -148,6 +145,8 @@
       .main-sidebar .tab-icon { margin: 0 auto; font-size: 1.25rem; }
     }
   </style>
+  <script type="module" crossorigin src="/ui/assets/dashboard.js"></script>
+  <link rel="stylesheet" crossorigin href="/ui/assets/dashboard.css">
 </head>
 
 <body
@@ -548,6 +547,36 @@
     </div>
   </div><!-- /execution -->
   </div><!-- /execution-outer -->
+
+    <!-- ╔══════════════════════════════╗ -->
+    <!-- ║  TAB: DOWNLOADER (AriaNg)    ║ -->
+    <!-- ╚══════════════════════════════╝ -->
+    <div x-show="activeTab === 'downloader'" class="flex-1 overflow-hidden flex flex-col min-h-0 bg-slate-950">
+      <!-- Top Action Bar -->
+      <div class="flex-none border-b border-slate-700/80 px-4 py-2.5 bg-slate-800/90 flex items-center justify-between gap-3 shadow-md">
+        <div class="flex items-center gap-2">
+          <span class="text-base">⬇️</span>
+          <span class="text-xs font-bold text-slate-200" x-text="t('tab_downloader')"></span>
+          <span class="text-[10px] text-slate-500 hidden sm:inline" x-text="'— ' + t('downloader_desc')"></span>
+        </div>
+        <div class="flex items-center gap-2">
+          <a :href="getAriaNgUrl()" target="_blank" class="text-[11px] text-blue-400 hover:text-blue-300 transition-colors px-2.5 py-1 rounded border border-blue-900/40 hover:border-blue-700 bg-blue-950/20 flex items-center gap-1 cursor-pointer font-medium active:scale-95">
+            <span>🔗</span>
+            <span x-text="t('open_new_window')"></span>
+          </a>
+        </div>
+      </div>
+      
+      <!-- AriaNg Iframe / Fallback Container -->
+      <div class="flex-1 w-full h-full relative bg-slate-900/40">
+        <iframe 
+          :src="getAriaNgUrl()" 
+          class="w-full h-full border-none bg-slate-950"
+          allow="clipboard-read; clipboard-write"
+          style="min-height: 450px;"
+        ></iframe>
+      </div>
+    </div>
 
 
 
@@ -1973,8 +2002,8 @@
                          class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-green-500 font-mono" />
                 </label>
                 <label class="block space-y-1">
-                  <span class="text-[10px] text-slate-400">ZHIPU_GLM_MODEL (默认 glm-4-flash)</span>
-                  <input type="text" x-model="setupForm.ZHIPU_GLM_MODEL" placeholder="glm-4-flash"
+                  <span class="text-[10px] text-slate-400">ZHIPU_GLM_MODEL (默认 GLM5.1)</span>
+                  <input type="text" x-model="setupForm.ZHIPU_GLM_MODEL" placeholder="GLM5.1"
                          class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-green-500 font-mono" />
                 </label>
               </div>
@@ -2054,8 +2083,8 @@
                          class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-green-500 font-mono" />
                 </label>
                 <label class="block space-y-1">
-                  <span class="text-[10px] text-slate-400">ZHIPU_MODEL (模型名称，默认 GLM-4.7)</span>
-                  <input type="text" x-model="setupForm.ZHIPU_MODEL" placeholder="GLM-4.7"
+                  <span class="text-[10px] text-slate-400">ZHIPU_MODEL (模型名称，默认 GLM5.1)</span>
+                  <input type="text" x-model="setupForm.ZHIPU_MODEL" placeholder="GLM5.1"
                          class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-green-500 font-mono" />
                 </label>
               </div>
@@ -2800,6 +2829,9 @@ function app() {
         tab_errors: 'Errors',
         tab_tools: 'Tools',
         tab_skills: 'Skills',
+        tab_downloader: 'Downloader',
+        downloader_desc: 'Full-featured visual download manager based on AriaNg',
+        open_new_window: 'Open AriaNg in New Window',
         tab_memory: 'Memory',
         tab_metrics: 'Metrics',
         tab_config: 'Config',
@@ -3133,6 +3165,9 @@ function app() {
         tab_errors: '错误列表',
         tab_tools: '工具审计',
         tab_skills: '技能市场',
+        tab_downloader: '文件下载',
+        downloader_desc: '基于 AriaNg 的全功能可视化下载管理器',
+        open_new_window: '在新窗口打开 AriaNg',
         tab_memory: '长期记忆',
         tab_metrics: '性能监控',
         tab_config: '系统配置',
@@ -3489,6 +3524,7 @@ function app() {
       { id: 'errors',    icon: '⚠️',  label: 'Errors' },
       { id: 'tools',     icon: '🔧', label: 'Tools' },
       { id: 'skills',    icon: '🧩', label: 'Skills' },
+      { id: 'downloader', icon: '⬇️', label: 'Downloader' },
       { id: 'memory',    icon: '🧠', label: 'Memory' },
       { id: 'metrics',   icon: '📊', label: 'Metrics' },
       { id: 'config',    icon: '⚙️',  label: 'Config' },
@@ -3792,6 +3828,33 @@ function app() {
       else { this._stopSystemTimer(); }
       if (id === 'setup') { this.scanOllama(); this.loadSetupConfig(); }
       if (id === 'config' && !this.config) this.fetchConfig();
+    },
+
+    getAriaNgUrl() {
+      const token = this.setupForm.ARIA2_TOKEN || '';
+      let port = '6800';
+      if (this.setupForm.ARIA2_RPC_URL) {
+        try {
+          const parsed = new URL(this.setupForm.ARIA2_RPC_URL);
+          if (parsed.port) {
+            port = parsed.port;
+          }
+        } catch (e) {
+          const match = this.setupForm.ARIA2_RPC_URL.match(/:(\d+)/);
+          if (match) port = match[1];
+        }
+      }
+      const protocol = 'ws';
+      const host = '127.0.0.1';
+      const path = 'jsonrpc';
+      const base64Token = token ? btoa(token).replace(/=/g, '') : '';
+      
+      const baseUrl = '/ui/ariang/index.html';
+      if (base64Token) {
+        return `${baseUrl}#!/settings/rpc/set/${protocol}/${host}/${port}/${path}/${base64Token}`;
+      } else {
+        return `${baseUrl}#!/settings/rpc/set/${protocol}/${host}/${port}/${path}`;
+      }
     },
 
     // ── Setup Wizard ─────────────────────────────────────────
@@ -4932,16 +4995,17 @@ function app() {
     _ilog(level, logger, msg) { this._addLog(level, logger, msg, Date.now()/1000, null); },
 
     _addStep(ev) {
+      const evRunId = ev.run_id || ev.runId;
       // Merge tool-response into matching tool-call step by exact run_id + seq
       if (ev.stream === 'tool' && ev.data?.type === 'response') {
-        const callKey = ev.run_id + '::' + ev.data?.tool;
         const call = [...this.steps].reverse()
           .find(s => s.stream === 'tool' && s.data?.type === 'call'
-                     && s.run_id === ev.run_id && s.data?.tool === ev.data?.tool);
+                     && (s.run_id === evRunId || s.runId === evRunId) && s.data?.tool === ev.data?.tool);
         if (call) {
           call.data.response = ev.data.response;
           call.status        = 'done';
           call.durationMs    = Math.round(((ev.ts || Date.now()/1000) - call.ts) * 1000);
+          this.steps = [...this.steps]; // 触发全局响应式更新
           return;
         }
       }
@@ -4953,17 +5017,20 @@ function app() {
         let mergeTarget = null;
         for (let i = this.steps.length - 1; i >= Math.max(0, this.steps.length - 50); i--) {
           const s = this.steps[i];
-          if (s.run_id === ev.run_id && s.stream === ev.stream && typeof s.data?.text === 'string') {
+          const sRunId = s.run_id || s.runId;
+          if (sRunId === evRunId && s.stream === ev.stream && typeof s.data?.text === 'string') {
             mergeTarget = s;
             break;
           }
-          // Stop searching if we hit a different run
-          if (s.run_id !== ev.run_id) break;
         }
         if (mergeTarget) {
           if (!mergeTarget.data) mergeTarget.data = {};
-          mergeTarget.data.text = (mergeTarget.data.text || '') + ev.data.text;
+          mergeTarget.data = {
+            ...mergeTarget.data,
+            text: (mergeTarget.data.text || '') + ev.data.text
+          };
           mergeTarget.ts = ev.ts ?? (Date.now() / 1000);
+          this.steps = [...this.steps]; // 触发全局响应式更新
           this._schedSave();
 
           if (this.activeTab === 'steps') {
@@ -4981,8 +5048,8 @@ function app() {
                    : ev.data?.status ?? 'info';
 
       this.steps.push({
-        id:         ev.run_id + '-' + ev.seq + '-' + Math.random(),
-        run_id:     ev.run_id,
+        id:         (evRunId || 'system') + '-' + ev.seq + '-' + Math.random(),
+        run_id:     evRunId,
         seq:        ev.seq,
         ts:         ev.ts ?? Date.now()/1000,
         stream:     ev.stream,
@@ -5126,12 +5193,14 @@ function app() {
     _handleGateway(msg) {
       // 处理拉取历史记录消息的回调
       if (msg.id && msg.id.startsWith('history_') && msg.status === 'success' && msg.data?.history) {
-        this.chatMessages = msg.data.history.map(m => ({
-          id: Date.now() + '-' + Math.random(),
-          role: m.role,
-          content: m.content,
-          streaming: false
-        }));
+        this.chatMessages = msg.data.history
+          .filter(m => m.content && !m.content.startsWith('<tool_response'))
+          .map(m => ({
+            id: Date.now() + '-' + Math.random(),
+            role: m.role,
+            content: m.content,
+            streaming: false
+          }));
         this.$nextTick(() => {
           const el = document.getElementById('chat-container');
           if (el) el.scrollTop = el.scrollHeight;
@@ -5491,6 +5560,7 @@ function app() {
         const rawSteps = restore('rooster_steps', []);
         this.steps = (Array.isArray(rawSteps) ? rawSteps : []).filter(s => s).map((s, idx) => ({
           id: s.id || `step-${Date.now()}-${idx}-${Math.random()}`,
+          run_id: s.run_id || s.runId || null,
           seq: s.seq ?? idx,
           ts: s.ts ?? Date.now()/1000,
           stream: s.stream || 'system',

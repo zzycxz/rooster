@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/models", tags=["models"])
 
-# Shared state — wired by server.py
+# Shared state — wired by app.py
 _hf_downloads: Dict[str, Dict[str, Any]] = {}
 _hf_download_dir: str = ""
 _env_local_path_fn = None

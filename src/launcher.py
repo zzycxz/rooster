@@ -101,17 +101,7 @@ class RoosterLauncher:
         # Wait for server to be ready
         await asyncio.sleep(1.0)
 
-        # 3b. 安装日志桥：将 Python logging 转发到 Dashboard WebSocket
-        # 3b. Install log bridge: forward Python logging to Dashboard WebSocket
-        try:
-            from gateway.log_bridge import install_log_bridge
-
-            install_log_bridge(loop=asyncio.get_running_loop())
-            logger.info("📊 Dashboard 日志桥接已安装")
-        except Exception as e:
-            logger.warning(f"⚠️ 日志桥接安装失败（不影响主系统）: {e}")
-
-        # 3c. 自动打开 Dashboard（由 DASHBOARD_AUTO_OPEN 控制，且非看守器自愈模式下才打开）
+        # 3b. 自动打开 Dashboard（由 DASHBOARD_AUTO_OPEN 控制，且非看守器自愈模式下才打开）
         # 3c. Auto-open Dashboard (controlled by DASHBOARD_AUTO_OPEN, skipped in guardian self-healing mode)
         is_guardian = os.environ.get("ROOSTER_GUARDIAN_MODE") == "true"
         if self._settings.DASHBOARD_AUTO_OPEN and not is_guardian:

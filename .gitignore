@@ -6,7 +6,7 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 dist/
-!src/ui/dist/
+!dashboard/ui/dist/
 build/
 *.egg
 
@@ -47,6 +47,7 @@ all_windows_diagnostic.txt
 
 # Frontend deps (rebuilt via npm install)
 src/ui/node_modules/
+dashboard/ui/node_modules/
 
 # Deprecated
 *.deprecated

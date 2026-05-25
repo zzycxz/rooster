@@ -1,10 +1,29 @@
 import asyncio
 import time
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Pluggable event sink registry — Dashboard (or any consumer) registers here
+# ---------------------------------------------------------------------------
+_event_sinks: List[Callable] = []
+
+
+def register_event_sink(fn: Callable):
+    """Register an async callable(event_type: str, payload: dict) to receive agent events."""
+    if fn not in _event_sinks:
+        _event_sinks.append(fn)
+
+
+def unregister_event_sink(fn: Callable):
+    """Remove a previously registered event sink."""
+    try:
+        _event_sinks.remove(fn)
+    except ValueError:
+        pass
 
 
 class AgentEvent(BaseModel):
@@ -49,15 +68,14 @@ class AgentEventHandler:
         except Exception as _broadcast_err:
             logger.debug(f"broadcast failed (client likely disconnected): {_broadcast_err}")
 
-        # Also push every agent event to all connected Dashboard clients
-        try:
-            from .dashboard_ws import broadcast_event
-
-            task = asyncio.create_task(broadcast_event("agent_event", event.model_dump()))
-            self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
-        except Exception as _dash_err:
-            logger.debug(f"dashboard broadcast failed: {_dash_err}")
+        # Fan-out to all registered event sinks (e.g. Dashboard)
+        for sink in _event_sinks:
+            try:
+                task = asyncio.create_task(sink("agent_event", event.model_dump()))
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            except Exception as _sink_err:
+                logger.debug(f"event sink failed: {_sink_err}")
 
     # ========== 扩展协议支持（供 Executor 调用）==========
     # ========== Extended protocol support (called by Executor) ==========

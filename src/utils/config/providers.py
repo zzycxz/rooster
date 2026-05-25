@@ -28,13 +28,13 @@ class ProvidersConfig:
     # --- Zhipu AI (CodingPlan — current coding-enhanced version) ---
     ZHIPU_URL: str = _env("ZHIPU_URL", "https://open.bigmodel.cn/api/coding/paas/v4")
     ZHIPU_KEY: str = _env("ZHIPU_KEY", "")
-    ZHIPU_MODEL: str = _env("ZHIPU_MODEL", "GLM-4.7")
+    ZHIPU_MODEL: str = _env("ZHIPU_MODEL", "GLM5.1")
 
     # --- Zhipu AI (Standard API — 传统智谱 API) ---
     # --- Zhipu AI (Standard API — traditional Zhipu API) ---
     ZHIPU_GLM_URL: str = _env("ZHIPU_GLM_URL", "https://open.bigmodel.cn/api/paas/v4")
     ZHIPU_GLM_KEY: str = _env("ZHIPU_GLM_KEY", "")
-    ZHIPU_GLM_MODEL: str = _env("ZHIPU_GLM_MODEL", "glm-4-flash")
+    ZHIPU_GLM_MODEL: str = _env("ZHIPU_GLM_MODEL", "GLM5.1")
 
     # --- OpenAI ---
     OPENAI_URL: str = _env("OPENAI_URL", "https://api.openai.com/v1")
@@ -66,7 +66,7 @@ class ProvidersConfig:
     # --- Xiaomi MiMo ---
     MIMO_URL: str = _env("MIMO_URL", "https://api.xiaomimimo.com/v1")
     MIMO_KEY: str = _env("MIMO_KEY", "")
-    MIMO_MODEL: str = _env("MIMO_MODEL", "mimo-v2.5")
+    MIMO_MODEL: str = _env("MIMO_MODEL", "mimo-v2.5-pro")
 
     # --- Role-specific model overrides ---
     STRATEGIST_MODEL_MODE: str = _env("STRATEGIST_MODEL_MODE", "zhipu")

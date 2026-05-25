@@ -1,22 +1,19 @@
-"""WebSocket and Webhook routes — gateway WS, dashboard WS, node WS, webhook."""
+"""WebSocket and Webhook routes — gateway WS, node WS, webhook."""
 
 import uuid
 import json
 import os
 import asyncio
-import time
 import logging
 from typing import Dict, Any, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request, HTTPException
 
-from ..auth import mask_secret, HMACVerifier
+from ..auth import HMACVerifier
 from ..connection_manager import ConnectionManager
 from ..schemas import GatewayRequest, GatewayResponse
 from ..server_methods import dispatch_methods
-from ..dashboard_ws import dashboard_manager
 from channels.registry import ChannelRegistry
-from ..security import validate_config_keys, validate_config_values
 
 logger = logging.getLogger(__name__)
 
@@ -25,16 +22,12 @@ router = APIRouter(tags=["ws"])
 # Shared state — wired by server.py
 manager: ConnectionManager = None
 channel_registry: ChannelRegistry = None
-_ui_dir: str = ""
-_config_save_fn = None
 
 
-def wire(conn_manager: ConnectionManager, ch_registry: ChannelRegistry, ui_dir: str, config_save_fn):
-    global manager, channel_registry, _ui_dir, _config_save_fn
+def wire(conn_manager: ConnectionManager, ch_registry: ChannelRegistry):
+    global manager, channel_registry
     manager = conn_manager
     channel_registry = ch_registry
-    _ui_dir = ui_dir
-    _config_save_fn = config_save_fn
 
 
 async def _authenticate_ws(websocket: WebSocket) -> bool:
@@ -50,7 +43,6 @@ async def _authenticate_ws(websocket: WebSocket) -> bool:
     IMPORTANT: This function always calls websocket.accept() so that downstream
     managers (ConnectionManager, DashboardManager) never need to accept again.
     """
-    import os as _os
     import hmac as hmac_mod
     from starlette.websockets import WebSocketState
 
@@ -58,7 +50,7 @@ async def _authenticate_ws(websocket: WebSocket) -> bool:
     if websocket.application_state == WebSocketState.CONNECTING:
         await websocket.accept()
 
-    api_key = _os.getenv("GATEWAY_API_KEY", "").strip()
+    api_key = os.getenv("GATEWAY_API_KEY", "").strip()
     if not api_key:
         return True  # No auth configured
 
@@ -90,89 +82,6 @@ async def _authenticate_ws(websocket: WebSocket) -> bool:
     except Exception:
         pass
     return False
-
-
-@router.websocket("/ws/dashboard")
-async def dashboard_websocket(websocket: WebSocket):
-    if not await _authenticate_ws(websocket):
-        return
-
-    await dashboard_manager.connect(websocket)
-
-    # Send current config snapshot from .env
-    try:
-        _MASK_KEYS = frozenset(
-            {
-                "ZHIPU_KEY",
-                "ZHIPU_GLM_KEY",
-                "OPENAI_KEY",
-                "ANTHROPIC_KEY",
-                "KIMI_KEY",
-                "QWEN_KEY",
-                "CLOUD_KEY",
-                "MIMO_KEY",
-                "JIUTIAN_KEY",
-                "EMBEDDING_KEY",
-                "TAVILY_API_KEY",
-                "E2B_API_KEY",
-                "LOCAL_KEY",
-                "GATEWAY_API_KEY",
-                "WEBHOOK_HMAC_SECRET",
-                "FEISHU_APP_SECRET",
-                "FEISHU_USER_OPEN_ID",
-                "ARIA2_TOKEN",
-            }
-        )
-        env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), ".env")
-        config_data: Dict[str, Any] = {}
-        if os.path.exists(env_path):
-            with open(env_path, encoding="utf-8") as f:
-                for line in f:
-                    stripped = line.strip()
-                    if not stripped or stripped.startswith("#") or "=" not in stripped:
-                        continue
-                    k, _, v = stripped.partition("=")
-                    k, v = k.strip(), v.strip()
-                    if k in _MASK_KEYS and v:
-                        v = mask_secret(v)
-                    config_data[k] = v
-
-        await websocket.send_text(
-            json.dumps({"type": "config", "ts": time.time(), "data": config_data}, ensure_ascii=False)
-        )
-    except Exception as exc:
-        logger.warning(f"Could not send initial config to dashboard: {exc}")
-
-    try:
-        while True:
-            raw = await websocket.receive_text()
-            try:
-                msg_in = json.loads(raw)
-                msg_type = msg_in.get("type", "")
-                if msg_type == "config.save":
-                    data = msg_in.get("data", {})
-                    rejected = validate_config_keys(data)
-                    if rejected:
-                        result = {"ok": False, "error": f"Keys not allowed: {rejected}"}
-                    else:
-                        oversized = validate_config_values(data)
-                        if oversized:
-                            result = {"ok": False, "error": f"Values too long for keys: {oversized}"}
-                        else:
-                            result = await _config_save_fn(data)
-                    await websocket.send_text(
-                        json.dumps(
-                            {"type": "config.save.result", "ts": time.time(), "data": result}, ensure_ascii=False
-                        )
-                    )
-            except json.JSONDecodeError as exc:
-                logger.debug(f"Dashboard WS message decode error: {exc}")
-            except Exception as exc:
-                logger.debug(f"Dashboard WS message handling error: {exc}")
-    except WebSocketDisconnect:
-        logger.info("Dashboard WebSocket 断开连接（页面刷新或关闭，正常现象）")
-        # Dashboard WebSocket disconnected (page refresh or close, normal behavior)
-        dashboard_manager.disconnect(websocket)
 
 
 @router.websocket("/ws/gateway")
