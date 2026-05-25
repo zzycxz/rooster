@@ -177,9 +177,15 @@ class PrivacyRouter:
             return self._SCAN_CACHE[key]
         truncated = text[: self._MAX_SCAN_TEXT]
         # 先扫中文，再扫英文（邮箱、信用卡等英文格式 PII）/ Scan Chinese then English
-        results = self._analyzer.analyze(text=truncated, language="zh")
-        if not results:
-            results = self._analyzer.analyze(text=truncated, language="en")
+        # 某些环境可能没有中文识别器，需逐个 try / Some envs lack Chinese recognizers
+        results = []
+        for lang in ("zh", "en"):
+            try:
+                results = self._analyzer.analyze(text=truncated, language=lang)
+                if results:
+                    break
+            except Exception:
+                continue
         hit = len(results) > 0
         self._SCAN_CACHE[key] = hit
         return hit
