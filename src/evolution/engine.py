@@ -77,8 +77,9 @@ class EvolutionEngine:
 
         from utils.config import settings
 
-        # 进化任务统一使用云端策略模型
-        model_name = settings.STRATEGIST_MODEL_NAME
+        # 隐私：进化分析使用传入的 llm_client（应为 local），用户消息不出本机
+        # Privacy: evolution uses the passed-in llm_client (should be local), user messages stay local
+        model_name = getattr(self.llm_client, "model", None) or settings.LOCAL_MODEL or "qwen3.5-4b"
 
         # 1. 选择 Prompt 与处理策略
         if signal == "CORRECTION":

@@ -403,3 +403,19 @@ async def api_models_hf_import_llamacpp(req: HFImportLlamaCppRequest):
     except OSError as e:
         logger.error(f"llama.cpp launch failed: {e}")
         return {"ok": False, "error": str(e)}
+
+
+# ─── 隐私路由状态 / Privacy Router Status ───
+
+
+@router.get("/privacy/status")
+async def api_privacy_status():
+    """查询隐私路由器状态 / Query privacy router status."""
+    try:
+        from utils.privacy_router import get_privacy_router
+
+        _router = get_privacy_router()
+        return {"ok": True, **_router.status()}
+    except Exception as exc:
+        logger.exception("Failed to get privacy router status")
+        return {"ok": False, "error": str(exc)}

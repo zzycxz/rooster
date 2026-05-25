@@ -129,7 +129,15 @@ class AgentExecutor:
             try:
                 from evolution.engine import EvolutionEngine
 
-                self._evolution_engine = EvolutionEngine(llm_client=self.llm_client)
+                # 隐私：进化引擎使用本地模型，用户对话不出本机
+                # Privacy: evolution engine uses local model, user conversations stay local
+                try:
+                    from models.factory import ModelFactory
+
+                    _local_client = ModelFactory.get_client("local")
+                    self._evolution_engine = EvolutionEngine(llm_client=_local_client)
+                except Exception:
+                    self._evolution_engine = EvolutionEngine(llm_client=self.llm_client)
             except Exception:
                 pass
         return self._evolution_engine
@@ -217,7 +225,16 @@ class AgentExecutor:
                 try:
                     from memory.compactor import ContextCompactor
 
-                    compactor = ContextCompactor(self.llm_client, config.model)
+                    # 隐私：压缩对话历史使用本地模型，对话内容不出本机
+                    # Privacy: use local model for compaction, conversation history stays local
+                    try:
+                        from models.factory import ModelFactory
+
+                        _local_client = ModelFactory.get_client("local")
+                        _local_model = settings.LOCAL_MODEL or config.model
+                        compactor = ContextCompactor(_local_client, _local_model)
+                    except Exception:
+                        compactor = ContextCompactor(self.llm_client, config.model)
                     session_history = await compactor.compact_with_flush(
                         history=session_history,
                         max_tokens=context_limit,
@@ -245,13 +262,42 @@ class AgentExecutor:
             # On the first step, if the request includes images, upgrade the user
             # message to OpenAI vision format: [{type:"text",...},{type:"image_url",...}]
             if step == 1 and config.images:
+                # 隐私路由：检测图片是否含 PII，决定发原图还是描述 / Privacy routing
+                _has_sensitive_images = False
+                try:
+                    from utils.privacy_router import get_privacy_router
+                    from models.vision_analyzer import _quick_ocr
+
+                    _router = get_privacy_router()
+                    for b64 in config.images:
+                        _ocr_text = ""
+                        try:
+                            _ocr_text = _quick_ocr(b64)
+                        except Exception:
+                            pass  # OCR 失败不卡用户 / OCR failure doesn't block
+                        target, reason = _router.route_image(source_tool="executor_input", ocr_text=_ocr_text or None)
+                        if target == "local":
+                            _has_sensitive_images = True
+                            executor_logger.info(f"[Privacy] 截图含敏感数据 ({reason})，不发原图")
+                            break
+                except Exception:
+                    pass  # 路由失败不卡用户 / Router failure doesn't block
+
                 for i in range(len(messages) - 1, -1, -1):
                     if messages[i]["role"] == "user":
                         text_content = messages[i]["content"]
-                        vision_content: List[Any] = [{"type": "text", "text": text_content}]
-                        for b64 in config.images:
-                            data_url = b64 if b64.startswith("data:") else f"data:image/png;base64,{b64}"
-                            vision_content.append({"type": "image_url", "image_url": {"url": data_url}})
+                        if _has_sensitive_images:
+                            # 含 PII：不注入 base64，仅附加提示 / Has PII: no base64, add hint
+                            vision_content: List[Any] = [
+                                {"type": "text", "text": text_content},
+                                {"type": "text", "text": "(截图已因隐私保护脱敏，请基于上下文文字描述继续)"},
+                            ]
+                        else:
+                            # 无 PII：正常注入 base64 / No PII: inject base64 normally
+                            vision_content = [{"type": "text", "text": text_content}]
+                            for b64 in config.images:
+                                data_url = b64 if b64.startswith("data:") else f"data:image/png;base64,{b64}"
+                                vision_content.append({"type": "image_url", "image_url": {"url": data_url}})
                         messages[i] = {"role": "user", "content": vision_content}
                         break
 
@@ -502,16 +548,18 @@ class AgentExecutor:
                     )
 
                 # Dynamic brain switch for large observations
-                if len(combined_obs) > 3000 and self.llm_client.provider == "local":
+                # 有截图数据时禁止切换到云端，避免敏感数据泄露 / Block cloud switch when images present
+                _has_image_data = "[IMAGE_DATA:" in combined_obs
+                if len(combined_obs) > 3000 and self.llm_client.provider == "local" and not _has_image_data:
                     executor_logger.info(f"Large observation ({len(combined_obs)} chars). Switching to cloud.")
                     self.llm_client.switch_provider("cloud")
                     config.model = settings.CLOUD_MODEL
 
-                # Strip base64 image data for local models
-                if self.llm_client.provider == "local" and "[IMAGE_DATA:" in combined_obs:
+                # Strip base64 image data — 所有 provider 都 strip，截图不发出本机
+                if "[IMAGE_DATA:" in combined_obs:
                     combined_obs = re.sub(
                         r"\[IMAGE_DATA:.*?\]",
-                        "(Screenshot data dehydrated, refer to cloud analysis above)",
+                        "(截图数据已脱敏 / Screenshot data redacted for privacy)",
                         combined_obs,
                         flags=re.DOTALL,
                     )
