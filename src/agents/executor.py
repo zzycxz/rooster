@@ -32,7 +32,7 @@ class AgentRunConfig(BaseModel):
     agent_id: str
     prompt: str
     workspace_dir: str
-    model: str = "qwen3.5:2b"
+    model: str = Field(default_factory=lambda: getattr(settings, "EXECUTOR_MODEL_NAME", None) or getattr(settings, "LOCAL_MODEL", ""))
     history: List[Dict[str, str]] = []
     tool_registry: Optional[Any] = Field(default=None, exclude=True)
     max_steps: int = Field(default_factory=lambda: settings.AGENT_MAX_STEPS)
