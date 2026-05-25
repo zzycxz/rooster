@@ -219,28 +219,15 @@ class AgentExecutor:
             context_limit = settings.AGENT_CONTEXT_LIMIT
             context_limit_chars = int(context_limit * 3.5)
 
-            # Long-text compaction at 0.6 threshold (before 0.7 prune)
+            # Async compaction trigger at 0.6 threshold (before 0.7 prune).
             estimated_chars = sum(len(m.get("content") or "") for m in session_history)
             if estimated_chars > context_limit_chars * 0.6:
                 try:
-                    from memory.compactor import ContextCompactor
+                    from memory.memory_compactor import schedule_memory_compaction
 
                     # 隐私：压缩对话历史使用本地模型，对话内容不出本机
-                    # Privacy: use local model for compaction, conversation history stays local
-                    try:
-                        from models.factory import ModelFactory
-
-                        _local_client = ModelFactory.get_client("local")
-                        _local_model = settings.LOCAL_MODEL or config.model
-                        compactor = ContextCompactor(_local_client, _local_model)
-                    except Exception:
-                        compactor = ContextCompactor(self.llm_client, config.model)
-                    session_history = await compactor.compact_with_flush(
-                        history=session_history,
-                        max_tokens=context_limit,
-                        session_id=config.session_id,
-                        memory_manager=self.memory_manager,
-                    )
+                    # Expensive distillation runs off the executor hot path.
+                    schedule_memory_compaction(self.memory_manager, config.session_id, session_history)
                 except Exception as e:
                     executor_logger.warning(f"Compaction flush failed (degraded to pruning): {e}")
 
@@ -343,39 +330,21 @@ class AgentExecutor:
                                 session_key=config.session_key, client_run_id=run_id, text=delta.content
                             )
 
-                try:
-                    await perform_chat()
-                except Exception as e:
-                    if self.llm_client.provider == "cloud" and ("Connection" in str(e) or "API Error" in str(e)):
-                        executor_logger.warning(f"Cloud engine unreachable ({str(e)}), switching to local...")
-                        self.llm_client.switch_provider("local")
-                        config.model = settings.LOCAL_MODEL
-                        full_content = ""
-                        native_tool_calls = []
-                        messages = self.prompt_builder.compose_messages(
-                            system_prompt=system_prompt,
-                            history=self._prune_history(session_history, max_total_chars=context_limit_chars),
-                            user_input=config.prompt if step == 1 else "",
-                        )
-                        await perform_chat()
-                    else:
-                        raise e
+                await perform_chat()
 
                 executor_logger.debug(
                     f"Loop Step {step}: Sent {len(messages)} messages. Received {len(full_content)} chars."
                 )
                 executor_logger.info(f"Output: {len(full_content)} characters received")
 
-                # Refusal detection + model switch
+                # Refusal detection is diagnostic only. Provider fallback is
+                # reserved for transport/provider failures inside LLMClient.
                 _refusal_phrases = settings.REFUSAL_PHRASES
                 _is_refusal = not native_tool_calls and any(p in full_content.lower() for p in _refusal_phrases)
-                if _is_refusal and self.llm_client.provider != "mimo":
-                    executor_logger.warning(f"Refusal detected ('{full_content[:60].strip()}'), switching to mimo...")
-                    self.llm_client.switch_provider("mimo")
-                    config.model = settings.SOLO_MODEL_NAME
-                    full_content = ""
-                    native_tool_calls = []
-                    await perform_chat()
+                if _is_refusal:
+                    executor_logger.warning(
+                        f"Refusal detected ('{full_content[:60].strip()}'); not switching provider automatically."
+                    )
 
                 # Empty response retry
                 if not full_content.strip() and not native_tool_calls:
@@ -551,9 +520,9 @@ class AgentExecutor:
                 # 有截图数据时禁止切换到云端，避免敏感数据泄露 / Block cloud switch when images present
                 _has_image_data = "[IMAGE_DATA:" in combined_obs
                 if len(combined_obs) > 3000 and self.llm_client.provider == "local" and not _has_image_data:
-                    executor_logger.info(f"Large observation ({len(combined_obs)} chars). Switching to cloud.")
-                    self.llm_client.switch_provider("cloud")
-                    config.model = settings.CLOUD_MODEL
+                    executor_logger.debug(
+                        f"Large observation ({len(combined_obs)} chars); retaining current provider."
+                    )
 
                 # Strip base64 image data — 所有 provider 都 strip，截图不发出本机
                 if "[IMAGE_DATA:" in combined_obs:
