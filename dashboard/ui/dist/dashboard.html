@@ -3936,7 +3936,7 @@ function app() {
       const path = 'jsonrpc';
       const base64Token = token ? btoa(token).replace(/=/g, '') : '';
       
-      const baseUrl = '/ui/ariang/index.html';
+      const baseUrl = '/ui/ariang/index.html?t=' + Date.now();
       if (base64Token) {
         return `${baseUrl}#!/settings/rpc/set/${protocol}/${host}/${port}/${path}/${base64Token}`;
       } else {

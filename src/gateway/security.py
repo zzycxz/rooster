@@ -99,7 +99,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: blob:; "
-            "connect-src 'self' ws: wss:;"
+            "connect-src 'self' ws: wss:; "
+            "font-src 'self' data:;"
         )
         return response
 

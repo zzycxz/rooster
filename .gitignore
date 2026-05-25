@@ -52,3 +52,5 @@ dashboard/ui/node_modules/
 # Deprecated
 *.deprecated
 *.bak
+Project*
+*.aria2
