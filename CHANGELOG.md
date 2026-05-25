@@ -4,7 +4,7 @@
 
 ### Added
 - **Traffic Control & Queuing (`traffic.py`)**: Implemented Phase 1 of a production-grade Agent stability roadmap (inspired by OpenDevin). Added global and provider-level concurrency limits to the LLM client, effectively eliminating 429 rate-limit crashes during heavy parallel subtask execution.
-- **Asynchronous Dreaming (`dream_worker.py`)**: Shifted memory compaction out of the synchronous execution path. The system now distills context in the background (Dreaming), dramatically improving the ReAct loop latency and overall execution smoothness.
+- **Memory Compactor (`memory_compactor.py`)**: Shifted memory compaction out of the synchronous execution path. The system now distills context in the background asynchronously, dramatically improving the ReAct loop latency and overall execution smoothness.
 - **Extended Guardian Triggers**: Upgraded `guardian.py` to support `cron` expressions and `interval`-based execution triggers for automated background tasks.
 
 ### Changed

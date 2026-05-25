@@ -2,11 +2,16 @@
 
 from utils.config._base import (
     _env,
+    _env_bool,
+    _env_int,
 )
 
 
 class MemoryConfig:
     MEMORY_BACKEND_TYPE: str = _env("MEMORY_BACKEND_TYPE", "json")
+    MEMORY_COMPACTION_ENABLED: bool = _env_bool("MEMORY_COMPACTION_ENABLED", True)
+    MEMORY_COMPACTION_MIN_HISTORY_ITEMS: int = _env_int("MEMORY_COMPACTION_MIN_HISTORY_ITEMS", 8)
+    MEMORY_COMPACTION_MAX_HISTORY_ITEMS: int = _env_int("MEMORY_COMPACTION_MAX_HISTORY_ITEMS", 24)
 
     # --- Embeddings ---
     EMBEDDING_PROVIDER: str = _env("EMBEDDING_PROVIDER", "auto")
