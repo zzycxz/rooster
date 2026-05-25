@@ -28,53 +28,60 @@ Rooster is a **multi-role Agent framework** that autonomously handles complex ta
 
 ## 2. Technical Highlights
 
-### 1. Router: Five-Way Triage with Zero-Latency Rule Engine
+### 1. Router — Five-Way Triage with Zero-Latency Reprocessing: Every Request Takes the Optimal Path
 
-Every request is routed to its optimal path, minimizing unnecessary LLM calls.
+**Intent dispatch**: The Router classifies every incoming message and routes it to the fastest processing path:
 
-- **Five route types**: `[TALK]` (~70%) → SoloRunner for immediate single-turn reply; `[DIRECT]` → short-circuit to MissionRunner, skipping planning; `[REFRAME]` → semantic intent normalization chain; `[SCHEDULE]` → parsed into a timed plan for background execution; `[BLOCK]` → safety intercept (download keywords gracefully downgrade to `REFRAME`).
-- **Zero-latency static rules (0ms)**: Built-in trigger dictionaries for media (17 terms) and software (12 terms). `clean_target()` strips filler phrases ("please help me download", "1080p") and extracts the core entity — the vast majority of high-frequency requests complete with zero LLM calls.
-- **Dynamic short-circuit routing**: On keyword match (e.g. `resource-downloader`), bypasses the Strategist entirely and routes directly to tool execution via regex parsing. Trusted domain allowlist (15 entries including github.com, microsoft.com) and ad-site blocklist (13 known offenders) are applied automatically.
-- **LLM semantic fallback**: Only triggered when static rules miss. If the LLM determines a message doesn't need reframing, it returns `REDIRECT` to re-triage. The static engine covers ~80% of high-frequency requests at 0ms cost.
+- `[TALK]` (~70%) → straight to SoloRunner for instant single-turn response
+- `[DIRECT]` → short-circuit route directly to MissionRunner, skipping planning
+- `[REFRAME]` → enters the semantic reprocessing chain for ambiguous or complex intents
+- `[SCHEDULE]` → parsed into a scheduled plan, triggered on time by Guardian in the background
+- `[BLOCK]` → safety intercept (download-related keywords gracefully downgrade to `REFRAME`)
 
-### 2. Security Sandbox & Privacy Isolation
+**Zero-latency static rule engine (0ms)**: Built-in trigger dictionaries: 17 media terms + 12 software terms + general download terms. `clean_target()` automatically strips filler phrases ("please download", "1080p", "help me with") to extract the core entity — zero LLM calls, zero latency.
 
-Defense-in-depth architecture spanning from the network edge to the LLM call layer. The design principle is "prefer false negatives over blocking users" — all interception supports graceful degradation.
+**Dynamic short-circuit routing**: On keyword match (e.g. `resource-downloader`), completely bypasses the Strategist planning layer — parameters parsed by regex route directly to tool execution. Built-in domain trust filter: 15 trusted domains (github.com, microsoft.com, etc.) promoted; 13 known ad-heavy/malware sites (onlinedown.net, pc6.com, etc.) automatically blocked.
 
-**Privacy Funnel (local-first data handling)**
+**LLM semantic fallback**: Only invoked when static rules miss. If the LLM determines the message doesn't need reframing, it returns `REDIRECT` for re-triage. The rule engine resolves ~80% of high-frequency requests at 0ms — LLM is a last resort, not the default.
+
+### 2. Full-Spectrum Security Sandbox & Privacy Isolation: Defense-in-Depth from Ingestion to Execution
+
+Built on a "defense-in-depth" philosophy covering the network edge, runtime environment, and LLM call layer. The guiding principle is "prefer false negatives over blocking the user" — every interception supports graceful degradation.
+
+**Data Privacy Physical Isolation Funnel**
 
 | Layer | Mechanism | Latency |
 |-------|-----------|---------|
-| L0 Physical cutoff | `LOCAL_DIRS` path matching → forced local model routing, preventing data from reaching the cloud at the source | 0ms |
-| L1 PII Scan | Microsoft Presidio (zh + en) — phone (0.8), ID card (0.85), bank card (0.6) | 5–20ms |
-| Vision Redaction | PaddleOCR extracts screen text → Presidio scan → only a safe text description is sent to cloud; original screenshots never leave the machine | per-frame |
+| L0 Physical cutoff | `LOCAL_DIRS` path matching → matched files/requests are force-routed to a local model (e.g. Ollama), cutting off cloud egress at the source | 0ms |
+| L1 Entity cleansing | Deep-customized Microsoft Presidio — millisecond bilingual PII scan, detecting phone numbers (0.8), ID cards (0.85), bank cards (0.6), and other sensitive assets | 5–20ms |
+| Vision-level privacy circuit breaker | Screenshots never leave the machine — local PaddleOCR extracts on-screen text → Presidio redaction → only a safe text description is sent to cloud; original screenshots remain local permanently | per-frame |
 
-**AdvancedGuard LLM Defense**
-- **Jailbreak interception**: Three-tier regex matrix blocking DAN-mode, "ignore previous instructions", and unrestricted roleplay attempts.
-- **Output injection blocking**: When the Agent uses a browser or reads external files, tool return content is scanned in real time to prevent maliciously hidden web instructions from hijacking the Agent.
-- **Skill supply-chain scanning**: Third-party skill packages (`SKILL.md`) are statically analyzed on mount — blocks `eval`/base64 obfuscation, hidden network requests, and embedded system commands.
+**AdvancedGuard LLM Defense Engine**
+- **Jailbreak immunity**: Three-tier regex matching matrix, blocking DAN-mode, "ignore previous instructions", unrestricted roleplay, and similar prompt injection attempts in real time.
+- **Output injection interception**: When the Agent uses the browser or reads external files, tool return content is scanned in real time to prevent maliciously hidden web instructions from hijacking the Agent.
+- **Skill supply-chain poison detection**: Third-party skill packages (`SKILL.md`) are statically analyzed on mount — blocks `eval`/base64 obfuscation, hidden malicious network requests, and system commands embedded in skill descriptions.
 
-**Runtime Sandbox**
-- `PathGuard`: `os.path.realpath` strict prefix validation blocks symlink and `../` directory traversal attacks.
-- `StateGuard` (RSA-Synchronizer): Cross-process atomic transaction lock eliminates race conditions in multi-agent concurrent writes.
-- Per-tool rate limiting automatically interrupts infinite loops caused by LLM hallucination, preventing unexpected API quota exhaustion.
+**Runtime Sandbox & State Control**
+- **PathGuard directory sandbox**: Strict `os.path.realpath` prefix validation — blocks symlink bypass and `../` directory traversal attacks.
+- **StateGuard atomic lock (RSA-Synchronizer)**: Cross-process atomic transaction lock designed for multi-agent concurrency — eliminates race conditions and dirty-write injection.
+- **Tool abuse rate limiting**: Automatically interrupts infinite loop calls triggered by LLM hallucination, preventing unexpected exhaustion of compute and API quota.
 
-**Gateway & Audit**
-- API Key auth + Webhook HMAC-SHA256 + IP sliding-window rate limiting (100 req/min).
-- Secrets masking: API keys and tokens are irreversibly masked before log writes, preventing credential leakage.
-- Hot-config key allowlist validation + oversized-value circuit breaker guards against buffer-overflow style attacks.
+**Boundary Gateway & Compliance Audit**
+- **Full-stack traffic control**: API Key auth + Webhook HMAC-SHA256 anti-tampering signature + IP sliding-window rate limiting (100 req/min).
+- **Log secrets mask**: API keys, tokens, and other credentials are irreversibly masked before log writes, preventing credential leakage.
+- **Dynamic config immunity (Input Guard)**: Key allowlist validation + oversized-value circuit breaker on hot-reload endpoints, guarding against buffer-overflow style attacks.
 
-### 3. UIA Matrix Scan + YOLO Visual Grounding
+### 3. UIA Matrix Scan + YOLO Visual Grounding: What You See Is What Rooster Controls
 
-No API access required from the target application — if it's visible on screen, Rooster can interact with it.
+A dual-engine "system API + computer vision" architecture — no API access required from the target application. If it's on screen, Rooster can interact with it.
 
-- **UIA engine**: Reads all on-screen controls (type, name, position, state) via system accessibility APIs — fast, deterministic, and reliable for standard UI elements.
-- **YOLO engine**: Ships with a 39 MB lightweight detection model bundled in the repository — no extra download required. Covers UIA blind spots: custom controls, game icons, and non-standard UI elements.
+- **UIA (UI Automation) engine**: Retrieves standardized information on all on-screen controls (type, name, position, state) via system accessibility APIs — broad coverage, deterministic, fast, precise, and stable.
+- **YOLO vision engine**: Ships with a 39 MB ultra-lightweight detection model bundled in the repository — zero extra download. Effectively fills UIA blind spots: custom controls, game icons, non-standard UI elements.
 - **Complementary operation**: `desktop_grounding_scan` handles full-scene element sensing; `desktop_act` handles precise click/input simulation. UIA ensures efficiency; YOLO ensures coverage.
 
-### 4. Guardian: Self-Healing, Self-Scheduling Watchdog
+### 4. Guardian — Self-Healing, Self-Scheduling, Self-Repairing Watchdog
 
-An external watchdog running independently of the main process — even a complete main process crash won't prevent service recovery. Designed for true unattended operation.
+An external watchdog fully independent of the main process — even a complete main process crash leaves Guardian unaffected. Designed for true unattended operation.
 
 **Three parallel monitoring threads**
 
@@ -84,18 +91,18 @@ An external watchdog running independently of the main process — even a comple
 | Resource circuit breaker | Sample CPU/memory every 15s | CPU > 95% or RAM > 2 GB sustained 120s → force-kill to prevent freeze |
 | Time wheel | Poll `schedules.json` every 60s | Dispatch scheduled tasks on time via POST |
 
-**Automatic fault recovery**
+**Fully automatic fault recovery**
 - **Missing package auto-install**: Catches `ModuleNotFoundError`, matches against a 23-entry safe library allowlist, and runs `pip install`. The allowlist prevents malicious package injection.
-- **Port conflict resolution**: Cross-platform regex extraction of the occupied port number and targeted process termination.
-- **Service wakeup**: Automatically restarts `aria2c` and similar daemons when their RPC is unresponsive.
+- **Port conflict resolution**: Matches port-in-use errors, extracts the port number via cross-platform regex, and immediately terminates the blocking process.
+- **Service wakeup**: Automatically restarts `aria2c` and similar daemons when their RPC becomes unresponsive.
 
-**Resilience controls**: circuit breaker (2 identical consecutive errors → stop retry), restart storm guard (5 restarts in 300s → alert + stop), exponential backoff with jitter, single-instance PID mutex, Feishu/DingTalk/Slack webhook alerts.
+**Enterprise-grade resilience**: circuit breaker (2 identical consecutive errors → stop retry), restart storm guard (5 restarts in 300s → alert + stop), exponential backoff with jitter, single-instance PID mutex, Feishu/DingTalk/Slack webhook alerts.
 
-### 5. Dual-Memory Self-Evolution + Auditor Quality Gate
+### 5. Dual-Memory Self-Evolution + Auditor Quality Gate: Gets Smarter Over Time, Results Stay Reliable
 
-**Background self-evolution (non-blocking)**
+**Zero-latency self-evolution engine**
 
-After each conversation turn, a background scan fires instantly without blocking the current user interaction. A local model (never cloud) analyzes the last 5 turns (200 chars/turn), detecting three signal types and writing them to persistent memory:
+After each conversation turn, a background scan fires instantly without blocking the current user interaction. A local model (never cloud) analyzes the last 5 turns (200 chars/turn), detects three core signal types, and writes them to the memory store:
 
 | Signal | Example triggers | Write target |
 |--------|-----------------|--------------|
@@ -105,19 +112,19 @@ After each conversation turn, a background scan fires instantly without blocking
 
 Core identity fields (Identity / Hard Limits / Memory Protocol) are code-level protected — the evolution engine cannot modify them.
 
-**Auditor quality gate**
+**Independent Auditor quality gate**
 
-After Executor completes, an independent Auditor renders a final verdict with five outcomes:
+After Executor completes, an independent Auditor renders the final verdict with five outcomes:
 
-| Verdict | Meaning |
-|---------|---------|
-| `AFFIRM` | Approved — result delivered to user |
-| `REMAND` | Quality below standard — silently re-executed |
-| `REPLAN` | Path dead end — Strategist replans the task structure |
-| `CLOSURE` | Graceful shutdown — task genuinely cannot be completed |
-| `ESCALATE` | High-risk / permission block — escalates to human intervention |
+| Verdict | Meaning | User experience |
+|---------|---------|-----------------|
+| `AFFIRM` | Approved | Receives a passing result |
+| `REMAND` | Quality below standard | Silently re-executed, seamless to user |
+| `REPLAN` | Path dead end | Strategist replans the task structure |
+| `CLOSURE` | Cannot be completed | Graceful shutdown, no half-finished results |
+| `ESCALATE` | High-risk / permission block | Proactively escalates to human intervention |
 
-`_robust_json_parse()` auto-repairs malformed LLM output (Markdown wrappers, trailing commas, Chinese quotes). Auditor timeouts degrade safely to `PASS_WITH_WARNING` — the audit system never blocks the user flow.
+**Strong robustness**: `_robust_json_parse()` auto-repairs malformed LLM output — Markdown code-block wrapping, trailing commas, Chinese quotation marks (`\u201c`/`\u201d`), etc. Auditor timeouts degrade safely to `PASS_WITH_WARNING` — the audit system never blocks the user flow.
 
 
 ---
