@@ -85,13 +85,15 @@ if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
+        
+handlers = [logging.FileHandler(os.path.join(_LOG_DIR, "guardian.log"), encoding='utf-8')]
+if _stream is not None:
+    handlers.append(logging.StreamHandler(_stream))
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - [GUARDIAN] - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(os.path.join(_LOG_DIR, "guardian.log"), encoding='utf-8'),
-        logging.StreamHandler(_stream),
-    ]
+    handlers=handlers
 )
 logger = logging.getLogger(__name__)
 
@@ -369,8 +371,12 @@ class Guardian:
         """Read src line-by-line, write to dst; optionally collect into list."""
         try:
             for line in src:
-                dst.write(line)
-                dst.flush()
+                if dst is not None:
+                    try:
+                        dst.write(line)
+                        dst.flush()
+                    except Exception:
+                        pass
                 if collector is not None:
                     collector.append(line)
         except Exception:
