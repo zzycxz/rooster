@@ -57,9 +57,14 @@ def _resolve_script(script_path: str) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def _create_windows(task_name: str, script_path: str, run_time: str, frequency: str) -> str:
+def _create_windows(task_name: str, script_path: str, run_time: str, frequency: str, schedule_id: str = "") -> str:
     python_exe = sys.executable
-    tr = f'"{python_exe}" "{script_path}"'
+    if schedule_id:
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        runner = os.path.join(project_root, "scripts", "schedule_runner.py")
+        tr = f'"{python_exe}" "{runner}" {schedule_id}'
+    else:
+        tr = f'"{python_exe}" "{script_path}"'
     cmd = [
         "schtasks",
         "/Create",
@@ -112,7 +117,7 @@ def _plist_path(task_name: str) -> str:
     return os.path.expanduser(f"~/Library/LaunchAgents/com.rooster.{task_name}.plist")
 
 
-def _create_macos(task_name: str, script_path: str, run_time: str, frequency: str) -> str:
+def _create_macos(task_name: str, script_path: str, run_time: str, frequency: str, schedule_id: str = "") -> str:
     hour, minute = run_time.split(":")
     plist_file = _plist_path(task_name)
     os.makedirs(os.path.dirname(plist_file), exist_ok=True)
@@ -138,6 +143,15 @@ def _create_macos(task_name: str, script_path: str, run_time: str, frequency: st
 		<integer>{int(minute)}</integer>
 	</dict>"""
 
+    if schedule_id:
+        runner = os.path.join(project_root, "scripts", "schedule_runner.py")
+        program_args = f"""		<string>{sys.executable}</string>
+		<string>{runner}</string>
+		<string>{schedule_id}</string>"""
+    else:
+        program_args = f"""		<string>{sys.executable}</string>
+		<string>{script_path}</string>"""
+
     plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -147,8 +161,7 @@ def _create_macos(task_name: str, script_path: str, run_time: str, frequency: st
 	<string>com.rooster.{task_name}</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>{sys.executable}</string>
-		<string>{script_path}</string>
+{program_args}
 	</array>
 	<key>WorkingDirectory</key>
 	<string>{project_root}</string>

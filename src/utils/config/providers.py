@@ -107,11 +107,36 @@ class ProvidersConfig:
     LLM_FAILOVER_ENABLED: bool = _env_bool("LLM_FAILOVER_ENABLED", True)
     LLM_FAILOVER_ORDER: list = _env_list("LLM_FAILOVER_ORDER", "mimo,zhipu,jiutian,local")
     LLM_FAILOVER_RETRY_MAX: int = _env_int("LLM_FAILOVER_RETRY_MAX", 2)
+    # Keep fallback exception-driven by default.  When disabled, providers are not
+    # skipped merely because the prompt looks large; they are tried in order and
+    # fallback only after a real provider error.
+    LLM_PREVENTIVE_CONTEXT_ROUTING: bool = _env_bool("LLM_PREVENTIVE_CONTEXT_ROUTING", False)
 
     # --- Rate limiting ---
     LLM_MIN_INTERVAL: float = _env_float("LLM_MIN_INTERVAL", 1.5)
     LLM_FAST_MIN_INTERVAL: float = _env_float("LLM_FAST_MIN_INTERVAL", 1.0)
     ZHIPU_MIN_INTERVAL: float = _env_float("ZHIPU_MIN_INTERVAL", 6.0)
+    LLM_GLOBAL_MAX_CONCURRENT: int = _env_int("LLM_GLOBAL_MAX_CONCURRENT", 6)
+    LLM_PROVIDER_MAX_CONCURRENT_DEFAULT: int = _env_int("LLM_PROVIDER_MAX_CONCURRENT_DEFAULT", 2)
+
+    @property
+    def LLM_PROVIDER_MAX_CONCURRENT(self) -> Dict[str, int]:
+        import os
+
+        raw = os.environ.get(
+            "LLM_PROVIDER_MAX_CONCURRENT",
+            "zhipu:1,zhipu_glm:1,jiutian:2,mimo:2,openai:2,anthropic:2,kimi:2,qwen:2,cloud:2,local:1",
+        )
+        result: Dict[str, int] = {}
+        for item in raw.split(","):
+            if ":" not in item:
+                continue
+            provider, value = item.strip().split(":", 1)
+            try:
+                result[provider.strip()] = max(1, int(value.strip()))
+            except ValueError:
+                pass
+        return result
 
     @property
     def PROVIDER_CONTEXT_LIMITS(self) -> Dict[str, int]:

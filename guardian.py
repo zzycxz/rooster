@@ -22,7 +22,7 @@ import threading
 import hashlib
 import random
 import platform
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
 try:
@@ -764,6 +764,52 @@ class Guardian:
     # ------------------------------------------------------------------
     # Schedule trigger thread
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_cron_field(field, all_range):
+        if field == "*":
+            return list(all_range)
+        result = set()
+        for part in field.split(","):
+            if "/" in part:
+                base, step = part.split("/", 1)
+                step = int(step)
+                if base == "*":
+                    start, end = all_range.start, all_range.stop - 1
+                elif "-" in base:
+                    start, end = map(int, base.split("-", 1))
+                else:
+                    start, end = int(base), all_range.stop - 1
+                for v in range(start, end + 1, step):
+                    if v in all_range:
+                        result.add(v)
+            elif "-" in part:
+                start, end = map(int, part.split("-", 1))
+                for v in range(start, end + 1):
+                    if v in all_range:
+                        result.add(v)
+            else:
+                v = int(part)
+                if v in all_range:
+                    result.add(v)
+        return sorted(result)
+
+    @staticmethod
+    def _cron_matches(expr, dt):
+        m = re.match(r"^\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*$", expr)
+        if not m:
+            return False
+        minute_f, hour_f, dom_f, month_f, dow_f = m.groups()
+        from datetime import timedelta as _td
+        _gpm = GuardianProcess._parse_cron_field
+        minutes = _gpm(minute_f, range(0, 60))
+        hours = _gpm(hour_f, range(0, 24))
+        doms = _gpm(dom_f, range(1, 32))
+        months = _gpm(month_f, range(1, 13))
+        dows = [d % 7 for d in _gpm(dow_f, range(0, 8))]
+        return (dt.minute in minutes and dt.hour in hours and dt.day in doms
+                and dt.month in months and dt.weekday() in dows)
+
     def _schedule_loop(self):
         """Background thread: check .rooster/schedules.json every 60s and fire due tasks."""
         schedules_path = os.path.join(_DATA_DIR, "schedules.json")
@@ -791,16 +837,44 @@ class Guardian:
                     target_time = entry.get("time", "08:00")
                     task_text = entry.get("task", "")
                     session_id = entry.get("session_id", "")
+                    trigger = entry.get("trigger", {})
 
                     should_fire = False
                     fire_key = ""
 
-                    if freq == "daily" and target_time == now_hhmm:
-                        fire_key = f"{now_date} {now_hhmm}"
-                    elif freq == "hourly" and now.minute == 0:
-                        fire_key = f"{now_date} {now_hhmm}"
-                    elif freq == "weekly" and now.weekday() == 0 and target_time == now_hhmm:
-                        fire_key = f"{now_date} {now_hhmm}"
+                    # Extended trigger support: cron expression, interval
+                    trigger_type = trigger.get("type", "")
+                    if trigger_type == "cron" and trigger.get("cron_expr"):
+                        cron_expr = trigger["cron_expr"]
+                        if self._cron_matches(cron_expr, now):
+                            fire_key = f"{now_date} {now_hhmm} cron"
+                    elif trigger_type == "interval" and trigger.get("interval_sec"):
+                        interval_sec = trigger["interval_sec"]
+                        last_run = entry.get("last_run_at", "")
+                        if last_run:
+                            try:
+                                last_dt = datetime.fromisoformat(last_run)
+                                if (now - last_dt).total_seconds() >= interval_sec:
+                                    fire_key = f"{now_date} {now_hhmm} int"
+                            except (ValueError, TypeError):
+                                fire_key = f"{now_date} {now_hhmm} int"
+                        else:
+                            fire_key = f"{now_date} {now_hhmm} int"
+                    elif trigger_type == "once" and trigger.get("run_once_at"):
+                        try:
+                            once_dt = datetime.fromisoformat(trigger["run_once_at"])
+                            if once_dt <= now and once_dt > now - timedelta(minutes=2):
+                                fire_key = f"{now_date} {now_hhmm} once"
+                        except (ValueError, TypeError):
+                            pass
+                    else:
+                        # Legacy frequency/time matching
+                        if freq == "daily" and target_time == now_hhmm:
+                            fire_key = f"{now_date} {now_hhmm}"
+                        elif freq == "hourly" and now.minute == 0:
+                            fire_key = f"{now_date} {now_hhmm}"
+                        elif freq == "weekly" and now.weekday() == 0 and target_time == now_hhmm:
+                            fire_key = f"{now_date} {now_hhmm}"
 
                     if fire_key and last_fire.get(sid) != fire_key:
                         should_fire = True

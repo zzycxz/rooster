@@ -2809,6 +2809,490 @@
       </div>
     </div><!-- /health -->
 
+    <!-- ═══════════════════ TAB: SCHEDULER ═══════════════════ -->
+    <div x-show="activeTab === 'scheduler'" x-cloak class="flex-1 overflow-hidden flex flex-col min-h-0">
+      <!-- Sub-tab bar -->
+      <div class="flex-none flex items-center gap-1 bg-slate-900/80 px-4 pt-3 pb-2">
+        <template x-for="sub in [{id:'list',icon:'📋'},{id:'editor',icon:'✏️'},{id:'history',icon:'📜'},{id:'dashboard',icon:'📊'}]" :key="sub.id">
+          <button @click="schedulerSubTab = sub.id; if(sub.id==='history') fetchHistory(historyFilterTaskId, 1); if(sub.id==='dashboard') fetchSchedulerDashboard()"
+                  class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
+                  :class="schedulerSubTab === sub.id ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-700/60 text-slate-400 hover:bg-slate-700 hover:text-slate-200'">
+            <span x-text="sub.icon"></span>
+            <span x-text="t('sch_' + sub.id)"></span>
+          </button>
+        </template>
+        <div class="flex-1"></div>
+        <button x-show="schedulerSubTab === 'list'" @click="openNewTask()"
+                class="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-all cursor-pointer">
+          + <span x-text="t('sch_new_task')"></span>
+        </button>
+      </div>
+
+      <!-- ── Module 1: Task List ── -->
+      <div x-show="schedulerSubTab === 'list'" class="flex-1 overflow-y-auto p-4">
+        <!-- Filter / Sort bar -->
+        <div class="flex items-center gap-2 mb-4 flex-wrap">
+          <select x-model="schedulerFilter" @change="fetchSchedules()"
+                  class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 outline-none cursor-pointer">
+            <option value="all" x-text="t('sch_status_all')"></option>
+            <option value="running" x-text="t('sch_status_running')"></option>
+            <option value="disabled" x-text="t('sch_status_disabled')"></option>
+            <option value="failed" x-text="t('sch_status_failed')"></option>
+          </select>
+          <select x-model="schedulerSort" @change="fetchSchedules()"
+                  class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 outline-none cursor-pointer">
+            <option value="next_run" x-text="t('sch_sort_next_run')"></option>
+            <option value="name" x-text="t('sch_sort_name')"></option>
+            <option value="created" x-text="t('sch_sort_created')"></option>
+          </select>
+          <template x-if="schedulerSelectedIds.length > 0">
+            <div class="flex gap-1">
+              <button @click="batchToggleSchedules(true)" class="text-xs px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-white cursor-pointer" x-text="t('sch_batch_enable')"></button>
+              <button @click="batchToggleSchedules(false)" class="text-xs px-2 py-1 rounded bg-amber-700 hover:bg-amber-600 text-white cursor-pointer" x-text="t('sch_batch_disable')"></button>
+            </div>
+          </template>
+          <div class="flex-1"></div>
+          <span class="text-xs text-slate-500" x-text="schedules.length + ' tasks'"></span>
+        </div>
+
+        <!-- Task cards -->
+        <div x-show="schedules.length === 0" class="text-center py-16">
+          <div class="text-4xl mb-3">⏰</div>
+          <div class="text-sm text-slate-400 font-medium" x-text="t('sch_no_tasks')"></div>
+          <div class="text-xs text-slate-500 mt-1" x-text="t('sch_no_tasks_desc')"></div>
+        </div>
+
+        <div class="grid gap-3">
+          <template x-for="task in schedules" :key="task.id">
+            <div class="bg-slate-800/80 border border-slate-700/60 rounded-xl p-4 hover:border-slate-600 transition-all">
+              <div class="flex items-start gap-3">
+                <input type="checkbox" :value="task.id" x-model="schedulerSelectedIds"
+                       class="mt-1 accent-blue-500 cursor-pointer" />
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="text-sm font-semibold text-slate-200 truncate" x-text="task.name || task.task || task.id"></span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                          :class="{
+                            'bg-emerald-900/60 text-emerald-300': task.enabled !== false && task.last_status !== 'failure',
+                            'bg-slate-700 text-slate-400': task.enabled === false,
+                            'bg-red-900/60 text-red-300': task.last_status === 'failure'
+                          }"
+                          x-text="task.enabled === false ? t('sch_status_disabled') : (task.last_status === 'failure' ? t('sch_status_failed') : t('sch_status_running'))"></span>
+                    <span x-show="task.priority && task.priority !== 5" class="text-[10px] px-1 py-0.5 rounded bg-amber-900/50 text-amber-300">P<span x-text="task.priority"></span></span>
+                  </div>
+                  <div x-show="task.description" class="text-xs text-slate-400 mb-2 truncate" x-text="task.description"></div>
+                  <div class="flex items-center gap-3 text-[11px] text-slate-500">
+                    <span x-text="t('sch_next_run') + ': ' + (task._next_run || t('sch_never'))"></span>
+                    <span x-show="task.last_run_at" x-text="t('sch_last_run') + ': ' + (task.last_run_at || '').substring(0,16)"></span>
+                  </div>
+                  <div x-show="task.tags && task.tags.length" class="flex gap-1 mt-2">
+                    <template x-for="tag in (task.tags||[]).slice(0,5)" :key="tag">
+                      <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400" x-text="tag"></span>
+                    </template>
+                  </div>
+                </div>
+                <div class="flex items-center gap-1 flex-none">
+                  <button @click="testExecuteTask(task.id)" class="p-1.5 rounded hover:bg-slate-700 text-slate-400 hover:text-blue-300 transition-all cursor-pointer" title="Test Execute">▶</button>
+                  <button @click="openEditTask(task.id)" class="p-1.5 rounded hover:bg-slate-700 text-slate-400 hover:text-yellow-300 transition-all cursor-pointer" title="Edit">✏️</button>
+                  <button @click="toggleSchedule(task.id)" class="p-1.5 rounded hover:bg-slate-700 text-slate-400 hover:text-green-300 transition-all cursor-pointer"
+                          :title="task.enabled ? t('sch_disable') : t('sch_enable')" x-text="task.enabled ? '⏸' : '▶'"></button>
+                  <button @click="duplicateSchedule(task.id)" class="p-1.5 rounded hover:bg-slate-700 text-slate-400 hover:text-cyan-300 transition-all cursor-pointer" title="Duplicate">📋</button>
+                  <button @click="deleteSchedule(task.id)" class="p-1.5 rounded hover:bg-slate-700 text-slate-400 hover:text-red-400 transition-all cursor-pointer" title="Delete">🗑</button>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- ── Module 2: Task Editor ── -->
+      <div x-show="schedulerSubTab === 'editor'" class="flex-1 overflow-y-auto p-4">
+        <div class="max-w-3xl mx-auto">
+          <!-- Editor tabs -->
+          <div class="flex gap-1 mb-4">
+            <template x-for="et in [{id:'basic',icon:'📝'},{id:'trigger',icon:'⏰'},{id:'execution',icon:'⚙️'},{id:'notif',icon:'🔔'}]" :key="et.id">
+              <button @click="editorTab = et.id"
+                      class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
+                      :class="editorTab === et.id ? 'bg-indigo-600 text-white' : 'bg-slate-700/60 text-slate-400 hover:bg-slate-700'">
+                <span x-text="et.icon"></span> <span x-text="t('sch_' + et.id)"></span>
+              </button>
+            </template>
+          </div>
+
+          <!-- Tab: Basic -->
+          <div x-show="editorTab === 'basic'" class="space-y-4">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1" x-text="t('sch_name')"></label>
+              <input x-model="editorForm.name" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500" placeholder="My Scheduled Task" />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1" x-text="t('sch_description')"></label>
+              <textarea x-model="editorForm.description" rows="3" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500 resize-none"></textarea>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1" x-text="t('sch_tags') + ' (' + t('sch_tags_hint') + ')'"></label>
+              <input x-model="editorForm.tags" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500" placeholder="monitoring, daily, report" />
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs text-slate-400 mb-1" x-text="t('sch_priority')"></label>
+                <input type="number" min="1" max="10" x-model.number="editorForm.priority" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500" />
+              </div>
+              <div>
+                <label class="block text-xs text-slate-400 mb-1" x-text="t('sch_timeout')"></label>
+                <input type="number" min="10" x-model.number="editorForm.timeout_sec" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500" />
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1" x-text="t('sch_concurrency')"></label>
+              <select x-model="editorForm.concurrency_policy" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none cursor-pointer">
+                <option value="skip" x-text="t('sch_concurrency_skip')"></option>
+                <option value="queue" x-text="t('sch_concurrency_queue')"></option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Tab: Trigger -->
+          <div x-show="editorTab === 'trigger'" class="space-y-4">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1" x-text="t('sch_trigger_type')"></label>
+              <select x-model="editorForm.trigger.type" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none cursor-pointer">
+                <option value="cron" x-text="t('sch_trigger_cron')"></option>
+                <option value="interval" x-text="t('sch_trigger_interval')"></option>
+                <option value="once" x-text="t('sch_trigger_once')"></option>
+              </select>
+            </div>
+
+            <!-- Cron config -->
+            <div x-show="editorForm.trigger.type === 'cron'" class="space-y-3">
+              <div>
+                <label class="block text-xs text-slate-400 mb-1" x-text="t('sch_trigger_cron')"></label>
+                <input x-model="editorForm.trigger.cron_expr"
+                       class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-emerald-300 focus:outline-none focus:border-blue-500"
+                       :placeholder="t('sch_cron_hint')" />
+              </div>
+              <div class="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3">
+                <div class="text-xs text-slate-400 mb-2 font-medium" x-text="t('sch_cron_visual')"></div>
+                <div class="grid grid-cols-5 gap-2">
+                  <div>
+                    <label class="text-[10px] text-slate-500 block mb-0.5" x-text="t('sch_cron_min')"></label>
+                    <input x-model="cronBuilder.minute" @input="buildCronFromBuilder()" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label class="text-[10px] text-slate-500 block mb-0.5" x-text="t('sch_cron_hour')"></label>
+                    <input x-model="cronBuilder.hour" @input="buildCronFromBuilder()" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label class="text-[10px] text-slate-500 block mb-0.5" x-text="t('sch_cron_dom')"></label>
+                    <input x-model="cronBuilder.dom" @input="buildCronFromBuilder()" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label class="text-[10px] text-slate-500 block mb-0.5" x-text="t('sch_cron_mon')"></label>
+                    <input x-model="cronBuilder.month" @input="buildCronFromBuilder()" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label class="text-[10px] text-slate-500 block mb-0.5" x-text="t('sch_cron_dow')"></label>
+                    <input x-model="cronBuilder.dow" @input="buildCronFromBuilder()" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none" />
+                  </div>
+                </div>
+              </div>
+              <div class="grid grid-cols-5 gap-1">
+                <button @click="cronBuilder={minute:'0',hour:'8',dom:'*',month:'*',dow:'*'};buildCronFromBuilder()" class="text-[10px] px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 cursor-pointer">Daily 08:00</button>
+                <button @click="cronBuilder={minute:'30',hour:'9',dom:'*',month:'*',dow:'1'};buildCronFromBuilder()" class="text-[10px] px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 cursor-pointer">Mon 09:30</button>
+                <button @click="cronBuilder={minute:'0',hour:'*/2',dom:'*',month:'*',dow:'*'};buildCronFromBuilder()" class="text-[10px] px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 cursor-pointer">Every 2h</button>
+                <button @click="cronBuilder={minute:'0',hour:'0',dom:'1',month:'*',dow:'*'};buildCronFromBuilder()" class="text-[10px] px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 cursor-pointer">Monthly 1st</button>
+                <button @click="cronBuilder={minute:'*/15',hour:'*',dom:'*',month:'*',dow:'*'};buildCronFromBuilder()" class="text-[10px] px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 cursor-pointer">Every 15m</button>
+              </div>
+            </div>
+
+            <!-- Interval config -->
+            <div x-show="editorForm.trigger.type === 'interval'" class="space-y-3">
+              <div>
+                <label class="block text-xs text-slate-400 mb-1" x-text="t('sch_interval_sec')"></label>
+                <input type="number" min="60" x-model.number="editorForm.trigger.interval_sec" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500" />
+              </div>
+              <div class="text-xs text-slate-500">
+                <span x-text="Math.floor(editorForm.trigger.interval_sec / 3600) + 'h ' + Math.floor((editorForm.trigger.interval_sec % 3600) / 60) + 'm'"></span>
+              </div>
+            </div>
+
+            <!-- One-time config -->
+            <div x-show="editorForm.trigger.type === 'once'" class="space-y-3">
+              <div>
+                <label class="block text-xs text-slate-400 mb-1" x-text="t('sch_run_once_at')"></label>
+                <input type="datetime-local" x-model="editorForm.trigger.run_once_at" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500" />
+              </div>
+            </div>
+
+            <!-- Retry config -->
+            <div class="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 space-y-3">
+              <div class="text-xs text-slate-400 font-medium">Retry Settings</div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5" x-text="t('sch_retry_count')"></label>
+                  <input type="number" min="0" max="10" x-model.number="editorForm.retry.count" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none" />
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5" x-text="t('sch_retry_backoff')"></label>
+                  <input type="number" min="1" x-model.number="editorForm.retry.backoff_base_sec" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab: Execution -->
+          <div x-show="editorTab === 'execution'" class="space-y-4">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1" x-text="t('sch_script_path')"></label>
+              <input x-model="editorForm.execution.script_path" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-blue-500" placeholder="scripts/daily_weather.py" />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1" x-text="t('sch_arguments') + ' (JSON)'"></label>
+              <input x-model="editorForm.execution.args_str" @change="try{editorForm.execution.args=JSON.parse($el.value||'[]')}catch(e){}"
+                     :value="JSON.stringify(editorForm.execution.args||[])"
+                     class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500" placeholder='["arg1"]' />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1" x-text="t('sch_env_vars') + ' (key=value, one per line)'"></label>
+              <textarea x-model="editorForm.execution.env_str"
+                        @change="try{const o={};($el.value||'').split('\n').filter(l=>l.includes('=')).forEach(l=>{const[k,...v]=l.split('=');o[k.trim()]=v.join('=').trim()});editorForm.execution.env_vars=o}catch(e){}"
+                        :value="Object.entries(editorForm.execution.env_vars||{}).map(([k,v])=>k+'='+v).join('\n')"
+                        rows="4" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500 resize-none" placeholder="KEY=value"></textarea>
+            </div>
+          </div>
+
+          <!-- Tab: Notifications -->
+          <div x-show="editorTab === 'notif'" class="space-y-3">
+            <div class="text-xs text-slate-400" x-text="t('sch_notifications')"></div>
+            <template x-for="(notif, ni) in editorForm.notifications" :key="ni">
+              <div class="bg-slate-800/60 border border-slate-700/50 rounded-lg p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                  <select x-model="notif.type" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 outline-none cursor-pointer">
+                    <option value="feishu" x-text="t('sch_notif_feishu')"></option>
+                    <option value="email" x-text="t('sch_notif_email')"></option>
+                    <option value="downstream_task" x-text="t('sch_notif_downstream')"></option>
+                    <option value="silent" x-text="t('sch_notif_silent')"></option>
+                  </select>
+                  <div class="flex items-center gap-2">
+                    <label class="text-xs text-slate-400">
+                      <input type="checkbox" x-model="notif.enabled" class="mr-1 accent-blue-500" /> <span x-text="t('sch_enabled')"></span>
+                    </label>
+                    <button @click="editorForm.notifications.splice(ni, 1)" class="text-red-400 hover:text-red-300 text-xs cursor-pointer">✕</button>
+                  </div>
+                </div>
+                <div x-show="notif.type === 'feishu'">
+                  <input x-model="notif.webhook_url" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none" :placeholder="t('sch_webhook_url')" />
+                </div>
+                <div x-show="notif.type === 'email'" class="grid grid-cols-2 gap-2">
+                  <input x-model="notif.smtp_host" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none" placeholder="SMTP Host" />
+                  <input x-model="notif.recipients_str" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none" placeholder="email@example.com" />
+                </div>
+                <div x-show="notif.type === 'downstream_task'">
+                  <select x-model="notif.target_task_id" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 outline-none cursor-pointer">
+                    <option value="">-- Select Task --</option>
+                    <template x-for="s in schedules" :key="s.id">
+                      <option :value="s.id" x-text="s.name || s.id"></option>
+                    </template>
+                  </select>
+                </div>
+                <div x-show="notif.type !== 'silent'" class="flex items-center gap-2">
+                  <select x-model="notif.trigger_condition" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 outline-none cursor-pointer">
+                    <option value="on_failure" x-text="t('sch_notif_on_failure')"></option>
+                    <option value="on_success" x-text="t('sch_notif_on_success')"></option>
+                    <option value="on_n_failures" x-text="t('sch_notif_on_n_failures')"></option>
+                  </select>
+                  <input x-show="notif.trigger_condition === 'on_n_failures'" type="number" min="1" x-model.number="notif.trigger_count" class="w-16 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none" :placeholder="t('sch_notif_n_value')" />
+                </div>
+              </div>
+            </template>
+            <button @click="editorForm.notifications.push({type:'feishu',webhook_url:'',trigger_condition:'on_failure',trigger_count:1,enabled:true})"
+                    class="w-full py-2 rounded-lg border border-dashed border-slate-600 text-xs text-slate-400 hover:border-slate-500 hover:text-slate-300 transition-all cursor-pointer">+ <span x-text="t('sch_notifications')"></span></button>
+          </div>
+
+          <!-- Bottom actions -->
+          <div class="flex items-center gap-2 mt-6 pt-4 border-t border-slate-700">
+            <button @click="saveTask()" :disabled="editorSaving"
+                    class="px-5 py-2 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white transition-all cursor-pointer"
+                    x-text="editorSaving ? '...' : t('sch_save')"></button>
+            <button @click="schedulerSubTab = 'list'"
+                    class="px-5 py-2 rounded-lg text-xs font-medium bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all cursor-pointer"
+                    x-text="t('sch_cancel')"></button>
+            <div class="flex-1"></div>
+            <button x-show="editingTaskId" @click="testExecuteTask(editingTaskId)" :disabled="schedulerTestRunning"
+                    class="px-4 py-2 rounded-lg text-xs font-medium bg-amber-700 hover:bg-amber-600 disabled:opacity-40 text-white transition-all cursor-pointer"
+                    x-text="schedulerTestRunning ? t('sch_executing') : t('sch_test_run')"></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Module 3: Execution History ── -->
+      <div x-show="schedulerSubTab === 'history'" class="flex-1 overflow-y-auto p-4">
+        <div class="flex items-center gap-2 mb-4">
+          <select x-model="historyFilterTaskId" @change="fetchHistory(historyFilterTaskId, 1)"
+                  class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 outline-none cursor-pointer">
+            <option value="all" x-text="t('sch_status_all')"></option>
+            <template x-for="s in schedules" :key="s.id">
+              <option :value="s.id" x-text="s.name || s.id"></option>
+            </template>
+          </select>
+          <div class="flex-1"></div>
+          <span class="text-xs text-slate-500" x-text="historyTotal + ' records'"></span>
+        </div>
+
+        <div x-show="historyList.length === 0" class="text-center py-16">
+          <div class="text-3xl mb-2">📜</div>
+          <div class="text-xs text-slate-500" x-text="t('sch_history_no_records')"></div>
+        </div>
+
+        <div class="space-y-2">
+          <template x-for="h in historyList" :key="h.run_id">
+            <div class="bg-slate-800/80 border border-slate-700/60 rounded-lg px-4 py-3 flex items-center gap-3">
+              <span class="text-lg"
+                    :class="{'✅': h.status==='success', '❌': h.status==='failure', '⏱️': h.status==='timeout', '⏭️': h.status==='skipped'}[h.status] || '❓'"
+                    x-text="{'success':'✅','failure':'❌','timeout':'⏱️','skipped':'⏭️'}[h.status]||'❓'"></span>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs text-slate-300 font-mono" x-text="(h.started_at||'').substring(0,19)"></span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                        :class="{'bg-emerald-900/50 text-emerald-300': h.status==='success', 'bg-red-900/50 text-red-300': h.status==='failure', 'bg-amber-900/50 text-amber-300': h.status==='timeout'}"
+                        x-text="h.status"></span>
+                </div>
+                <div class="text-[11px] text-slate-500 mt-0.5">
+                  <span x-text="t('sch_history_duration') + ': ' + (h.duration_sec||0).toFixed(1) + 's'"></span>
+                  <span x-show="h.exit_code != null && h.exit_code !== 0" class="ml-2 text-red-400" x-text="'exit: ' + h.exit_code"></span>
+                </div>
+              </div>
+              <div class="flex gap-1">
+                <button @click="viewRunOutput(h)" class="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 cursor-pointer" x-text="t('sch_history_output')"></button>
+                <button @click="rerunHistory(h.run_id)" class="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 cursor-pointer" x-text="t('sch_history_rerun')"></button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- ── Module 4: Monitoring Dashboard ── -->
+      <div x-show="schedulerSubTab === 'dashboard'" class="flex-1 overflow-y-auto p-4">
+        <div x-show="schedulerDashboardLoading" class="text-center py-8 text-slate-500 text-xs">Loading...</div>
+        <div x-show="!schedulerDashboardLoading && schedulerDashboard">
+          <!-- Stat cards -->
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+            <div class="bg-slate-800/80 border border-slate-700/60 rounded-xl p-4">
+              <div class="text-xs text-slate-400" x-text="t('sch_today_executions')"></div>
+              <div class="text-2xl font-bold text-slate-200 mt-1" x-text="schedulerDashboard?.today_total || 0"></div>
+            </div>
+            <div class="bg-slate-800/80 border border-slate-700/60 rounded-xl p-4">
+              <div class="text-xs text-slate-400" x-text="t('sch_success_rate')"></div>
+              <div class="text-2xl font-bold mt-1"
+                   :class="schedulerDashboard?.success_rate >= 90 ? 'text-emerald-400' : schedulerDashboard?.success_rate >= 50 ? 'text-amber-400' : 'text-red-400'"
+                   x-text="(schedulerDashboard?.success_rate || 0) + '%'"></div>
+            </div>
+            <div class="bg-slate-800/80 border border-slate-700/60 rounded-xl p-4">
+              <div class="text-xs text-slate-400" x-text="t('sch_avg_duration')"></div>
+              <div class="text-2xl font-bold text-slate-200 mt-1" x-text="(schedulerDashboard?.avg_duration || 0).toFixed(1) + 's'"></div>
+            </div>
+            <div class="bg-slate-800/80 border border-slate-700/60 rounded-xl p-4">
+              <div class="text-xs text-slate-400" x-text="t('sch_recent_failures')"></div>
+              <div class="text-2xl font-bold mt-1"
+                   :class="(schedulerDashboard?.recent_failures||[]).length > 0 ? 'text-red-400' : 'text-emerald-400'"
+                   x-text="(schedulerDashboard?.recent_failures||[]).length"></div>
+            </div>
+          </div>
+
+          <!-- Trend chart (SVG) -->
+          <div class="bg-slate-800/80 border border-slate-700/60 rounded-xl p-4 mb-6">
+            <div class="text-xs text-slate-400 font-medium mb-3" x-text="t('sch_trend_7d')"></div>
+            <div class="relative" style="height: 160px;" x-show="schedulerTrend.length > 0" x-html="renderTrendSVG()"></div>
+            <div x-show="schedulerTrend.length === 0" class="text-center text-xs text-slate-500 py-8" x-text="t('sch_history_no_records')"></div>
+            <div class="flex gap-4 mt-2 text-[10px] text-slate-500">
+              <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-emerald-500 inline-block"></span> Success</span>
+              <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-red-500 inline-block" style="border-top:1px dashed"></span> Failure</span>
+            </div>
+          </div>
+
+          <!-- Recent failures -->
+          <div x-show="(schedulerDashboard?.recent_failures||[]).length > 0" class="bg-slate-800/80 border border-red-900/30 rounded-xl p-4">
+            <div class="text-xs text-red-400 font-medium mb-3" x-text="t('sch_recent_failures')"></div>
+            <div class="space-y-2">
+              <template x-for="f in (schedulerDashboard?.recent_failures||[]).slice(0,10)" :key="f.run_id">
+                <div class="flex items-center gap-2 text-xs">
+                  <span class="text-red-400">❌</span>
+                  <span class="text-slate-300 font-mono" x-text="(f.started_at||'').substring(0,19)"></span>
+                  <span class="text-slate-500" x-text="f.schedule_id"></span>
+                  <span class="text-slate-500" x-text="(f.duration_sec||0).toFixed(1) + 's'"></span>
+                  <span class="text-red-300 truncate flex-1" x-text="(f.stderr||'').substring(0,80)"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Test Execution Result Modal -->
+      <div x-show="schedulerTestResult" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+           @click.self="schedulerTestResult = null" @keydown.escape.window="schedulerTestResult = null">
+        <div class="bg-slate-800 border border-slate-700 rounded-xl max-w-lg w-full mx-4 p-5 shadow-2xl space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-semibold text-slate-200" x-text="t('sch_execution_result')"></span>
+            <button @click="schedulerTestResult = null" class="text-slate-400 hover:text-white cursor-pointer">✕</button>
+          </div>
+          <template x-if="schedulerTestResult">
+            <div class="space-y-2">
+              <div x-show="schedulerTestResult.ok && schedulerTestResult.result" class="flex items-center gap-2">
+                <span class="text-lg" x-text="schedulerTestResult.result?.status === 'success' ? '✅' : '❌'"></span>
+                <span class="text-xs font-medium"
+                      :class="schedulerTestResult.result?.status === 'success' ? 'text-emerald-400' : 'text-red-400'"
+                      x-text="schedulerTestResult.result?.status"></span>
+                <span class="text-xs text-slate-500" x-text="(schedulerTestResult.result?.duration_sec||0).toFixed(1) + 's'"></span>
+              </div>
+              <div x-show="schedulerTestResult.error" class="text-xs text-red-400 bg-red-950/50 rounded p-2" x-text="schedulerTestResult.error"></div>
+              <div x-show="schedulerTestResult.result?.stdout" class="space-y-1">
+                <div class="text-[10px] text-slate-500 font-medium uppercase">stdout</div>
+                <pre class="bg-slate-900 rounded p-2 text-xs text-emerald-300 font-mono overflow-x-auto max-h-40 whitespace-pre-wrap" x-text="schedulerTestResult.result?.stdout"></pre>
+              </div>
+              <div x-show="schedulerTestResult.result?.stderr" class="space-y-1">
+                <div class="text-[10px] text-slate-500 font-medium uppercase">stderr</div>
+                <pre class="bg-slate-900 rounded p-2 text-xs text-red-300 font-mono overflow-x-auto max-h-40 whitespace-pre-wrap" x-text="schedulerTestResult.result?.stderr"></pre>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- History Output Modal -->
+      <div x-show="historyOutputRun" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+           @click.self="historyOutputRun = null" @keydown.escape.window="historyOutputRun = null">
+        <div class="bg-slate-800 border border-slate-700 rounded-xl max-w-lg w-full mx-4 p-5 shadow-2xl space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-semibold text-slate-200" x-text="(historyOutputRun?.run_id||'')"></span>
+            <button @click="historyOutputRun = null" class="text-slate-400 hover:text-white cursor-pointer">✕</button>
+          </div>
+          <div class="flex items-center gap-2 text-xs">
+            <span x-text="{'success':'✅','failure':'❌','timeout':'⏱️','skipped':'⏭️'}[historyOutputRun?.status]||'❓'"></span>
+            <span class="text-slate-300" x-text="historyOutputRun?.status"></span>
+            <span class="text-slate-500" x-text="(historyOutputRun?.duration_sec||0).toFixed(1) + 's | exit: ' + (historyOutputRun?.exit_code??'N/A')"></span>
+          </div>
+          <div x-show="historyOutputRun?.stdout" class="space-y-1">
+            <div class="text-[10px] text-slate-500 font-medium uppercase">stdout</div>
+            <pre class="bg-slate-900 rounded p-2 text-xs text-emerald-300 font-mono overflow-x-auto max-h-40 whitespace-pre-wrap" x-text="historyOutputRun?.stdout"></pre>
+          </div>
+          <div x-show="historyOutputRun?.stderr" class="space-y-1">
+            <div class="text-[10px] text-slate-500 font-medium uppercase">stderr</div>
+            <pre class="bg-slate-900 rounded p-2 text-xs text-red-300 font-mono overflow-x-auto max-h-40 whitespace-pre-wrap" x-text="historyOutputRun?.stderr"></pre>
+          </div>
+          <div x-show="historyOutputRun?.error_stack" class="space-y-1">
+            <div class="text-[10px] text-slate-500 font-medium uppercase">error stack</div>
+            <pre class="bg-slate-900 rounded p-2 text-xs text-red-300 font-mono overflow-x-auto max-h-40 whitespace-pre-wrap" x-text="historyOutputRun?.error_stack"></pre>
+          </div>
+          <div class="flex justify-end">
+            <button @click="rerunHistory(historyOutputRun?.run_id); historyOutputRun = null"
+                    class="px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-700 hover:bg-amber-600 text-white cursor-pointer" x-text="t('sch_history_rerun')"></button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /scheduler -->
+
   </main>
 </div><!-- /main -->
 
@@ -2883,6 +3367,95 @@ function app() {
         tab_config: 'Config',
         tab_setup: 'Setup',
         tab_health: 'Health',
+        tab_scheduler: 'Scheduler',
+        sch_list: 'Task List',
+        sch_editor: 'Task Editor',
+        sch_history: 'History',
+        sch_dashboard: 'Dashboard',
+        sch_new_task: 'New Task',
+        sch_edit_task: 'Edit Task',
+        sch_name: 'Task Name',
+        sch_description: 'Description',
+        sch_tags: 'Tags',
+        sch_status_all: 'All',
+        sch_status_running: 'Running',
+        sch_status_disabled: 'Disabled',
+        sch_status_failed: 'Failed',
+        sch_sort_next_run: 'Next Run',
+        sch_sort_name: 'Name',
+        sch_sort_created: 'Created',
+        sch_batch_enable: 'Enable Selected',
+        sch_batch_disable: 'Disable Selected',
+        sch_duplicate: 'Duplicate',
+        sch_delete: 'Delete',
+        sch_enable: 'Enable',
+        sch_disable: 'Disable',
+        sch_test_run: 'Test Execute',
+        sch_save: 'Save',
+        sch_cancel: 'Cancel',
+        sch_trigger_type: 'Trigger Type',
+        sch_trigger_cron: 'Cron Expression',
+        sch_trigger_interval: 'Fixed Interval',
+        sch_trigger_once: 'One-time',
+        sch_cron_hint: 'e.g. 30 8 * * *',
+        sch_cron_visual: 'Visual Builder',
+        sch_interval_sec: 'Interval (sec)',
+        sch_run_once_at: 'Run at',
+        sch_script_path: 'Script Path',
+        sch_arguments: 'Arguments',
+        sch_env_vars: 'Env Variables',
+        sch_concurrency: 'Concurrency Policy',
+        sch_concurrency_skip: 'Skip if running',
+        sch_concurrency_queue: 'Queue',
+        sch_retry_count: 'Retry Count',
+        sch_retry_backoff: 'Backoff Base (sec)',
+        sch_timeout: 'Timeout (sec)',
+        sch_priority: 'Priority',
+        sch_notifications: 'Notifications',
+        sch_notif_feishu: 'Feishu Webhook',
+        sch_notif_email: 'Email SMTP',
+        sch_notif_downstream: 'Trigger Downstream',
+        sch_notif_silent: 'Silent Mode',
+        sch_notif_condition: 'Condition',
+        sch_notif_on_failure: 'On Failure',
+        sch_notif_on_n_failures: 'After N Failures',
+        sch_notif_on_success: 'On Success',
+        sch_notif_n_value: 'N',
+        sch_history_title: 'Execution History',
+        sch_history_status: 'Status',
+        sch_history_duration: 'Duration',
+        sch_history_started: 'Started',
+        sch_history_output: 'Output',
+        sch_history_rerun: 'Re-execute',
+        sch_history_no_records: 'No records',
+        sch_today_executions: "Today's Executions",
+        sch_success_rate: 'Success Rate',
+        sch_avg_duration: 'Avg Duration',
+        sch_recent_failures: 'Recent Failures',
+        sch_trend_7d: '7-Day Trend',
+        sch_trend_30d: '30-Day Trend',
+        sch_next_run: 'Next Run',
+        sch_last_run: 'Last Run',
+        sch_never: 'Never',
+        sch_confirm_delete: 'Delete this scheduled task?',
+        sch_created: 'Created',
+        sch_no_tasks: 'No scheduled tasks yet',
+        sch_no_tasks_desc: 'Click "New Task" to create your first scheduled task',
+        sch_executing: 'Executing...',
+        sch_execution_result: 'Execution Result',
+        sch_webhook_url: 'Webhook URL',
+        sch_enabled: 'Enabled',
+        sch_basic: 'Basic',
+        sch_trigger: 'Trigger',
+        sch_execution: 'Execution',
+        sch_notif: 'Notifications',
+        sch_close: 'Close',
+        sch_tags_hint: 'Comma-separated',
+        sch_cron_min: 'Minute',
+        sch_cron_hour: 'Hour',
+        sch_cron_dom: 'Day of Month',
+        sch_cron_mon: 'Month',
+        sch_cron_dow: 'Day of Week',
         uptime: 'Uptime: ',
         log_entries: 'Logs: ',
         first_run_prefix: 'First time using Rooster — please',
@@ -3226,6 +3799,95 @@ function app() {
         tab_config: '系统配置',
         tab_setup: '初始配置',
         tab_health: '健康诊断',
+        tab_scheduler: '定时任务',
+        sch_list: '任务列表',
+        sch_editor: '任务编辑',
+        sch_history: '执行历史',
+        sch_dashboard: '监控面板',
+        sch_new_task: '新建任务',
+        sch_edit_task: '编辑任务',
+        sch_name: '任务名称',
+        sch_description: '任务描述',
+        sch_tags: '标签',
+        sch_status_all: '全部',
+        sch_status_running: '运行中',
+        sch_status_disabled: '已禁用',
+        sch_status_failed: '已失败',
+        sch_sort_next_run: '下次执行',
+        sch_sort_name: '名称',
+        sch_sort_created: '创建时间',
+        sch_batch_enable: '批量启用',
+        sch_batch_disable: '批量禁用',
+        sch_duplicate: '复制',
+        sch_delete: '删除',
+        sch_enable: '启用',
+        sch_disable: '禁用',
+        sch_test_run: '测试执行',
+        sch_save: '保存',
+        sch_cancel: '取消',
+        sch_trigger_type: '触发类型',
+        sch_trigger_cron: 'Cron 表达式',
+        sch_trigger_interval: '固定间隔',
+        sch_trigger_once: '单次执行',
+        sch_cron_hint: '如 30 8 * * *',
+        sch_cron_visual: '可视化生成',
+        sch_interval_sec: '间隔（秒）',
+        sch_run_once_at: '执行时间',
+        sch_script_path: '脚本路径',
+        sch_arguments: '参数',
+        sch_env_vars: '环境变量',
+        sch_concurrency: '并发策略',
+        sch_concurrency_skip: '跳过（如正在运行）',
+        sch_concurrency_queue: '排队等待',
+        sch_retry_count: '重试次数',
+        sch_retry_backoff: '退避基数（秒）',
+        sch_timeout: '超时（秒）',
+        sch_priority: '优先级',
+        sch_notifications: '通知渠道',
+        sch_notif_feishu: '飞书 Webhook',
+        sch_notif_email: '邮件 SMTP',
+        sch_notif_downstream: '触发下游任务',
+        sch_notif_silent: '静默模式',
+        sch_notif_condition: '触发条件',
+        sch_notif_on_failure: '失败时',
+        sch_notif_on_n_failures: '连续 N 次失败后',
+        sch_notif_on_success: '成功时',
+        sch_notif_n_value: 'N',
+        sch_history_title: '执行历史',
+        sch_history_status: '状态',
+        sch_history_duration: '耗时',
+        sch_history_started: '开始时间',
+        sch_history_output: '输出',
+        sch_history_rerun: '重新执行',
+        sch_history_no_records: '暂无记录',
+        sch_today_executions: '今日执行次数',
+        sch_success_rate: '成功率',
+        sch_avg_duration: '平均耗时',
+        sch_recent_failures: '近期失败',
+        sch_trend_7d: '7 天趋势',
+        sch_trend_30d: '30 天趋势',
+        sch_next_run: '下次执行',
+        sch_last_run: '上次执行',
+        sch_never: '从未执行',
+        sch_confirm_delete: '确认删除此定时任务？',
+        sch_created: '创建时间',
+        sch_no_tasks: '暂无定时任务',
+        sch_no_tasks_desc: '点击「新建任务」创建你的第一个定时任务',
+        sch_executing: '执行中...',
+        sch_execution_result: '执行结果',
+        sch_webhook_url: 'Webhook 地址',
+        sch_enabled: '已启用',
+        sch_basic: '基本信息',
+        sch_trigger: '触发配置',
+        sch_execution: '执行内容',
+        sch_notif: '通知渠道',
+        sch_close: '关闭',
+        sch_tags_hint: '逗号分隔',
+        sch_cron_min: '分钟',
+        sch_cron_hour: '小时',
+        sch_cron_dom: '日期',
+        sch_cron_mon: '月份',
+        sch_cron_dow: '星期',
         uptime: '运行: ',
         log_entries: '日志: ',
         first_run_prefix: '首次使用 Rooster — 请先',
@@ -3583,6 +4245,7 @@ function app() {
       { id: 'config',    icon: '⚙️',  label: 'Config' },
       { id: 'setup',     icon: '🔑', label: 'Setup' },
       { id: 'health',    icon: '🩺', label: 'Health' },
+      { id: 'scheduler', icon: '⏰', label: 'Scheduler' },
     ],
 
     // ── Data stores ─────────────────────────────────────────
@@ -3591,6 +4254,41 @@ function app() {
     errors: [],   // { id, ts, excType, message, traceback, context, agent, suggestion, expanded, showRaw, _raw }
     tools:  [],   // { id, ts, toolName, kit, args, response, status, durationMs, argsOpen, respOpen }
     config: null,
+
+    // ── Scheduler state ─────────────────────────────────────
+    schedulerSubTab: 'list',
+    schedules: [],
+    schedulesLoading: false,
+    schedulerFilter: 'all',
+    schedulerSort: 'next_run',
+    schedulerSelectedIds: [],
+    editingTaskId: null,
+    editorTab: 'basic',
+    editorSaving: false,
+    editorForm: {
+      name: '', description: '', tags: '',
+      trigger: { type: 'cron', cron_expr: '0 8 * * *', interval_sec: 3600, run_once_at: '' },
+      execution: { script_path: '', args: [], env_vars: {}, working_dir: null },
+      concurrency_policy: 'skip',
+      retry: { count: 0, backoff_base_sec: 5, backoff_max_sec: 300 },
+      timeout_sec: 3600,
+      priority: 5,
+      notifications: [],
+      variables: { global: {}, task: {} },
+      history_retention_days: 30,
+    },
+    historyList: [],
+    historyLoading: false,
+    historyPage: 1,
+    historyTotal: 0,
+    historyFilterTaskId: 'all',
+    historyOutputRun: null,
+    schedulerDashboard: null,
+    schedulerTrend: [],
+    schedulerDashboardLoading: false,
+    schedulerTestResult: null,
+    schedulerTestRunning: false,
+    cronBuilder: { minute: '0', hour: '8', dom: '*', month: '*', dow: '*' },
 
     // ── Setup Wizard ─────────────────────────────────────────
     setupForm: {
@@ -3866,6 +4564,7 @@ function app() {
         logs:   this.logs.length > 999 ? '999+' : this.logs.length,
         errors: this.errorCount,
         tools:  this.tools.length,
+        scheduler: this.schedules.filter(s => s.last_status === 'failure').length || 0,
       };
       return map[id] || 0;
     },
@@ -3887,6 +4586,193 @@ function app() {
       if (id === 'setup') { this.scanOllama(); this.loadSetupConfig(); }
       if (id === 'config' && !this.config) this.fetchConfig();
       if (id === 'downloader') this.checkAria2Status();
+      if (id === 'scheduler') { this.fetchSchedules(); this.fetchSchedulerDashboard(); }
+    },
+
+    // ── Scheduler methods ────────────────────────────────────
+    async fetchSchedules() {
+      this.schedulesLoading = true;
+      try {
+        const r = await fetch(`/api/scheduler/tasks?status=${this.schedulerFilter}&sort=${this.schedulerSort}`);
+        const d = await r.json();
+        if (d.ok) { this.schedules = d.tasks; }
+      } catch(e) { console.error('[scheduler] fetch failed', e); }
+      this.schedulesLoading = false;
+    },
+
+    async toggleSchedule(id) {
+      try {
+        const r = await fetch(`/api/scheduler/tasks/${id}/toggle`, { method: 'POST' });
+        const d = await r.json();
+        if (d.ok) { await this.fetchSchedules(); this.toast(t('sch_enable'), ''); }
+      } catch(e) { this.toast('Error', e.message, 'error'); }
+    },
+
+    async deleteSchedule(id) {
+      if (!confirm(t('sch_confirm_delete'))) return;
+      try {
+        await fetch(`/api/scheduler/tasks/${id}`, { method: 'DELETE' });
+        await this.fetchSchedules();
+      } catch(e) { this.toast('Error', e.message, 'error'); }
+    },
+
+    async duplicateSchedule(id) {
+      try {
+        const r = await fetch(`/api/scheduler/tasks/${id}/duplicate`, { method: 'POST' });
+        const d = await r.json();
+        if (d.ok) { await this.fetchSchedules(); this.toast(t('sch_duplicate'), ''); }
+      } catch(e) { this.toast('Error', e.message, 'error'); }
+    },
+
+    async batchToggleSchedules(enable) {
+      for (const id of this.schedulerSelectedIds) {
+        const task = this.schedules.find(s => s.id === id);
+        if (task && task.enabled !== enable) {
+          await fetch(`/api/scheduler/tasks/${id}/toggle`, { method: 'POST' });
+        }
+      }
+      this.schedulerSelectedIds = [];
+      await this.fetchSchedules();
+    },
+
+    openNewTask() {
+      this.editingTaskId = null;
+      this.editorTab = 'basic';
+      this.editorForm = {
+        name: '', description: '', tags: '',
+        trigger: { type: 'cron', cron_expr: '0 8 * * *', interval_sec: 3600, run_once_at: '' },
+        execution: { script_path: '', args: [], env_vars: {}, working_dir: null },
+        concurrency_policy: 'skip',
+        retry: { count: 0, backoff_base_sec: 5, backoff_max_sec: 300 },
+        timeout_sec: 3600,
+        priority: 5,
+        notifications: [],
+        variables: { global: {}, task: {} },
+        history_retention_days: 30,
+      };
+      this.cronBuilder = { minute: '0', hour: '8', dom: '*', month: '*', dow: '*' };
+      this.schedulerSubTab = 'editor';
+    },
+
+    async openEditTask(id) {
+      try {
+        const r = await fetch(`/api/scheduler/tasks/${id}`);
+        const d = await r.json();
+        if (d.ok) {
+          const task = d.task;
+          this.editingTaskId = id;
+          this.editorTab = 'basic';
+          this.editorForm = {
+            name: task.name || '',
+            description: task.description || '',
+            tags: (task.tags || []).join(', '),
+            trigger: task.trigger || { type: 'cron', cron_expr: '0 8 * * *', interval_sec: 3600, run_once_at: '' },
+            execution: task.execution || { script_path: '', args: [], env_vars: {}, working_dir: null },
+            concurrency_policy: task.concurrency_policy || 'skip',
+            retry: task.retry || { count: 0, backoff_base_sec: 5, backoff_max_sec: 300 },
+            timeout_sec: task.timeout_sec || 3600,
+            priority: task.priority || 5,
+            notifications: task.notifications || [],
+            variables: task.variables || { global: {}, task: {} },
+            history_retention_days: task.history_retention_days || 30,
+          };
+          // Parse cron into builder
+          const parts = (this.editorForm.trigger.cron_expr || '0 8 * * *').split(/\s+/);
+          this.cronBuilder = { minute: parts[0]||'0', hour: parts[1]||'8', dom: parts[2]||'*', month: parts[3]||'*', dow: parts[4]||'*' };
+          this.schedulerSubTab = 'editor';
+        }
+      } catch(e) { this.toast('Error', e.message, 'error'); }
+    },
+
+    buildCronFromBuilder() {
+      this.editorForm.trigger.cron_expr = [this.cronBuilder.minute, this.cronBuilder.hour, this.cronBuilder.dom, this.cronBuilder.month, this.cronBuilder.dow].join(' ');
+    },
+
+    async saveTask() {
+      this.editorSaving = true;
+      try {
+        const payload = { ...this.editorForm, tags: this.editorForm.tags.split(',').map(t => t.trim()).filter(Boolean) };
+        let r;
+        if (this.editingTaskId) {
+          r = await fetch(`/api/scheduler/tasks/${this.editingTaskId}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        } else {
+          r = await fetch('/api/scheduler/tasks', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        }
+        const d = await r.json();
+        if (d.ok) {
+          await this.fetchSchedules();
+          this.schedulerSubTab = 'list';
+          this.toast(t('sch_save'), '');
+        } else {
+          this.toast('Error', d.error || 'Save failed', 'error');
+        }
+      } catch(e) { this.toast('Error', e.message, 'error'); }
+      this.editorSaving = false;
+    },
+
+    async testExecuteTask(id) {
+      this.schedulerTestRunning = true;
+      this.schedulerTestResult = null;
+      try {
+        const r = await fetch(`/api/scheduler/tasks/${id}/execute`, { method: 'POST' });
+        const d = await r.json();
+        this.schedulerTestResult = d;
+      } catch(e) { this.schedulerTestResult = { ok: false, error: e.message }; }
+      this.schedulerTestRunning = false;
+    },
+
+    async fetchHistory(taskId, page) {
+      this.historyLoading = true;
+      try {
+        const id = taskId || this.historyFilterTaskId;
+        const url = id && id !== 'all'
+          ? `/api/scheduler/tasks/${id}/history?page=${page||1}&limit=50`
+          : `/api/scheduler/tasks/${(this.schedules[0]||{}).id||'__none__'}/history?page=${page||1}&limit=50`;
+        const r = await fetch(url);
+        const d = await r.json();
+        if (d.ok) { this.historyList = d.history; this.historyTotal = d.total; this.historyPage = d.page; }
+      } catch(e) { console.error('[scheduler] history fetch failed', e); }
+      this.historyLoading = false;
+    },
+
+    async rerunHistory(runId) {
+      try {
+        await fetch(`/api/scheduler/history/${runId}/rerun`, { method: 'POST' });
+        this.toast(t('sch_history_rerun'), '');
+      } catch(e) { this.toast('Error', e.message, 'error'); }
+    },
+
+    viewRunOutput(run) {
+      this.historyOutputRun = run;
+    },
+
+    async fetchSchedulerDashboard() {
+      this.schedulerDashboardLoading = true;
+      try {
+        const r = await fetch('/api/scheduler/dashboard?days=7');
+        const d = await r.json();
+        if (d.ok) {
+          this.schedulerDashboard = d;
+          this.schedulerTrend = d.trend || [];
+        }
+      } catch(e) { console.error('[scheduler] dashboard fetch failed', e); }
+      this.schedulerDashboardLoading = false;
+    },
+
+    renderTrendSVG() {
+      const data = this.schedulerTrend || [];
+      if (data.length === 0) return '<svg></svg>';
+      const W = 700, H = 150;
+      const n = data.length;
+      const maxVal = Math.max(...data.map(d => d.total), 1);
+      const step = W / Math.max(n - 1, 1);
+      const toY = (v) => H - (v / maxVal) * 130;
+      let successPts = data.map((d, i) => `${i * step},${toY(d.success)}`).join(' ');
+      let failPts = data.map((d, i) => `${i * step},${toY(d.failure)}`).join(' ');
+      let areaPts = `0,${H} ${successPts} ${(n-1)*step},${H}`;
+      let texts = data.map((d, i) => `<text x="${i*step}" y="${H-2}" class="text-[8px]" fill="#64748b" text-anchor="middle">${d.date.substring(5)}</text>`).join('');
+      let dots = data.map((d, i) => `<circle cx="${i*step}" cy="${toY(d.success)}" r="3" fill="#10b981"/>`).join('');
+      return `<svg width="100%" height="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><line x1="0" y1="0" x2="${W}" y2="0" stroke="#334155" stroke-width="0.5"/><line x1="0" y1="${H/2}" x2="${W}" y2="${H/2}" stroke="#334155" stroke-width="0.5" stroke-dasharray="4"/><line x1="0" y1="${H}" x2="${W}" y2="${H}" stroke="#334155" stroke-width="0.5"/><polygon points="${areaPts}" fill="rgba(16,185,129,0.15)" stroke="none"/><polyline points="${successPts}" fill="none" stroke="#10b981" stroke-width="2"/><polyline points="${failPts}" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4"/>${texts}${dots}</svg>`;
     },
 
     async checkAria2Status() {
