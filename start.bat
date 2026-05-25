@@ -44,8 +44,9 @@ timeout /t 1 /nobreak >nul
 
 :start
 echo.
-echo [Guardian] Starting...
+echo [Guardian] Starting in background mode (Daemon)...
 echo.
-python guardian.py
-echo.
-pause
+start "" pythonw guardian.py
+echo [Guardian] Process detached. You can safely close this window.
+timeout /t 3
+exit
