@@ -26,7 +26,103 @@ Rooster is a **multi-role Agent framework** that autonomously handles complex ta
 
 ---
 
-## 2. Directory Structure
+## 2. Technical Highlights
+
+### 1. Router: Five-Way Triage with Zero-Latency Rule Engine
+
+Every request is dispatched to the optimal path with minimal LLM overhead.
+
+- **Five route types**: `[TALK]` (~70%) → SoloRunner direct; `[DIRECT]` → skip planning; `[REFRAME]` → intent normalization; `[SCHEDULE]` → timed execution; `[BLOCK]` → safety intercept.
+- **Zero-latency static rules (0ms)**: Built-in trigger dictionaries for media (17 terms) and software (12 terms). `clean_target()` strips filler words and extracts the core entity — zero LLM calls for the vast majority of requests.
+- **Dynamic short-circuit routing**: On keyword match (e.g. `resource-downloader`), bypasses the Strategist entirely and routes parameters directly to tool execution. Trusted domain allowlist (15 entries) and blocklist (13 known ad-heavy sites) are applied automatically.
+- **LLM semantic fallback**: Only triggered when static rules miss. If the LLM determines a message doesn't need reframing, it returns `REDIRECT` to re-triage. The rule engine handles ~80% of high-frequency requests at 0ms cost.
+
+### 2. Security Sandbox & Privacy Isolation
+
+Defense-in-depth from network edge to LLM call layer. All interception supports graceful degradation — the system never blocks the user.
+
+**Privacy Funnel (data stays local unless confirmed clean)**
+
+| Layer | Mechanism | Latency |
+|-------|-----------|---------|
+| L0 Path Guard | `LOCAL_DIRS` path matching → forced local model routing | 0ms |
+| L1 PII Scan | Microsoft Presidio (zh + en) — phone (0.8), ID card (0.85), bank card (0.6) | 5–20ms |
+| Vision Redaction | PaddleOCR extracts screen text → Presidio scan → only safe text description sent to cloud; original screenshot never leaves the machine | per-frame |
+
+**AdvancedGuard LLM Defense**
+- **Jailbreak interception**: Three-tier regex matrix blocking DAN-mode, "ignore previous instructions", and unrestricted roleplay attempts.
+- **Output injection blocking**: Tool return content (browser, file reads) is scanned in real time to prevent hidden instructions from hijacking the Agent.
+- **Skill supply-chain scanning**: Third-party skill packages (`SKILL.md`) are statically analyzed on mount — blocks `eval`/base64 obfuscation, hidden network requests, and embedded system commands.
+
+**Runtime Sandbox**
+- `PathGuard`: `os.path.realpath` prefix validation blocks symlink and `../` traversal attacks.
+- `StateGuard`: Cross-process atomic lock (RSA-Synchronizer) eliminates race conditions in multi-agent concurrent writes.
+- Tool call rate limiting prevents infinite loops caused by LLM hallucination.
+
+**Gateway & Audit**
+- API Key auth + Webhook HMAC-SHA256 + IP sliding-window rate limiting (100 req/min).
+- Secrets masking: API keys and tokens are irreversibly masked before log writes.
+- Hot-config key allowlist validation + oversized-value circuit breaker.
+
+### 3. UIA Matrix Scan + YOLO Visual Grounding
+
+No API access required from the target application — if it's on screen, Rooster can interact with it.
+
+- **UIA engine**: Reads all on-screen controls (type, name, position, state) via system accessibility APIs. Fast, deterministic, and reliable for standard UI.
+- **YOLO engine**: Ships with a 39 MB lightweight detection model — no extra download. Covers UIA blind spots: custom controls, game icons, and non-standard UI elements.
+- **Complementary operation**: `desktop_grounding_scan` handles full-scene element sensing; `desktop_act` handles precise click/input simulation. UIA ensures speed; YOLO ensures coverage.
+
+### 4. Guardian: Self-Healing Watchdog Process
+
+An external watchdog independent of the main process — survives main process crashes and enables true unattended operation.
+
+**Three parallel monitoring threads**
+
+| Thread | Mechanism | Trigger |
+|--------|-----------|---------|
+| Heartbeat | Poll `/api/health` every 30s | 3 consecutive failures → force-kill and restart |
+| Resource circuit breaker | Sample CPU/memory every 15s | CPU > 95% or RAM > 2 GB for 120s → force-kill |
+| Time wheel | Poll `schedules.json` every 60s | Dispatch scheduled tasks on time |
+
+**Automatic fault recovery**
+- **Missing package auto-install**: Catches `ModuleNotFoundError`, matches against a 23-entry safe library allowlist, and runs `pip install`. Allowlist prevents malicious injection.
+- **Port conflict resolution**: Cross-platform regex extraction of the occupied port and process termination.
+- **Service wakeup**: Automatically restarts `aria2c` and similar daemons when RPC is unresponsive.
+
+**Resilience controls**: circuit breaker (2 identical consecutive errors → stop retry), restart storm guard (5 restarts in 300s → alert and stop), exponential backoff with jitter, single-instance PID mutex, Feishu/DingTalk/Slack webhook alerts.
+
+### 5. Dual-Memory Self-Evolution + Auditor Quality Gate
+
+**Background self-evolution (non-blocking)**
+
+After each conversation turn, background analysis fires instantly without blocking the current user interaction. A local model (never cloud) analyzes the last 5 turns (200 chars/turn), detecting three signal types:
+
+| Signal | Example triggers | Write target |
+|--------|-----------------|--------------|
+| `CORRECTION` | "That's wrong", "You misunderstood" | `SOUL.md` → core behavior principles |
+| `PREFERENCE` | "From now on", "I prefer" | `USER.md` → user preference profile |
+| `MILESTONE` | "It's live", "Successfully done" | `USER.md` → current key projects |
+
+Core identity fields (Identity / Hard Limits / Memory Protocol) are code-level protected — the evolution engine cannot modify them.
+
+**Auditor quality gate**
+
+After Executor completes, an independent Auditor renders a final verdict:
+
+| Verdict | Meaning |
+|---------|---------|
+| `AFFIRM` | Approved — result delivered |
+| `REMAND` | Quality below standard — silently re-executed |
+| `REPLAN` | Path dead end — Strategist replans the task |
+| `CLOSURE` | Graceful shutdown — task cannot be completed |
+| `ESCALATE` | High-risk / permission block — escalates to human |
+
+`_robust_json_parse()` auto-repairs malformed LLM output (Markdown wrappers, trailing commas, Chinese quotes). Auditor timeouts degrade safely to `PASS_WITH_WARNING` — never blocking the user flow.
+
+
+---
+
+## 3. Directory Structure
 
 ```
 rooster/
@@ -191,7 +287,7 @@ rooster/
 
 ---
 
-## 3. Core Architecture
+## 4. Core Architecture
 
 ### Request Processing Flow
 
@@ -318,7 +414,7 @@ Multi-provider automatic failover, degrading by priority:
 
 ---
 
-## 4. Quick Start
+## 5. Quick Start
 
 ### Option A: Local Installation (Recommended)
 
@@ -374,7 +470,7 @@ The Setup panel also includes:
 
 ---
 
-## 5. Dashboard
+## 6. Dashboard
 
 Dashboard is a single-page web app (Alpine.js + Tailwind) with 11 panels:
 
@@ -394,7 +490,7 @@ Dashboard is a single-page web app (Alpine.js + Tailwind) with 11 panels:
 
 ---
 
-## 6. Integration Guide
+## 7. Integration Guide
 
 ### 6.1 WebSocket API (Recommended)
 
@@ -512,7 +608,7 @@ WS /v1/node/ws   — Controlled desktop node (with auth_required handshake)
 
 ---
 
-## 7. Key Configuration
+## 8. Key Configuration
 
 > See the `.env` file for the full list (80+ config items). Only core items listed here.
 
@@ -568,7 +664,7 @@ HF_ENDPOINT=https://huggingface.co        # HuggingFace mirror (China: hf-mirror
 
 ---
 
-## 8. Development
+## 9. Development
 
 ```bash
 # Install dev dependencies
@@ -625,7 +721,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ---
 
-## 9. Debugging Reference
+## 10. Debugging Reference
 
 | Issue | Check First |
 |:---|:---|
