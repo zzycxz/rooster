@@ -176,7 +176,7 @@ async def api_guardian_status():
 
     try:
         status_path = (
-            Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))))
+            Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
             / ".rooster"
             / "guardian_status.json"
         )
