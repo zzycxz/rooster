@@ -142,7 +142,7 @@ class StreamBuffer:
             if not self._buffer:
                 return
             try:
-                from gateway.dashboard_ws import broadcast_event
+                from dashboard.src.dashboard_ws import broadcast_event
 
                 for event in self._buffer:
                     await broadcast_event("stream", event.model_dump())

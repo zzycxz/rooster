@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["system"])
 
-# Shared state — wired by server.py
+# Shared state — wired by app.py
 _get_skill_loader_fn = None
 _env_local_path_fn = None
 
@@ -28,8 +28,6 @@ def wire(get_skill_loader_fn, env_local_path_fn):
 async def api_health():
     checks: Dict[str, Dict[str, Any]] = {}
 
-    # 检查是否有任意 LLM Provider 已配置
-    # Check if any LLM provider is configured
     _provider_keys = [
         "MIMO_KEY",
         "ZHIPU_KEY",
@@ -48,8 +46,6 @@ async def api_health():
     else:
         checks["llm_providers"] = {"ok": False, "msg": "未配置任何 LLM，请前往初始配置"}
 
-    # 检查 .env.local 是否存在
-    # Check if .env.local exists
     env_exists = os.path.exists(_env_local_path_fn())
     checks["env_local"] = {"ok": env_exists, "msg": "Found" if env_exists else "Not found"}
 
@@ -73,9 +69,15 @@ async def api_version():
     try:
         ver = importlib.metadata.version("rooster")
     except importlib.metadata.PackageNotFoundError:
-        toml_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "pyproject.toml"
-        )
+        # 动态探测 pyproject.toml 路径以适应不同的目录结构 (Dynamic check to support different layout structures)
+        d4 = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        toml_path = os.path.join(d4, "pyproject.toml")
+        if not os.path.exists(toml_path):
+            d5 = os.path.dirname(d4)
+            if os.path.exists(os.path.join(d5, "pyproject.toml")):
+                toml_path = os.path.join(d5, "pyproject.toml")
+            elif os.path.exists(os.path.join(os.getcwd(), "pyproject.toml")):
+                toml_path = os.path.join(os.getcwd(), "pyproject.toml")
         ver = "unknown"
         if os.path.exists(toml_path):
             for line in open(toml_path, encoding="utf-8"):
@@ -109,7 +111,6 @@ async def api_system_stats():
     import psutil
     import platform as _platform
 
-    # Non-blocking CPU read (returns immediately, uses internal counter)
     cpu_percent = psutil.cpu_percent(interval=0)
     cpu_count = psutil.cpu_count(logical=True)
     cpu_freq = psutil.cpu_freq()
@@ -133,7 +134,6 @@ async def api_system_stats():
 
     net = psutil.net_io_counters()
 
-    # Run expensive process scan in thread executor to avoid blocking
     def _scan_procs():
         procs = []
         for p in psutil.process_iter(["pid", "name", "memory_percent", "cpu_percent"]):
@@ -176,7 +176,7 @@ async def api_guardian_status():
 
     try:
         status_path = (
-            Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
+            Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))))
             / ".rooster"
             / "guardian_status.json"
         )
@@ -203,13 +203,14 @@ async def api_sessions_list():
         for sid, sess in sessions.items():
             title = sess.metadata.get("title")
             if not title:
-                # Lazily build title from first user message (single pass)
                 for m in sess.history:
-                    if m.role == "user":
-                        title = m.content[:15]
+                    if m.role == "user" and not m.content.startswith("<tool_response"):
+                        title = m.content[:20]
                         break
                 if not title:
-                    title = sess.history[-1].content[:30] if sess.history else "新对话"  # New conversation
+                    # Fall back to the first non-tool response message in the history
+                    valid_msgs = [m.content for m in sess.history if not m.content.startswith("<tool_response")]
+                    title = valid_msgs[-1][:30] if valid_msgs else "新对话"
             items.append(
                 {
                     "session_id": sid,

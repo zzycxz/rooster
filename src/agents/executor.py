@@ -577,7 +577,7 @@ class AgentExecutor:
                         {"role": "user", "content": "请根据以上工具执行结果，继续完成任务。", "_internal": True}
                     )
                 else:
-                    session_history.append({"role": "user", "content": combined_obs})
+                    session_history.append({"role": "user", "content": combined_obs, "_internal": True})
 
                 audit_manager.log_step_detail(config.session_id, step, "observation.txt", combined_obs)
 

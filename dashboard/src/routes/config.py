@@ -7,8 +7,8 @@ from typing import Dict, Any
 
 from fastapi import APIRouter, Body, HTTPException
 
-from ..auth import mask_secret
-from ..security import validate_config_keys, validate_config_values
+from gateway.auth import mask_secret
+from gateway.security import validate_config_keys, validate_config_values
 from utils.config import settings
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,16 @@ MASK_KEYS = frozenset(
 
 
 def _get_env_local_path() -> str:
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), ".env.local")
+    # 动态探测 .env.local 路径以适应不同的目录结构 (Dynamic check to support different layout structures)
+    d4 = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    if os.path.exists(os.path.join(d4, ".env.local")):
+        return os.path.join(d4, ".env.local")
+    d5 = os.path.dirname(d4)
+    if os.path.exists(os.path.join(d5, ".env.local")):
+        return os.path.join(d5, ".env.local")
+    if os.path.exists(os.path.join(os.getcwd(), ".env.local")):
+        return os.path.join(os.getcwd(), ".env.local")
+    return os.path.join(d4, ".env.local")
 
 
 def _mask_env_dict(data: Dict[str, Any]) -> Dict[str, Any]:

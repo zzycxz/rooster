@@ -89,7 +89,7 @@ rooster = "src.main:main_cli"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*"]
+include = ["src*", "dashboard*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

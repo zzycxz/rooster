@@ -306,7 +306,7 @@ class Guardian:
                 "--rpc-allow-origin-all",
                 "--daemon",
             ]
-            subprocess.run(cmd, capture_output=True, timeout=5)
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
             time.sleep(1)
             logger.info(f"✅ aria2c daemon started on port {aria2_port}.")
         except Exception as e:

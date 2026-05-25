@@ -141,9 +141,10 @@ class OpenAILikeClient(BaseModelClient):
                         yielded_any = True
                     elif accumulated_reasoning:
                         # Reasoning-only turn (e.g. standard text reply from a thinking model):
-                        # emit reasoning_content on a final delta so executor can persist it.
+                        # Fallback: if we only got reasoning and no actual content/tools,
+                        # inject the reasoning as content to prevent downstream JSON parse failures.
                         yield LLMResponseDelta(
-                            content="",
+                            content=accumulated_reasoning,
                             finish_reason=None,
                             reasoning_content=accumulated_reasoning,
                         )
@@ -202,12 +203,16 @@ class OpenAILikeClient(BaseModelClient):
                     logger.info(f"🔧 [OpenAILike] 非流式 tool_calls 收到: {len(tool_calls)} 个工具调用")
                 elif not content:
                     logger.warning(f"⚠️ 模型返回内容为空 | 原报文: {result}")
+                    if reasoning:
+                        content = reasoning
+                        logger.info("🔧 [OpenAILike] 回退机制：使用 reasoning_content 填充空 content")
 
                 return LLMResponseDelta(
                     content=str(content),
                     role=message.get("role"),
                     finish_reason=result["choices"][0].get("finish_reason"),
                     tool_calls=tool_calls,
+                    reasoning_content=reasoning,
                 )
             except (httpx.NetworkError, httpx.TimeoutException) as e:
                 # [Fix] 严禁返回内容负载，必须抛出异常以触发 LLMClient 的 Failover 机制

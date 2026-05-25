@@ -3,7 +3,7 @@ Python logging → Dashboard WebSocket bridge.
 
 Install once after the asyncio event loop is running:
 
-    from gateway.log_bridge import install_log_bridge
+    from dashboard.src.log_bridge import install_log_bridge
     install_log_bridge(loop=asyncio.get_running_loop())
 
 After that every log record from every logger is forwarded to all
@@ -27,13 +27,11 @@ class DashboardLogHandler(logging.Handler):
         self._loop = loop
 
     def emit(self, record: logging.LogRecord) -> None:  # type: ignore[override]
-        # Lazy import avoids circular dependency at module load time
         try:
             from .dashboard_ws import broadcast_event
-            from .auth import sanitize_log_message
+            from gateway.auth import sanitize_log_message
 
             raw_msg = self.format(record)
-            # Sanitize secrets before sending to browser
             safe_msg = sanitize_log_message(raw_msg)
 
             data: dict = {

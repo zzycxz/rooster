@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rooster-dashboard"
+version = "0.2.1"
+description = "Web dashboard for Rooster multi-agent OS"
+requires-python = ">=3.12"
+license = "MIT"
+
+dependencies = [
+    "rooster",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",
+    "E701",
+    "E731",
+    "E741",
+    "E402",
+    "F401",
+    "F403",
+    "F405",
+    "F841",
+]
