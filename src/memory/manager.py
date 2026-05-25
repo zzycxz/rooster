@@ -106,9 +106,20 @@ class MemoryManager:
             index=self._index if use_new_path else None,
         )
 
-        # ─── 5. 去重 + 审计 ───
-        self.deduplicator = MemoryDeduplicator(llm_client, model)
-        self.auditor = MemoryAuditor(llm_client, model)
+        # ─── 5. 去重 + 审计（使用本地模型，记忆数据不出本机）───
+        # ─── 5. Dedup + audit (use local model, memory data stays local) ───
+        _hk_client = llm_client
+        _hk_model = model
+        try:
+            from models.factory import ModelFactory
+            from utils.config import settings as _s
+
+            _hk_client = ModelFactory.get_client("local")
+            _hk_model = _s.LOCAL_MODEL or model
+        except Exception:
+            pass  # 本地模型不可用则用传入的 client / Fallback to passed-in client
+        self.deduplicator = MemoryDeduplicator(_hk_client, _hk_model)
+        self.auditor = MemoryAuditor(_hk_client, _hk_model)
 
         # ─── 6. 会话索引 ───
         self._session_indexer = None

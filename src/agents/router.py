@@ -106,7 +106,14 @@ class Router:
                 logger.info(f"用户拒绝子任务: {pending['subtask_id']}")
             return
 
-        evolution_engine = EvolutionEngine(llm_client=self.llm_client)
+        # 隐私：进化引擎使用本地模型 / Privacy: evolution engine uses local model
+        try:
+            from models.factory import ModelFactory
+
+            _evo_client = ModelFactory.get_client("local")
+        except Exception:
+            _evo_client = self.llm_client
+        evolution_engine = EvolutionEngine(llm_client=_evo_client)
 
         # 1a. Advanced Security: jailbreak detection (default OFF, enabled via ADVANCED_SECURITY=true)
         try:

@@ -51,24 +51,47 @@ class Auditor:
             },
         ]
 
-        # 2. 注入视觉证据（Base64 编码，兼容所有 LLM API）
-        # 2. Inject visual evidence (Base64 encoded, compatible with all LLM APIs)
+        # 2. 注入视觉证据 — 用文字描述替代 base64，截图不发出本机
+        # 2. Inject visual evidence — text description instead of base64, screenshots never leave machine
         snapshots_to_check = report.process_snapshots[-3:]
         has_images = False
         for i, snap_path in enumerate(snapshots_to_check):
             if os.path.exists(snap_path):
                 try:
-                    import base64
+                    # 本地 OCR 提取文字作为视觉证据 / Local OCR for text evidence
+                    from PIL import Image
+                    import numpy as np
 
-                    with open(snap_path, "rb") as img_f:
-                        b64 = base64.b64encode(img_f.read()).decode()
-                    ext = snap_path.rsplit(".", 1)[-1].lower()
-                    mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png"}.get(ext, "image/png")
-                    data_uri = f"data:{mime};base64,{b64}"
-                    content_list.append({"type": "image_url", "image_url": {"url": data_uri}})
+                    img = Image.open(snap_path)
+                    img_array = np.array(img)
+                    _ocr_text = ""
+                    try:
+                        from paddleocr import PaddleOCR
+
+                        ocr = PaddleOCR(use_angle_cls=False, lang="ch", show_log=False)
+                        ocr_results = ocr.ocr(img_array, cls=False)
+                        if ocr_results and ocr_results[0]:
+                            _ocr_text = " ".join(line[1][0] for line in ocr_results[0] if line and len(line) >= 2)
+                    except Exception:
+                        pass  # OCR 失败不卡用户 / OCR failure doesn't block
+
+                    if _ocr_text:
+                        content_list.append(
+                            {
+                                "type": "text",
+                                "text": f"### 📸 快照 OCR 文字证据 (Snapshot {i + 1})\n{_ocr_text[:1500]}",
+                            }
+                        )
+                    else:
+                        content_list.append(
+                            {
+                                "type": "text",
+                                "text": f"### 📸 快照 {i + 1}: (OCR 未提取到文字，快照文件: {snap_path})",
+                            }
+                        )
                     has_images = True
                 except Exception as img_err:
-                    logger.warning(f"⚠️ [Auditor] 快照读取失败: {snap_path}: {img_err}")
+                    logger.warning(f"⚠️ [Auditor] 快照处理失败: {snap_path}: {img_err}")
 
         # 3. 获取 Prompt 模板
         # 3. Get Prompt template
@@ -78,9 +101,9 @@ class Auditor:
 
         messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": content_list}]
 
-        # 4. 执行 LLM 请求
-        # 4. Execute LLM request
-        target_model = settings.AUDITOR_VISION_MODEL if has_images else settings.AUDITOR_TEXT_MODEL
+        # 4. 执行 LLM 请求（始终使用文本模型，不再需要 vision 模型）
+        # 4. Execute LLM request (always text model, vision model no longer needed)
+        target_model = settings.AUDITOR_TEXT_MODEL
         logger.info(
             f"🔍 [Auditor] 发起审计 LLM 调用: model={target_model}, has_images={has_images}, provider={self.llm_client.provider}"
         )

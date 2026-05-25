@@ -74,14 +74,20 @@ class PromptBuilder:
         desktop = os.path.join(home, "Desktop")
         documents = os.path.join(home, "Documents")
 
+        # 隐私：对外发 prompt 脱敏路径（隐藏用户名）
+        # Privacy: sanitize paths in outgoing prompts (hide username)
+        display_home = "~/"
+        display_desktop = "~/Desktop"
+        display_documents = "~/Documents"
+
         runtime_info = [
             "## Runtime Environment",
             f"- Current Time: {now.strftime('%Y-%m-%d %H:%M:%S')}",
             f"- Think Level: {params.think_level}",
             "- OS Standard Paths:",
-            f"  - Home: `{home}`",
-            f"  - Desktop: `{desktop}`",
-            f"  - Documents: `{documents}`",
+            f"  - Home: `{display_home}`",
+            f"  - Desktop: `{display_desktop}`",
+            f"  - Documents: `{display_documents}`",
             "  (Always prefer these absolute paths when users refer to 'Desktop' or 'Home')",
         ]
         return "\n".join(runtime_info)

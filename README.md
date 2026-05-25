@@ -199,29 +199,50 @@ rooster/
 User Message (CLI / Feishu / WebSocket / Dashboard)
     │
     ▼
-Router (Triage)
+Router (Triage) ─── Keyword / intent classification
     │
-    ├─ TALK ─────► SoloRunner (quick reply) ──► Response
-    ├─ BLOCK ────► Safety intercept ──► Response
-    ├─ SCHEDULE ─► Scheduled task registration → schedules.json
+    ├─ TALK (70%+) ──► SoloRunner (quick reply) ──► Response
+    ├─ BLOCK ────────► Safety intercept ──► Response
+    ├─ SCHEDULE ─────► Scheduled task registration → schedules.json
     │
-    ├─ DIRECT ───┐
-    │             │  (clear task, skip to planning)
-    │             ▼
-    └─ REFRAME ► Reframer (intent normalization) ───┐
-                       Vague → Structured            │
+    ├─ DIRECT ───────► ShortCircuit ──► MissionRunner (skip reframing)
+    │
+    └─ REFRAME ──────► Reframer (Semantic Cleaning Engine)  ◄── Only for sensitive/ambiguous intents
+                           │
+                           ├─ Static Rule Engine (local, 0ms, no LLM call)
+                           │   Movie/Software/Download → neutral tool instructions
+                           │   "download the movie Inception" → "resource-downloader(title=Inception, type=movie)"
+                           │   Bypasses LLM content moderation entirely
+                           │
+                           └─ LLM Reframing (fallback, when static rules miss)
+                                                     │
                                                      ▼
-                                            ShortCircuit (fast-path check)
-                                              ├─ Match → Direct execution (skip planning)
-                                              └─ No match ↓
                                              MissionRunner
+                                                   │
+                                                   ▼
+                                             Strategist (Planning Phase)
+                                             ├─ DAG decomposition: task → ordered subtasks
+                                             ├─ Dependency analysis: parallel grouping
+                                             └─ Domain routing: local vs cloud per subtask
                                                    │
                                              ┌─────┴─────┐
                                              ▼           ▼
-                                        Strategist   Executor
-                                        (DAG split)  (ReAct + tools)
+                                        Executor      Executor
+                                        (ReAct loop   (parallel
+                                         + 29 tools)   subtasks)
                                              │           │
                                              └─────┬─────┘
+                                                   ▼
+                                            ┌──────────────┐
+                                            │   Privacy    │
+                                            │   Router     │
+                                            │ ┌──────────┐ │
+                                            │ │L0: Folder│ │  LOCAL_DIRS → local model
+                                            │ │L1: PII   │ │  Presidio scan → local model
+                                            │ │L3: Policy│ │  Memory/Compaction → local
+                                            │ └──────────┘ │  Screenshots → OCR + strip
+                                            └──────────────┘
+                                                   │
                                                    ▼
                                                Auditor
                                               (quality review)

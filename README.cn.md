@@ -199,37 +199,58 @@ rooster/
 用户消息 (CLI / 飞书 / WebSocket / Dashboard)
     │
     ▼
-Router (分拣器)
+Router (分拣器) ─── 关键词 / 意图分类
     │
-    ├─ TALK ─────► SoloRunner (单轮快速) ──► 响应
-    ├─ BLOCK ────► 安全拦截 ──► 响应
-    ├─ SCHEDULE ─► 定时任务注册 → schedules.json
+    ├─ TALK (70%+) ──► SoloRunner (单轮快速回复) ──► 响应
+    ├─ BLOCK ────────► 安全拦截 ──► 响应
+    ├─ SCHEDULE ─────► 定时任务注册 → schedules.json
     │
-    ├─ DIRECT ───┐
-    │             │  (任务清晰，直达规划)
-    │             ▼
-    └─ REFRAME ► Reframer (意图重构) ────┐
-                    模糊需求 → 标准指令    │
-                                          ▼
-                                   ShortCircuit (短路检查)
-                                     ├─ 匹配 → 直通执行（跳过规划）
-                                     └─ 不匹配 ↓
-                                    MissionRunner
-                                          │
-                                    ┌─────┴─────┐
-                                    ▼           ▼
-                               Strategist   Executor
-                               (DAG 拆分)   (ReAct + 工具调度)
-                                    │           │
-                                    └─────┬─────┘
-                                          ▼
-                                      Auditor
-                                     (质量审计)
-                                          │
-                                    ┌─────┴─────┐
-                                    ▼           ▼
-                                 AFFIRM      REMAND / REPLAN / ESCALATE
-                                 (继续)      (重做 / 重规划 / 上报)
+    ├─ DIRECT ───────► ShortCircuit ──► MissionRunner（跳过语义清洗）
+    │
+    └─ REFRAME ──────► Reframer (语义清洗引擎)  ◄── 仅针对敏感/模糊意图
+                           │
+                           ├─ 静态规则引擎（本地，0ms，无需 LLM 调用）
+                           │   影视/软件/下载意图 → 中性工具指令
+                           │   "帮我下载XX电影" → "resource-downloader(title=XX, type=movie)"
+                           │   完全绕过大模型内容审核
+                           │
+                           └─ LLM 重构（兜底，静态规则未命中时）
+                                                     │
+                                                     ▼
+                                             MissionRunner
+                                                   │
+                                                   ▼
+                                             Strategist (规划阶段)
+                                             ├─ DAG 分解：任务 → 有序子任务
+                                             ├─ 依赖分析：并行分组
+                                             └─ 域路由：按子任务分配本地/云端
+                                                   │
+                                             ┌─────┴─────┐
+                                             ▼           ▼
+                                        Executor      Executor
+                                        (ReAct 循环    (并行
+                                         + 29 工具)    子任务)
+                                             │           │
+                                             └─────┬─────┘
+                                                   ▼
+                                            ┌──────────────┐
+                                            │   Privacy    │
+                                            │   Router     │
+                                            │ ┌──────────┐ │
+                                            │ │L0: 文件夹 │ │  LOCAL_DIRS → 本地模型
+                                            │ │L1: PII   │ │  Presidio 扫描 → 本地模型
+                                            │ │L3: 策略  │ │  记忆/压缩 → 本地
+                                            │ └──────────┘ │  截图 → OCR + 脱敏
+                                            └──────────────┘
+                                                   │
+                                                   ▼
+                                               Auditor
+                                              (质量审计)
+                                                   │
+                                             ┌─────┴─────┐
+                                             ▼           ▼
+                                           AFFIRM    REMAND / REPLAN / ESCALATE
+                                          (继续)     (重做 / 重规划 / 上报)
 ```
 
 ### 五层 System Prompt 架构
