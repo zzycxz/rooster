@@ -306,7 +306,12 @@ class Guardian:
                 "--rpc-allow-origin-all",
                 "--daemon",
             ]
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+            import platform
+            kwargs = {}
+            if platform.system() == "Windows":
+                kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+            
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kwargs)
             time.sleep(1)
             logger.info(f"✅ aria2c daemon started on port {aria2_port}.")
         except Exception as e:
