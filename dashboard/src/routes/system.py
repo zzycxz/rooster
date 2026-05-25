@@ -265,3 +265,67 @@ async def api_toolset_list():
 async def api_security_status():
     raw_paths = os.getenv("ALLOWED_PATHS", "")
     return {"ok": True, "is_wildcard_paths": "*" in raw_paths, "is_gateway_key_set": bool(settings.GATEWAY_API_KEY)}
+
+
+@router.get("/api/aria2/status")
+async def api_aria2_status():
+    """Check whether aria2c RPC is reachable."""
+    import http.client
+    port = int(os.environ.get("ARIA2_RPC_PORT", "6800"))
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+        conn.request(
+            "POST", "/jsonrpc",
+            body=b'{"jsonrpc":"2.0","id":"ping","method":"aria2.getVersion","params":[]}',
+            headers={"Content-Type": "application/json"},
+        )
+        resp = conn.getresponse()
+        conn.close()
+        running = resp.status < 400
+    except Exception:
+        running = False
+    return {"ok": True, "running": running, "port": port}
+
+
+@router.post("/api/aria2/start")
+async def api_aria2_start():
+    """Attempt to launch aria2c as a background daemon."""
+    import asyncio
+    import http.client
+    import shutil
+    import subprocess
+    port = int(os.environ.get("ARIA2_RPC_PORT", "6800"))
+    token = os.environ.get("ARIA2_TOKEN") or os.environ.get("ARIA2_RPC_SECRET", "")
+    aria2c_bin = shutil.which("aria2c")
+    if not aria2c_bin:
+        return {"ok": False, "started": False, "error": "aria2c not found in PATH. Install via: winget install aria2  (Windows) or  brew install aria2  (macOS) or  apt install aria2  (Linux)"}
+    try:
+        cmd = [
+            aria2c_bin,
+            "--enable-rpc",
+            "--rpc-listen-all=true",
+            f"--rpc-listen-port={port}",
+            "--rpc-allow-origin-all",
+            "--daemon",
+        ]
+        if token:
+            cmd.append(f"--rpc-secret={token}")
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        await asyncio.sleep(1.2)
+        # Verify it actually started
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+            conn.request(
+                "POST", "/jsonrpc",
+                body=b'{"jsonrpc":"2.0","id":"ping","method":"aria2.getVersion","params":[]}',
+                headers={"Content-Type": "application/json"},
+            )
+            resp = conn.getresponse()
+            conn.close()
+            started = resp.status < 400
+        except Exception:
+            started = False
+        return {"ok": True, "started": started, "port": port}
+    except Exception as exc:
+        logger.warning(f"Failed to start aria2c: {exc}")
+        return {"ok": False, "started": False, "error": str(exc)}

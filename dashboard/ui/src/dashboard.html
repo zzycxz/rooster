@@ -568,14 +568,52 @@
         </div>
       </div>
       
-      <!-- AriaNg Iframe / Fallback Container -->
-      <div class="flex-1 w-full h-full relative bg-slate-900/40">
-        <iframe 
-          :src="getAriaNgUrl()" 
-          class="w-full h-full border-none bg-slate-950"
+      <!-- AriaNg Iframe / Status Container -->
+      <div class="flex-1 w-full h-full relative bg-slate-900/40 flex flex-col">
+
+        <!-- Checking state -->
+        <div x-show="aria2Status === null || aria2Status === 'checking'"
+             class="flex flex-col items-center justify-center flex-1 gap-3 text-slate-400 text-sm">
+          <span class="animate-pulse text-2xl">⬇️</span>
+          <span x-text="t('aria2_checking')"></span>
+        </div>
+
+        <!-- Running: show iframe -->
+        <iframe
+          x-show="aria2Status === 'running'"
+          :src="aria2Status === 'running' ? getAriaNgUrl() : 'about:blank'"
+          class="w-full h-full border-none bg-slate-950 flex-1"
           allow="clipboard-read; clipboard-write"
           style="min-height: 450px;"
         ></iframe>
+
+        <!-- Not running / not installed: friendly error panel -->
+        <div x-show="aria2Status === 'stopped' || aria2Status === 'not_installed'"
+             class="flex flex-col items-center justify-center flex-1 gap-4 text-center px-8 py-12">
+          <div class="text-5xl">⬇️</div>
+          <div class="text-slate-200 font-semibold text-base" x-text="t('aria2_not_running_title')"></div>
+          <div class="text-slate-400 text-xs max-w-md leading-relaxed" x-text="t('aria2_not_running_desc')"></div>
+          <div x-show="aria2Status === 'not_installed' && aria2Error"
+               class="text-red-300 text-xs bg-red-950/40 border border-red-900/50 rounded px-3 py-2 max-w-md"
+               x-text="aria2Error"></div>
+          <div class="flex flex-wrap gap-2 justify-center mt-1">
+            <button @click="startAria2()"
+                    x-show="aria2Status !== 'not_installed'"
+                    class="text-xs px-4 py-1.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white rounded font-semibold transition-all cursor-pointer"
+                    x-text="t('aria2_start')"></button>
+            <button @click="checkAria2Status()"
+                    class="text-xs px-4 py-1.5 bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-200 rounded font-semibold transition-all cursor-pointer"
+                    x-text="t('aria2_retry')"></button>
+          </div>
+          <div class="text-slate-500 text-xs mt-2 leading-relaxed">
+            <span x-text="t('aria2_install_hint')"></span>
+            <code class="bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded mx-1">winget install aria2</code>
+            <span x-text="t('aria2_install_or')"></span>
+            <a href="https://aria2.github.io/" target="_blank"
+               class="text-blue-400 hover:underline ml-1">aria2.github.io</a>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -2833,6 +2871,13 @@ function app() {
         tab_downloader: 'Downloader',
         downloader_desc: 'Full-featured visual download manager based on AriaNg',
         open_new_window: 'Open AriaNg in New Window',
+        aria2_checking: 'Checking aria2c status…',
+        aria2_not_running_title: 'aria2c is not running',
+        aria2_not_running_desc: 'The file download panel requires the aria2c download engine. Please install aria2c and ensure it is available in your PATH, then click "Start aria2c".',
+        aria2_start: '🚀 Start aria2c',
+        aria2_retry: '🔄 Retry',
+        aria2_install_hint: 'Install:',
+        aria2_install_or: 'or visit',
         tab_memory: 'Memory',
         tab_metrics: 'Metrics',
         tab_config: 'Config',
@@ -3169,6 +3214,13 @@ function app() {
         tab_downloader: '文件下载',
         downloader_desc: '基于 AriaNg 的全功能可视化下载管理器',
         open_new_window: '在新窗口打开 AriaNg',
+        aria2_checking: '正在检测 aria2c 状态…',
+        aria2_not_running_title: 'aria2c 未运行',
+        aria2_not_running_desc: '文件下载功能需要 aria2c 下载引擎支持。请确保已安装 aria2c 并可在命令行中调用，然后点击「启动 aria2c」。',
+        aria2_start: '🚀 启动 aria2c',
+        aria2_retry: '🔄 重新检测',
+        aria2_install_hint: '安装:',
+        aria2_install_or: '或访问',
         tab_memory: '长期记忆',
         tab_metrics: '性能监控',
         tab_config: '系统配置',
@@ -3599,6 +3651,11 @@ function app() {
     showConfigRestartModal: false,
     showStopConfirm: false,
     setupSaved:     false,
+
+    // ── Downloader (aria2c) ───────────────────────────────────
+    aria2Status: null,   // null=unchecked | 'checking' | 'running' | 'stopped' | 'not_installed'
+    aria2Port:   6800,
+    aria2Error:  '',
     setupError:     '',
     setupTestLoading: false,
     setupTestOk:    false,
@@ -3829,6 +3886,36 @@ function app() {
       else { this._stopSystemTimer(); }
       if (id === 'setup') { this.scanOllama(); this.loadSetupConfig(); }
       if (id === 'config' && !this.config) this.fetchConfig();
+      if (id === 'downloader') this.checkAria2Status();
+    },
+
+    async checkAria2Status() {
+      this.aria2Status = 'checking';
+      try {
+        const r = await fetch('/api/aria2/status');
+        const d = await r.json();
+        this.aria2Port   = d.port || 6800;
+        this.aria2Status = d.running ? 'running' : 'stopped';
+      } catch(e) {
+        this.aria2Status = 'stopped';
+      }
+    },
+
+    async startAria2() {
+      this.aria2Status = 'checking';
+      this.aria2Error  = '';
+      try {
+        const r = await fetch('/api/aria2/start', { method: 'POST' });
+        const d = await r.json();
+        if (d.started) {
+          this.aria2Status = 'running';
+        } else {
+          this.aria2Status = 'not_installed';
+          this.aria2Error  = d.error || '';
+        }
+      } catch(e) {
+        this.aria2Status = 'stopped';
+      }
     },
 
     getAriaNgUrl() {
