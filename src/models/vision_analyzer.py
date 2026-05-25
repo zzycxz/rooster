@@ -8,9 +8,40 @@ from .base import LLMResponseDelta
 logger = logging.getLogger(__name__)
 
 
+def _quick_ocr(image_base64: str) -> str:
+    """本地快速 OCR 提取文字，失败返回空字符串 / Local quick OCR, returns empty on failure."""
+    try:
+        from paddleocr import PaddleOCR
+
+        import base64
+        import numpy as np
+        from PIL import Image
+        import io
+
+        img_bytes = base64.b64decode(image_base64)
+        img = Image.open(io.BytesIO(img_bytes))
+        img_array = np.array(img)
+
+        ocr = PaddleOCR(use_angle_cls=False, lang="ch", show_log=False)
+        results = ocr.ocr(img_array, cls=False)
+        texts = []
+        if results and results[0]:
+            for line in results[0]:
+                if line and len(line) >= 2:
+                    texts.append(line[1][0])
+        return " ".join(texts)
+    except Exception:
+        return ""
+
+
 class VisionAnalyzer:
     """
-    视觉分析代理：将图像发送至云端大模型，换取文本描述。
+    视觉分析代理：将图像发送至大模型，换取文本描述。
+
+    隐私策略：先本地 OCR + Presidio 检测 PII
+    - 有 PII → 仅发文字描述给云端，不发原图
+    - 无 PII → 正常发原图
+    - OCR/检测失败 → 放行，不卡用户
 
     支持两种模式：
     1. 全屏分析：无 region，分析整个截图
@@ -78,17 +109,45 @@ class VisionAnalyzer:
 
 请仔细观察图片，直接给出结论，不要输出冗长的废话。"""
 
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}},
-                ],
-            }
-        ]
+        # ─── 隐私路由：检测截图是否含 PII / Privacy routing ───
+        _use_original_image = True
+        _ocr_summary = ""
+        try:
+            from utils.privacy_router import get_privacy_router
 
-        # --- 策略：模型梯队重试 ---
+            _router = get_privacy_router()
+            _ocr_text = _quick_ocr(image_base64)
+            target, reason = _router.route_image(source_tool="vision_analyzer", ocr_text=_ocr_text)
+            if target == "local":
+                _use_original_image = False
+                _ocr_summary = _ocr_text[:2000] if _ocr_text else ""
+                logger.info(f"[Privacy] 截图含 PII ({reason})，不发原图，改用文字描述")
+        except Exception:
+            pass  # 路由/OCR 失败不卡用户 / Router/OCR failure doesn't block
+
+        # 构建 messages / Build messages
+        if _use_original_image:
+            # 无 PII：正常发原图 / No PII: send original image
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}},
+                    ],
+                }
+            ]
+        else:
+            # 有 PII：用 OCR 文字描述替代原图 / Has PII: replace with OCR text
+            _privacy_prompt = f"""{prompt}
+
+[隐私模式] 截图已脱敏，以下是本地 OCR 提取的文字内容，请基于此进行分析：
+{_ocr_summary}
+
+注意：坐标信息可能不准确，请结合任务上下文推理。"""
+            messages = [{"role": "user", "content": [{"type": "text", "text": _privacy_prompt}]}]
+
+        # ─── 模型梯队重试 / Model cascade retry ───
         models_to_try = []
         if model_name:
             models_to_try.append(model_name)
@@ -96,7 +155,22 @@ class VisionAnalyzer:
             models_to_try.append(settings.CLOUD_MODEL)
         models_to_try = list(dict.fromkeys(models_to_try))
 
-        # --- 策略 1：云端梯队重试 ---
+        # 策略 1：本地模型优先（隐私优先策略）/ Strategy 1: Local first (privacy-first)
+        try:
+            client = ModelFactory.get_client("local")
+            local_model = settings.LOCAL_MODEL or "qwen3.5-4b"
+            response: LLMResponseDelta = await client.chat_non_stream(
+                model=local_model,
+                messages=messages,
+                max_tokens=600,
+            )
+            if response.content:
+                return f"(本地大脑) {response.content}"
+            logger.warning("Local vision model returned empty, falling back to cloud cascade")
+        except Exception as e:
+            logger.warning("Local vision model failed: %s, falling back to cloud cascade", e)
+
+        # 策略 2：云端梯队回退 / Strategy 2: Cloud cascade fallback
         providers_to_try = []
         if settings.CLOUD_KEY and settings.CLOUD_URL:
             providers_to_try.append(("cloud", settings.CLOUD_MODEL))
@@ -121,19 +195,5 @@ class VisionAnalyzer:
                     logger.warning("Model %s on %s abnormal, trying next...", model, provider)
                 except Exception as e:
                     logger.warning("%s Model %s failed: %s", provider, model, e)
-
-        # --- 策略 2: 回退至本地识别 ---
-        try:
-            client = ModelFactory.get_client("local")
-            local_model = settings.LOCAL_MODEL or "qwen3.5-4b"
-            response: LLMResponseDelta = await client.chat_non_stream(
-                model=local_model,
-                messages=messages,
-                max_tokens=600,
-            )
-            if response.content:
-                return f"(本地大脑) {response.content}"
-        except Exception as e:
-            return f"[视觉分析彻底失败: 梯队模型全灭且本地报错: {str(e)}]"
 
         return "[视觉分析失败: 未能获取到任何有效响应]"

@@ -64,6 +64,9 @@ dependencies = [
     "python-docx",
     "pypdf",
 
+    # Privacy / PII Detection
+    "presidio-analyzer",
+
     # Feishu
 ]
 
