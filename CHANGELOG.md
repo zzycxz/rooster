@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.3] - 2026-05-25
+
+### Added
+- **Traffic Control & Queuing (`traffic.py`)**: Implemented Phase 1 of a production-grade Agent stability roadmap (inspired by OpenDevin). Added global and provider-level concurrency limits to the LLM client, effectively eliminating 429 rate-limit crashes during heavy parallel subtask execution.
+- **Asynchronous Dreaming (`dream_worker.py`)**: Shifted memory compaction out of the synchronous execution path. The system now distills context in the background (Dreaming), dramatically improving the ReAct loop latency and overall execution smoothness.
+- **Extended Guardian Triggers**: Upgraded `guardian.py` to support `cron` expressions and `interval`-based execution triggers for automated background tasks.
+
+### Changed
+- **Centralized Model Fallback**: Removed fragile, hardcoded `switch_provider` logic from `executor.py`. Fallbacks (handling timeouts, empty responses) are now strictly managed by the `LLMClient`, preventing the "brain-switching" protocol pollution that previously broke function-calling schemas.
+
+### Fixed
+- **Dashboard Guardian Status**: Fixed an incorrect path calculation (`os.path.dirname`) in `dashboard/src/routes/system.py` that caused the UI to erroneously report "Guardian not running". The Dashboard now accurately reflects the active daemon.
+- **CI Formatting**: Ran `ruff format` on `src/utils/config/__init__.py` to resolve formatting discrepancies causing pipeline failures.
+
 ## [0.2.2] - 2026-05-25
 
 ### Added
