@@ -137,7 +137,7 @@ rooster/
 ├── .env.local.example          # 密钥模板
 ├── pyproject.toml              # 项目配置与依赖
 ├── guardian.py                 # 守护进程（进程管理、端口清理、自动重启）
-├── start.bat / start.command   # 平台启动脚本
+├── start.bat                    # Windows 启动脚本 (macOS: 双击 Rooster.app)
 ├── CONTRIBUTING.md             # 贡献指南
 ├── SECURITY.md                 # 安全策略
 │

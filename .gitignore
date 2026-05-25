@@ -6,6 +6,7 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 dist/
+!src/ui/dist/
 build/
 *.egg
 
@@ -31,6 +32,7 @@ guardian.log
 .claude/
 *.swp
 *.swo
+.DS_Store
 
 # Generated output / temp
 output/

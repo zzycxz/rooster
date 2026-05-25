@@ -2,6 +2,13 @@
 title Rooster Guardian
 cd /d "%~dp0"
 
+:: Activate virtual environment if available
+if exist ".venv\Scripts\activate.bat" (
+    call .venv\Scripts\activate.bat
+) else if exist "venv\Scripts\activate.bat" (
+    call venv\Scripts\activate.bat
+)
+
 set "PIDFILE=.rooster\guardian.pid"
 
 if not exist "%PIDFILE%" goto :start

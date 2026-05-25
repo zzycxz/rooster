@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.2] - 2026-05-25
+
+### Added
+- `Rooster.app` macOS launcher: single-line AppleScript, auto-activates venv, no extra terminal text
+- Dashboard pre-built `src/ui/dist/` committed to repo (no Node.js needed after clone)
+
+### Fixed
+- macOS Python SSL certificate verification: auto-set `SSL_CERT_FILE` to certifi bundle in config init
+- start.bat: auto-activate `.venv\Scripts\activate.bat` before running guardian
+
+### Changed
+- Remove `start.command` (logic internalized into `Rooster.app`)
+- `.gitignore`: exclude `src/ui/dist/` from global `dist/` ignore rule
+- `.env.local.example`: add proxy and SSL_CERT_FILE template
+- README: macOS launch instructions with Sequoia Gatekeeper note
+
 ## [0.2.1] - 2026-05-24
 
 ### Fixed
