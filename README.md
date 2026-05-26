@@ -4,7 +4,7 @@ English | [中文](README.cn.md)
 
 [![CI](https://github.com/zzycxz/rooster/actions/workflows/ci.yml/badge.svg)](https://github.com/zzycxz/rooster/actions/workflows/ci.yml)
 
-> Version: 0.2.0 | Python >= 3.12 | License: MIT
+> Version: 0.3.0 | Python >= 3.12 | License: MIT
 
 ---
 
