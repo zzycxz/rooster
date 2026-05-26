@@ -22,9 +22,10 @@ class StaticRuleEngine:
     def clean_target(text: str, remove_keywords: list) -> str:
         """剥离多余的前缀和无关修饰词，提炼核心实体"""  # Strip extraneous prefixes and irrelevant modifiers, extract core entity
         cleaned = text.strip()
-        # 清除前缀助词，如”帮我下载”、”请问哪里有安装”等，完美兼容”最新版的”
-        # Remove prefix particles like '帮我下载', '请问哪里有安装', etc., compatible with '最新版的'
-        prefix_pat = r"^(?:帮我|请帮我|请问?|求|想要|我想?|有没有?|麻烦)?[\s]*(?:下载|安装|获取|找一找|搜一搜|搜索|搞一个|整一个|download|install|setup)?[\s]*(?:电影|视频|影片|软件|安装包|最新版的?|最新|破解版|免费版|movie|software|app)?[\s]*"
+        # 清除前缀助词，如"帮我下载"、"请问哪里有安装"等
+        # 注意：时间限定词（最新、新上映、刚出的）必须保留在 title 中，否则搜索会匹配到错误版本
+        # Remove prefix particles — but preserve temporal qualifiers (最新/新上映/刚出的) in title
+        prefix_pat = r"^(?:帮我|请帮我|请问?|求|想要|我想?|有没有?|麻烦)?[\s]*(?:下载|安装|获取|找一找|搜一搜|搜索|搞一个|整一个|download|install|setup)?[\s]*(?:电影|视频|影片|软件|安装包|破解版|免费版|movie|software|app)?[\s]*"
         cleaned = re.sub(prefix_pat, "", cleaned, flags=re.IGNORECASE)
         # 清除后缀助词，使用 + 匹配一个或多个连续存在的后缀，彻底去除尾巴（增加浏览器、软件等修饰词匹配）
         # Remove suffix particles, match one or more consecutive suffixes

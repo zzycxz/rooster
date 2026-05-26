@@ -68,26 +68,14 @@ class PromptBuilder:
         """运行时环境信息"""  # Runtime environment info
         now = datetime.datetime.now()
 
-        # 动态探测系统标准路径 (普适性改进)
-        # Dynamically detect system standard paths (universal improvement)
-        home = os.path.expanduser("~")
-        desktop = os.path.join(home, "Desktop")
-        documents = os.path.join(home, "Documents")
-
-        # 隐私：对外发 prompt 脱敏路径（隐藏用户名）
-        # Privacy: sanitize paths in outgoing prompts (hide username)
-        display_home = "~/"
-        display_desktop = "~/Desktop"
-        display_documents = "~/Documents"
-
         runtime_info = [
             "## Runtime Environment",
             f"- Current Time: {now.strftime('%Y-%m-%d %H:%M:%S')}",
             f"- Think Level: {params.think_level}",
             "- OS Standard Paths:",
-            f"  - Home: `{display_home}`",
-            f"  - Desktop: `{display_desktop}`",
-            f"  - Documents: `{display_documents}`",
+            "  - Home: `~/`",
+            "  - Desktop: `~/Desktop`",
+            "  - Documents: `~/Documents`",
             "  (Always prefer these absolute paths when users refer to 'Desktop' or 'Home')",
         ]
         return "\n".join(runtime_info)
@@ -165,7 +153,11 @@ class PromptBuilder:
         return "\n".join(sections)
 
     def compose_messages(
-        self, system_prompt: str, history: List[Dict[str, str]], user_input: str
+        self,
+        system_prompt: str,
+        history: List[Dict[str, str]],
+        user_input: str,
+        blackboard_context: Optional[str] = None,
     ) -> List[Dict[str, str]]:
         """合成最终发送给 LLM 的消息列表"""  # Compose the final message list sent to LLM
         messages = [{"role": "system", "content": system_prompt}]
@@ -173,6 +165,11 @@ class PromptBuilder:
         # 添加历史记录
         # Add history records
         messages.extend(history)
+
+        # Blackboard 共享上下文注入：放在历史之后、用户输入之前
+        # Blackboard shared context injection: after history, before user input
+        if blackboard_context:
+            messages.append({"role": "user", "content": blackboard_context, "_internal": True})
 
         # 添加当前用户输入 (仅当不为空时)
         # Add current user input (only when non-empty)

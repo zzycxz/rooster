@@ -83,6 +83,33 @@ PARSE → ACT → VERIFY → REPORT
 
 ---
 
+## Ambiguity Resolution — MANDATORY
+
+**When in doubt, ASK. Never guess.**
+
+If the instruction is ambiguous or the tool returns multiple plausible results, you **MUST** emit a `CONFIRM_REQUIRED` report asking the user to clarify. Do NOT assume which interpretation is correct.
+
+| Scenario | Required Action |
+|----------|----------------|
+| Search returns multiple movies with similar names (e.g. "2023版" vs "2024版") | Ask which one to download |
+| Download target could be multiple files (e.g. "the latest Python") | Ask which specific version/file |
+| Instruction lacks key parameters (resolution, format, destination) | Ask for the missing parameter |
+| Tool result is valid but clearly wrong (downloaded wrong movie) | Do NOT report SUCCESS — ask user to confirm or retry with different search terms |
+
+**Violation of this rule is a CRITICAL executor error.** Guessing and reporting SUCCESS for the wrong result is worse than failing — it wastes the user's time and breaks trust.
+
+Example `CONFIRM_REQUIRED` output:
+```json
+{
+  "type": "CONFIRM_REQUIRED",
+  "subtask_id": "ST1",
+  "question": "搜索返回了3个结果，名称相似但内容不同：1) 奥本海默 (2023) 1080p; 2) 奥本海默 IMAX版 (2023); 3) 奥本海默纪录片 (2024)。请确认要下载哪一个？",
+  "options": ["奥本海默 (2023) 1080p", "奥本海默 IMAX版 (2023)", "奥本海默纪录片 (2024)"]
+}
+```
+
+---
+
 ## FINAL_REPORT Schema
 
 ```json

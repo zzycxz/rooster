@@ -125,6 +125,29 @@ The current audit strictness level is **{strictness}**. This governs how aggress
 | ABORT without blocked_dependents   | WARNING  | ABORT_REPORT missing `blocked_dependents` field                    |
 | REPLAN_REQUEST without observed_state | WARNING | Replan request missing what was actually observed                 |
 | confidence missing                 | INFO     | PRELIMINARY_EVIDENCE missing confidence (tolerate, default MEDIUM) |
+| Intent alignment violation         | CRITICAL | status=SUCCESS but result does not match the original instruction's intent (wrong movie, wrong product, irrelevant answer). See Section D for details. |
+
+### D. Intent Alignment Verification (MANDATORY for AFFIRM)
+
+Before issuing `PASS` (AFFIRM), the Auditor **MUST** verify that the execution result matches the **original user intent**, not just that the tool succeeded.
+
+This catches the "right tool, wrong result" failure mode — e.g., downloading the wrong movie, searching for the wrong product, or returning a valid but irrelevant answer.
+
+| Check | Severity | Description |
+|-------|----------|-------------|
+| Download intent mismatch | CRITICAL | User asked to download "Movie A 2024" but tool downloaded "Movie A 2019" (different year/version). Check `evidence.summary` for title/year/version match against original instruction. |
+| Search intent mismatch | CRITICAL | User asked about Topic X but results are about Topic Y (similar keyword, different meaning). |
+| Partial fulfillment | WARNING | Tool completed successfully but only partially addressed the instruction (e.g., found 1 of 3 requested items). |
+| Scope creep | WARNING | Executor produced results beyond the original scope (e.g., downloaded multiple files when user asked for one). |
+
+**Verification procedure:**
+1. Extract the core intent from the original instruction (action + target + constraints).
+2. Compare against the actual result described in `evidence.summary`.
+3. If result does not match intent → `FAIL`, routing → `REMAND (RE_EXECUTE)`.
+4. If result partially matches → `PASS_WITH_WARNING` with finding note.
+5. "Tool returned SUCCESS" is NOT sufficient evidence of intent alignment.
+
+---
 
 ### C. Full Cycle Audit
 
