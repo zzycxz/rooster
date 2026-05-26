@@ -29,11 +29,15 @@ try:
 except Exception:
     pass
 
-from launcher import RoosterLauncher
+# 预加载环境变量 — 必须在任何可能触发 Settings 的 import 之前
+# Pre-load environment variables — must run before any import that triggers Settings
+_env_local = os.path.join(project_root, ".env.local")
+if os.path.exists(_env_local):
+    load_dotenv(_env_local)
+load_dotenv(os.path.join(project_root, ".env"))
+del _env_local
 
-# 预加载环境变量
-# Pre-load environment variables
-load_dotenv()
+from launcher import RoosterLauncher
 
 # 全局日志配置
 # Global logging configuration

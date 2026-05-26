@@ -127,7 +127,8 @@ class ExaSearchTool(BaseTool):
 
         api_key = os.getenv("EXA_KEY", "")
         if not api_key:
-            return "Error: EXA_KEY is not set. Add it to .env.local to enable Exa search."
+            logger.info("[ExaSearch] EXA_KEY not set, falling back.")
+            return await self._fallback(query)
 
         if not get_exa_active():
             logger.warning("[ExaSearch] Monthly quota exhausted, falling back to GLM/web search.")
@@ -175,7 +176,8 @@ class ExaSearchTool(BaseTool):
                 )
 
                 if resp.status_code == 401:
-                    return "Error: Invalid EXA_KEY. Please check your API key."
+                    logger.warning("[ExaSearch] Invalid EXA_KEY (401), falling back.")
+                    return await self._fallback(query)
                 if resp.status_code == 429:
                     logger.warning("[ExaSearch] Rate limited (429), falling back.")
                     return await self._fallback(query)

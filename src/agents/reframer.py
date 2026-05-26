@@ -72,11 +72,21 @@ class StaticRuleEngine:
         if is_movie:
             title = cls.clean_target(text, movie_triggers)
             if title:
-                reframed = (
-                    f'调用 resource-downloader 技能，参数 title="{title}"，type="movie"，quality="1080p"。'
-                    f"该技能将自动并发检索各大种子站最优资源并唤起迅雷完成自愈下载。"
-                )
-                return True, reframed
+                # 若影片名包含明确年份或序号（如 "误杀2019" / "误杀2"），可安全短路直接执行
+                # 若无年份，可能存在同名多版本歧义（如"误杀" = 2019国产版 or 2015印度版），
+                # 必须透传给 LLM Reframer 让其做歧义感知判断，不可盲目短路
+                import re as _re
+                has_year = bool(_re.search(r"\b(19|20)\d{2}\b", title))
+                has_serial = bool(_re.search(r"[2-9]$|第[二三四五六七八九十]|II|III|IV|2$|3$", title))
+                is_unambiguous = has_year or has_serial
+                if is_unambiguous:
+                    reframed = (
+                        f'调用 resource-downloader 技能，参数 title="{title}"，type="movie"，quality="1080p"。'
+                        f"该技能将自动并发检索各大种子站最优资源并唤起迅雷完成自愈下载。"
+                    )
+                    return True, reframed
+                # 无明确年份/序号 → 透传 LLM，让其判断是否需要 CLARIFICATION_NEEDED
+                return False, user_input
 
         # 2. 软件及工具安装规则 (Software Installation Rule)
         # 匹配特征：含有”安装”、”软件”、”应用”、”app”、”install”、”setup”，或者以常见的可执行后缀结尾如 .exe, .msi, .dmg
@@ -189,13 +199,23 @@ class Reframer:
                 data = json.loads(content)
                 if isinstance(data, dict):
                     # --- [V10.0] Step 0 路由纠偏检查 ---
-                    # --- [V10.0] Step 0 routing correction check ---
                     if data.get("status") == "REDIRECT":
                         logger.info(f"🔄 [Reframer] 检测到路由误判，自动纠偏回退。原因: {data.get('reason')}")
-                        return user_input  # 返回原文，让下一级的模块按常规逻辑处理
+                        return user_input
+
+                    # --- [V10.1] 歧义拦截：CLARIFICATION_NEEDED ---
+                    # LLM 判定实体存在多版本歧义，Reframer 向上传递问询信号。
+                    # 使用特殊前缀让 Router 识别，而非将其当成正常指令交给 MissionRunner。
+                    if data.get("status") == "CLARIFICATION_NEEDED":
+                        question = data.get("question", "请问您想要哪个版本？")
+                        options = data.get("options", [])
+                        logger.info(f"🤔 [Reframer] 检测到歧义实体，需要用户确认：{question}")
+                        # 用 JSON 序列化保留结构，Router 可完整解析并格式化展示
+                        import json as _json
+                        payload = _json.dumps({"question": question, "options": options}, ensure_ascii=False)
+                        return f"__CLARIFICATION_NEEDED__:{payload}"
 
                     # 获取核心指令 (优先)
-                    # Get core instruction (priority)
                     reframed_text = data.get("refined_instruction", content)
 
                     # 打印变量矩阵，增强控制台可观测性

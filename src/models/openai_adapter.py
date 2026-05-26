@@ -51,6 +51,12 @@ class OpenAILikeClient(BaseModelClient):
         self, model: str, messages: List[Dict[str, Any]], **kwargs
     ) -> AsyncGenerator[LLMResponseDelta, None]:
         payload = {"model": model, "messages": self._safe_messages(messages), "stream": True, **kwargs}
+        
+        try:
+            with open("debug_glm_payload.json", "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to dump payload: {e}")
 
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
 
@@ -130,6 +136,9 @@ class OpenAILikeClient(BaseModelClient):
 
                     # [Phase2] 流结束后，如果有聚合完毕的 tool_calls，发出最终 delta
                     if pending_tool_calls:
+                        for idx, tc in pending_tool_calls.items():
+                            if not tc.get("id"):
+                                tc["id"] = f"call_{idx}"
                         assembled = list(pending_tool_calls.values())
                         logger.info(f"🔧 [OpenAILike] 流式 tool_calls 聚合完成: {len(assembled)} 个工具调用")
                         yield LLMResponseDelta(
@@ -234,17 +243,15 @@ class OpenAILikeClient(BaseModelClient):
         safe_msg = []
         for m in messages:
             raw_content = m.get("content")
-            # FC assistant messages legitimately have content=None (tool_calls only).
-            # Preserve None so providers validate the FC conversation format correctly.
-            # For all other messages, fall back to "" to avoid API 422 on missing content.
-            if raw_content is None and m.get("tool_calls"):
+            # Handle content formatting for API compatibility
+            if not raw_content and m.get("tool_calls"):
                 content = None
             else:
                 content = raw_content or ""
+            
             if isinstance(content, str):
                 content = content.encode("utf-8", "ignore").decode("utf-8", "ignore")
             elif isinstance(content, list):
-                # 处理多模态内容
                 # Handle multimodal content
                 new_content = []
                 for part in content:
@@ -252,7 +259,16 @@ class OpenAILikeClient(BaseModelClient):
                         part["text"] = part["text"].encode("utf-8", "ignore").decode("utf-8", "ignore")
                     new_content.append(part)
                 content = new_content
-            safe_msg.append({**m, "content": content})
+                
+            new_msg = {**m}
+            if content is not None:
+                new_msg["content"] = content
+            else:
+                new_msg.pop("content", None)
+            
+            new_msg.pop("reasoning_content", None)
+            new_msg.pop("_internal", None)
+            safe_msg.append(new_msg)
         return safe_msg
 
     async def close(self):

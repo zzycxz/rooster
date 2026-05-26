@@ -206,7 +206,7 @@ class BrowserTypeTool(BrowserBaseTool):
 class WebSearchTool(BaseTool):
     name: str = "web_search"
     kit: str = "Browser"
-    fc_hidden: bool = True  # [Round 10] exa_search has a 4-tier fallback chain (Exa→Linkup→GLM→web_search). Use exa_search as the single entry point.
+    fc_hidden: bool = False  # executor prompt 首选 web_search，必须在 FC 中可用
     description: str = (
         "Search the web. Returns results with titles, URLs, and brief snippets. "
         "Use this tool when you need to find information, look up facts, or discover URLs. "

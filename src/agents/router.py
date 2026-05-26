@@ -203,10 +203,37 @@ class Router:
             reframed_text = await reframer.reframe(msg.text)
             logger.info(f"重构后任务: {reframed_text}")
         else:
-            logger.info("任务清晰，跳过重构直达战略官。")  # Task clear, skip reframing and go straight to Strategist
+            logger.info("任务清晰，跳过重构直达战略官。")
+
+        # --- [歧义拦截] Reframer 的 CLARIFICATION_NEEDED 信号处理 ---
+        # Reframer 判定实体存在多版本歧义时，返回带有 __CLARIFICATION_NEEDED__ 前缀的 payload。
+        # Router 在此处截获，格式化为用户友好的问询消息发送，不进入 MissionRunner。
+        # 用户的下一条回复将携带澄清信息，重新路由并透传给 Reframer/Executor 正常处理。
+        _CLARIFICATION_PREFIX = "__CLARIFICATION_NEEDED__:"
+        if reframed_text.startswith(_CLARIFICATION_PREFIX):
+            import json as _json
+            try:
+                payload = _json.loads(reframed_text[len(_CLARIFICATION_PREFIX):])
+                question = payload.get("question", "请问您想要哪个版本？")
+                options = payload.get("options", [])
+            except Exception:
+                question = reframed_text[len(_CLARIFICATION_PREFIX):]
+                options = []
+
+            # 格式化问询消息
+            lines = [f"❓ **需要确认一下：**\n\n{question}"]
+            if options:
+                lines.append("\n**请从以下选项中选择：**")
+                for i, opt in enumerate(options, 1):
+                    lines.append(f"  **{i}.** {opt}")
+                lines.append("\n请回复选项序号（如 `1`、`2`）或直接输入您想要的具体描述。")
+            clarification_msg = "\n".join(lines)
+
+            await channel.send_message(to=msg.sender_id, text=clarification_msg)
+            logger.info(f"[Router] 歧义拦截，已向用户发出问询，等待下一轮澄清回复。")
+            return  # 不进入 MissionRunner，等待用户下一条消息
 
         # ⚡ 智能直通车 (Short-Circuit Execution) 拦截器
-        # ⚡ Smart shortcut (Short-Circuit Execution) interceptor
         if await self._short_circuit.try_handle(reframed_text, channel, msg.sender_id):
             return
 
