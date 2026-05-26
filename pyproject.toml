@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rooster"
-version = "0.2.1"
+version = "0.3.0"
 description = "Autonomous multi-agent desktop OS"
 requires-python = ">=3.12"
 license = "MIT"
@@ -81,7 +81,8 @@ sandbox = ["e2b-code-interpreter"]
 pdf = ["fpdf2"]
 webhook = ["aiohttp"]
 windows = ["pywin32", "pywinauto"]
-all = ["rooster[vision,sandbox,pdf,windows,webhook]"]
+mcp = ["uv>=0.4.0"]
+all = ["rooster[vision,sandbox,pdf,windows,webhook,mcp]"]
 dev = ["pytest", "pytest-asyncio", "ruff"]
 
 [project.scripts]
@@ -111,8 +112,10 @@ ignore = [
     "E731",  # lambda assignment
     "E741",  # ambiguous variable name
     "E402",  # module import not at top — often intentional for lazy imports
-    "F401",  # unused import — many are intentional re-exports in __init__.py
     "F403",  # import star
     "F405",  # undefined from import star
-    "F841",  # unused variable
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"src/**/__init__.py" = ["F401"]  # re-exports are intentional in package init files
+"tests/**" = ["F841"]            # test fixtures may appear unused
