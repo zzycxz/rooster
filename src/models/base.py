@@ -3,12 +3,19 @@ from typing import List, Dict, AsyncGenerator, Optional, Any
 from pydantic import BaseModel
 
 
+class UsageInfo(BaseModel):
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+
 class LLMResponseDelta(BaseModel):
     content: str = ""
     role: Optional[str] = None
     finish_reason: Optional[str] = None
+    usage: Optional[UsageInfo] = None
     tool_calls: Optional[List[Dict[str, Any]]] = (
-        None  # 原生 Function Calling 返回的结构化工具调用  # Structured tool calls from native Function Calling
+        None  # 原生 Function Calling 返回的结构化工具调用 / Structured tool calls from native FC
     )
     reasoning_content: Optional[str] = None  # MiMo thinking-mode internal scratchpad
 

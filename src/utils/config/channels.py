@@ -31,7 +31,7 @@ class ChannelsConfig:
     WEBHOOK_SECRET_TOKEN: str = _env("WEBHOOK_SECRET_TOKEN", "")
 
     # --- MCP ---
-    MCP_DYNAMIC_ENABLED: bool = _env_bool("MCP_DYNAMIC_ENABLED", False)
+    MCP_DYNAMIC_ENABLED: bool = _env_bool("MCP_DYNAMIC_ENABLED", True)  # Default ON for better UX
     MCP_SERVER_URLS: str = _env("MCP_SERVER_URLS", "")
 
     # --- Browser ---

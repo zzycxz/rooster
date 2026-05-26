@@ -1,0 +1,140 @@
+    <!-- ╔══════════════════════════════╗ -->
+    <!-- ║  TAB: METRICS                ║ -->
+    <!-- ╚══════════════════════════════╝ -->
+    <div x-show="activeTab === 'metrics'" x-init="if(activeTab === 'metrics') fetchMetricsSummary()" class="flex-1 overflow-y-auto p-4">
+      <div class="max-w-4xl space-y-4">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-semibold text-slate-300" x-text="t('tab_metrics')"></span>
+          <button @click="fetchMetricsSummary()" :disabled="metricsLoading"
+                  class="text-xs px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all cursor-pointer disabled:opacity-40">
+            <span :class="metricsLoading ? 'animate-spin' : ''">🔄</span> Refresh
+          </button>
+        </div>
+
+        <!-- Gauges -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
+            <div class="text-xs text-slate-500 mb-1" x-text="t('active_sessions')"></div>
+            <div class="text-3xl font-bold text-cyan-400" x-text="metricsData?.rooster_active_sessions?.value ?? 0"></div>
+          </div>
+          <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
+            <div class="text-xs text-slate-500 mb-1" x-text="t('active_subtasks')"></div>
+            <div class="text-3xl font-bold text-amber-400" x-text="metricsData?.rooster_active_subtasks?.value ?? 0"></div>
+          </div>
+          <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
+            <div class="text-xs text-slate-500 mb-1" x-text="t('total_requests')"></div>
+            <div class="text-3xl font-bold text-green-400" x-text="Math.round(metricsData?.rooster_requests_total?.value ?? 0)"></div>
+          </div>
+        </div>
+
+        <!-- LLM Stats -->
+        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
+          <div class="text-xs text-slate-500 font-semibold uppercase tracking-widest mb-3" x-text="t('llm_calls')"></div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <div class="text-xs text-slate-400 mb-1" x-text="t('total_calls_errors')"></div>
+              <div class="flex gap-4">
+                <span class="text-lg font-bold text-blue-400" x-text="Math.round(metricsData?.rooster_llm_calls_total?.value ?? 0)"></span>
+                <span class="text-lg font-bold text-red-400" x-text="Math.round(metricsData?.rooster_llm_errors_total?.value ?? 0)"></span>
+                <span class="text-lg font-bold text-amber-400" x-text="Math.round(metricsData?.rooster_llm_failover_total?.value ?? 0)"></span>
+              </div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-400 mb-1" x-text="t('latency_p')"></div>
+              <div class="flex gap-4">
+                <span class="text-sm font-mono text-green-400" x-text="(metricsData?.rooster_llm_latency_seconds?.p50 ?? 0).toFixed(3) + 's'"></span>
+                <span class="text-sm font-mono text-amber-400" x-text="(metricsData?.rooster_llm_latency_seconds?.p95 ?? 0).toFixed(3) + 's'"></span>
+                <span class="text-sm font-mono text-red-400" x-text="(metricsData?.rooster_llm_latency_seconds?.p99 ?? 0).toFixed(3) + 's'"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tool Stats -->
+        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
+          <div class="text-xs text-slate-500 font-semibold uppercase tracking-widest mb-3" x-text="t('tool_calls')"></div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <div class="text-xs text-slate-400 mb-1" x-text="t('total_invocations')"></div>
+              <div class="flex gap-4">
+                <span class="text-lg font-bold text-blue-400" x-text="Math.round(metricsData?.rooster_tool_calls_total?.value ?? 0)"></span>
+                <span class="text-lg font-bold text-red-400" x-text="Math.round(metricsData?.rooster_tool_errors_total?.value ?? 0)"></span>
+              </div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-400 mb-1" x-text="t('latency_p')"></div>
+              <div class="flex gap-4">
+                <span class="text-sm font-mono text-green-400" x-text="(metricsData?.rooster_tool_latency_seconds?.p50 ?? 0).toFixed(3) + 's'"></span>
+                <span class="text-sm font-mono text-amber-400" x-text="(metricsData?.rooster_tool_latency_seconds?.p95 ?? 0).toFixed(3) + 's'"></span>
+                <span class="text-sm font-mono text-red-400" x-text="(metricsData?.rooster_tool_latency_seconds?.p99 ?? 0).toFixed(3) + 's'"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Request Latency -->
+        <div x-show="metricsData?.rooster_request_latency_seconds" class="bg-slate-800 border border-slate-700 rounded-lg p-4">
+          <div class="text-xs text-slate-500 font-semibold uppercase tracking-widest mb-3" x-text="t('http_latency')"></div>
+          <div class="flex items-center gap-6">
+            <div>
+              <span class="text-xs text-slate-400" x-text="t('count_label')"></span>
+              <span class="text-sm font-mono text-slate-200 ml-1" x-text="metricsData?.rooster_request_latency_seconds?.count ?? 0"></span>
+            </div>
+            <div>
+              <span class="text-xs text-slate-400">p50:</span>
+              <span class="text-sm font-mono text-green-400 ml-1" x-text="(metricsData?.rooster_request_latency_seconds?.p50 ?? 0).toFixed(4) + 's'"></span>
+            </div>
+            <div>
+              <span class="text-xs text-slate-400">p95:</span>
+              <span class="text-sm font-mono text-amber-400 ml-1" x-text="(metricsData?.rooster_request_latency_seconds?.p95 ?? 0).toFixed(4) + 's'"></span>
+            </div>
+            <div>
+              <span class="text-xs text-slate-400">p99:</span>
+              <span class="text-sm font-mono text-red-400 ml-1" x-text="(metricsData?.rooster_request_latency_seconds?.p99 ?? 0).toFixed(4) + 's'"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Guardian Watchdog -->
+        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
+          <div class="text-xs text-slate-500 font-semibold uppercase tracking-widest mb-3" x-text="t('guardian_watchdog')"></div>
+          <template x-if="guardianData">
+            <div class="space-y-2">
+              <div class="flex items-center gap-3">
+                <span class="inline-block w-2.5 h-2.5 rounded-full" :class="guardianData?.child_alive ? 'bg-green-400 animate-pulse' : 'bg-red-400'"></span>
+                <span class="text-sm text-slate-200" x-text="guardianData?.child_alive ? t('child_running') : t('child_stopped')"></span>
+              </div>
+              <div class="grid grid-cols-3 gap-3 text-xs">
+                <div>
+                  <span class="text-slate-500" x-text="t('pid_label')"></span>
+                  <span class="font-mono text-slate-300 ml-1" x-text="guardianData?.child_pid ?? '—'"></span>
+                </div>
+                <div>
+                  <span class="text-slate-500" x-text="t('uptime_label')"></span>
+                  <span class="font-mono text-slate-300 ml-1" x-text="guardianData?.child_uptime_sec ? Math.floor(guardianData.child_uptime_sec / 60) + 'm' : '—'"></span>
+                </div>
+                <div>
+                  <span class="text-slate-500" x-text="t('restarts_label')"></span>
+                  <span class="font-mono text-slate-300 ml-1" x-text="guardianData?.restart_count ?? 0"></span>
+                </div>
+                <div>
+                  <span class="text-slate-500" x-text="t('hb_fails_label')"></span>
+                  <span class="font-mono ml-1" :class="guardianData?.heartbeat_fails > 0 ? 'text-amber-400' : 'text-green-400'" x-text="guardianData?.heartbeat_fails ?? 0"></span>
+                </div>
+                <div>
+                  <span class="text-slate-500" x-text="t('retries_label')"></span>
+                  <span class="font-mono text-slate-300 ml-1" x-text="(guardianData?.retry_count ?? 0) + '/' + (guardianData?.max_retries ?? 3)"></span>
+                </div>
+                <div>
+                  <span class="text-slate-500" x-text="t('circuit_label')"></span>
+                  <span class="font-mono ml-1" :class="guardianData?.circuit_breaker_streak > 0 ? 'text-red-400' : 'text-green-400'" x-text="guardianData?.circuit_breaker_streak ?? 0"></span>
+                </div>
+              </div>
+            </div>
+          </template>
+          <template x-if="!guardianData">
+            <div class="text-xs text-slate-500" x-text="t('guardian_not_running')"></div>
+          </template>
+        </div>
+      </div>
+    </div><!-- /metrics -->

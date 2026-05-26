@@ -1,0 +1,38 @@
+    <!-- ╔══════════════════════════════╗ -->
+    <!-- ║  TAB: CONFIG                 ║ -->
+    <!-- ╚══════════════════════════════╝ -->
+    <div x-show="activeTab === 'config'" x-init="if(activeTab === 'config' && !config) fetchConfig()" class="flex-1 overflow-y-auto p-4">
+      <div x-show="!config"
+           class="flex flex-col items-center justify-center h-full text-slate-600 gap-3">
+        <span class="text-4xl">⚙️</span>
+        <span x-text="t('waiting_config')"></span>
+        <span class="text-xs" x-text="t('config_auto')"></span>
+      </div>
+
+      <div x-show="config" class="space-y-3 max-w-4xl">
+        <div class="text-xs text-slate-500 mb-1" x-text="t('config_source')"></div>
+        <template x-for="group in configGroups" :key="group.label">
+          <div class="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
+            <button @click="group.open = !group.open"
+                    class="w-full px-4 py-2.5 flex items-center justify-between hover:bg-slate-750 transition-colors cursor-pointer">
+              <div class="flex items-center gap-2">
+                <span class="text-base" x-text="group.icon"></span>
+                <span class="text-sm font-semibold text-slate-200" x-text="group.label"></span>
+                <span class="text-[10px] text-slate-600" x-text="'(' + group.items.length + ')'"></span>
+              </div>
+              <span class="text-slate-500 text-xs" x-text="group.open ? '▾' : '▸'"></span>
+            </button>
+            <div x-show="group.open" class="border-t border-slate-700">
+              <template x-for="item in group.items" :key="item.key">
+                <div class="flex items-start px-4 py-1.5 hover:bg-slate-700/30 border-b border-slate-700/40 last:border-b-0">
+                  <span class="text-xs font-mono text-slate-400 w-64 flex-shrink-0 truncate" x-text="item.key"></span>
+                  <span class="text-xs font-mono"
+                        :class="item.masked ? 'text-amber-400/70' : 'text-slate-300'"
+                        x-text="item.value || '—'"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div><!-- /config -->

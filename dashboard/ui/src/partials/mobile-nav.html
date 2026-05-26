@@ -1,0 +1,18 @@
+<!-- ═══════════════════════ MOBILE BOTTOM NAV ═══════════════════════ -->
+<nav class="mobile-bottom-nav flex-none h-14 bg-slate-800 border-t border-slate-700 items-center justify-around z-20 safe-area-bottom">
+  <button @click="switchTab('execution')" class="nav-item flex flex-col items-center justify-center flex-1 py-1 text-slate-500 cursor-pointer" :class="activeTab === 'execution' ? 'active' : ''">
+    <span class="text-lg leading-none">💬</span><span class="text-[9px] mt-0.5" x-text="t('tab_execution')"></span>
+  </button>
+  <button @click="switchTab('steps')" class="nav-item flex flex-col items-center justify-center flex-1 py-1 text-slate-500 cursor-pointer" :class="activeTab === 'steps' ? 'active' : ''">
+    <span class="text-lg leading-none">📋</span><span class="text-[9px] mt-0.5" x-text="t('tab_steps')"></span>
+  </button>
+  <button @click="switchTab('logs')" class="nav-item flex flex-col items-center justify-center flex-1 py-1 text-slate-500 cursor-pointer" :class="activeTab === 'logs' ? 'active' : ''">
+    <span class="text-lg leading-none">📝</span><span class="text-[9px] mt-0.5" x-text="t('tab_logs')"></span>
+  </button>
+  <button @click="switchTab('skills')" class="nav-item flex flex-col items-center justify-center flex-1 py-1 text-slate-500 cursor-pointer" :class="activeTab === 'skills' ? 'active' : ''">
+    <span class="text-lg leading-none">🧩</span><span class="text-[9px] mt-0.5" x-text="t('tab_skills')"></span>
+  </button>
+  <button @click="sidebarOpen = !sidebarOpen" class="nav-item flex flex-col items-center justify-center flex-1 py-1 text-slate-500 cursor-pointer">
+    <span class="text-lg leading-none">•••</span><span class="text-[9px] mt-0.5">More</span>
+  </button>
+</nav>

@@ -1,0 +1,54 @@
+  <!-- ────────── SIDEBAR ────────── -->
+  <aside class="main-sidebar flex-none w-52 xl:w-64 bg-slate-800 border-r border-slate-700 flex flex-col"
+         :class="sidebarOpen ? 'open' : ''">
+    <nav class="flex-1 py-2 space-y-0.5 overflow-y-auto">
+      <template x-for="tab in tabs" :key="tab.id">
+        <button
+          @click="switchTab(tab.id); if(isMobile) sidebarOpen = false"
+          class="tab-item w-full flex items-center justify-between px-4 py-2.5 text-slate-400 text-left cursor-pointer"
+          :class="activeTab === tab.id ? 'tab-active' : ''"
+        >
+          <div class="flex items-center gap-2.5">
+            <span class="text-base tab-icon" x-text="tab.icon"></span>
+            <span class="text-xs font-medium tab-label" x-text="t('tab_' + tab.id)"></span>
+          </div>
+          <span
+            x-show="getTabCount(tab.id) > 0"
+            class="text-xs px-1.5 py-0.5 rounded-full font-mono font-bold min-w-[22px] text-center tab-count"
+            :class="tab.id === 'errors' && errorCount > 0
+                    ? 'bg-red-900 text-red-300'
+                    : 'bg-slate-700 text-slate-300'"
+            x-text="getTabCount(tab.id)"
+          ></span>
+        </button>
+      </template>
+    </nav>
+
+    <!-- Sidebar footer -->
+    <div class="flex-none border-t border-slate-700 px-4 py-2.5 text-xs text-slate-600 space-y-1.5 flex flex-col sidebar-footer-text">
+      <div class="space-y-0.5">
+        <div x-text="t('uptime') + uptime"></div>
+        <div x-text="t('log_entries') + logs.length"></div>
+      </div>
+      
+      <!-- 🌐 中英文物理切换 -->
+      <div class="flex items-center justify-between border-t border-slate-700/40 pt-2 mt-1.5">
+        <span class="text-slate-500 text-[10px] uppercase font-mono tracking-wider">Language / 语言</span>
+        <button
+          @click="
+            lang = lang === 'zh' ? 'en' : 'zh';
+            localStorage.setItem('rooster_lang', lang);
+            const url = new URL(window.location);
+            url.searchParams.set('lang', lang);
+            window.history.replaceState({}, '', url);
+          "
+          class="px-2 py-0.5 rounded bg-slate-700/40 hover:bg-slate-700 border border-slate-600/60 text-[10px] font-bold text-slate-300 hover:text-white transition-all outline-none cursor-pointer active:scale-95 flex items-center gap-1"
+        >
+          <span x-text="lang === 'zh' ? '🇨🇳 中文' : '🇺🇸 English'"></span>
+          <span>⇄</span>
+        </button>
+      </div>
+    </div>
+  </aside>
+  <!-- Mobile sidebar overlay -->
+  <div class="sidebar-overlay" :class="sidebarOpen ? 'show' : ''" @click="sidebarOpen = false"></div>

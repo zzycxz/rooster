@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import tailwindcss from '@tailwindcss/vite';
+import { createHtmlPlugin } from 'vite-plugin-html';
 
 const gatewayPort = process.env.GATEWAY_PORT || 18789;
 
@@ -21,6 +22,12 @@ export default defineConfig({
   },
   plugins: [
     tailwindcss(),
+    createHtmlPlugin({
+      minify: true,
+      inject: {
+        ejsOptions: { filename: resolve(__dirname, 'src', 'dashboard.html') },
+      },
+    }),
   ],
   server: {
     proxy: {

@@ -1,0 +1,112 @@
+    <!-- ╔══════════════════════════════╗ -->
+    <!-- ║  TAB: STEPS                  ║ -->
+    <!-- ╚══════════════════════════════╝ -->
+    <div x-show="activeTab === 'steps'" class="flex-1 overflow-hidden flex flex-col min-h-0">
+      <!-- Toolbar -->
+      <div class="flex-none border-b border-slate-700 px-4 py-2 bg-slate-800 flex items-center gap-3 flex-wrap">
+        <select
+          x-model="stepFilterStream"
+          class="bg-slate-700 text-slate-200 text-xs rounded px-2 py-1 border border-slate-600 outline-none"
+        >
+          <option value="ALL" x-text="t('all_types')"></option>
+          <option value="lifecycle" x-text="t('type_lifecycle')"></option>
+          <option value="assistant" x-text="t('type_assistant')"></option>
+          <option value="tool" x-text="t('type_tool')"></option>
+          <option value="error" x-text="t('type_error')"></option>
+        </select>
+        <input
+          x-model="stepSearch"
+          type="text"
+          :placeholder="t('search_steps')"
+          class="bg-slate-700 text-slate-200 text-xs rounded px-2 py-1 border border-slate-600 outline-none w-36 placeholder-slate-500"
+        />
+        <div class="flex-1"></div>
+        <span class="text-xs text-slate-500" x-text="filteredSteps.length + ' / ' + steps.length + ' ' + t('steps_suffix')"></span>
+        <button @click="steps=[]" class="text-xs text-slate-500 hover:text-red-400 transition-colors" x-text="t('clear')"></button>
+        <button @click="expandAllSteps()" class="text-xs text-slate-500 hover:text-slate-200 transition-colors" x-text="t('expand_all')"></button>
+        <button @click="collapseAllSteps()" class="text-xs text-slate-500 hover:text-slate-200 transition-colors" x-text="t('collapse_all')"></button>
+      </div>
+
+      <!-- Timeline -->
+      <div class="flex-1 overflow-y-auto px-4 py-3 space-y-2" id="steps-container">
+        <div x-show="steps.length === 0"
+             class="flex flex-col items-center justify-center h-full text-slate-600 gap-3">
+          <span class="text-4xl">📋</span>
+          <span x-text="t('waiting_steps')"></span>
+        </div>
+
+        <template x-for="(step, index) in filteredSteps" :key="step.id">
+          <div class="step-card-wrap">
+          <div
+            class="step-card border rounded-lg overflow-hidden"
+            :class="stepCardBorder(step)"
+          >
+            <!-- Header row -->
+            <div
+              class="flex items-center gap-2 px-3 py-2 cursor-pointer select-none hover:bg-white/5"
+              @click="step.expanded = !step.expanded"
+            >
+              <span class="text-xs text-slate-600 font-mono w-7 text-right flex-shrink-0"
+                    x-text="'#' + step.seq"></span>
+              <span class="text-xs text-slate-500 flex-shrink-0 w-16"
+                    x-text="formatTime(step.ts)"></span>
+              <span
+                class="text-xs px-1.5 py-0.5 rounded font-semibold flex-shrink-0 w-16 text-center"
+                :class="streamBadgeClass(step.stream)"
+                x-text="streamLabel(step.stream)"
+              ></span>
+              <span class="text-xs text-slate-200 flex-1 truncate min-w-0"
+                    x-text="stepSummary(step)"></span>
+              <span
+                x-show="step.status"
+                class="text-xs px-1.5 py-0.5 rounded flex-shrink-0"
+                :class="statusBadgeClass(step.status)"
+                x-text="step.status"
+              ></span>
+              <span x-show="step.durationMs"
+                    class="text-xs text-slate-500 flex-shrink-0 w-14 text-right"
+                    x-text="formatDuration(step.durationMs)"></span>
+              <span class="text-slate-500 text-xs flex-shrink-0 w-4"
+                    x-text="step.expanded ? '▾' : '▸'"></span>
+            </div>
+
+            <!-- Expanded body -->
+            <div x-show="step.expanded" class="border-t border-slate-700/50 px-3 py-2.5 space-y-2.5">
+              <template x-if="step.data?.args !== undefined">
+                <div>
+                  <div class="text-xs text-slate-500 mb-1" x-text="t('tool_args')"></div>
+                  <div class="json-block" x-text="fmt(step.data.args)"></div>
+                </div>
+              </template>
+              <template x-if="step.data?.response !== undefined">
+                <div>
+                  <div class="text-xs text-slate-500 mb-1" x-text="t('tool_response')"></div>
+                  <div class="json-block" x-text="fmt(step.data.response)"></div>
+                </div>
+              </template>
+              <template x-if="step.data?.text !== undefined">
+                <div>
+                  <div class="text-xs text-slate-500 mb-1" x-text="t('ai_output')"></div>
+                  <div class="json-block" x-text="step.data.text"></div>
+                </div>
+              </template>
+              <template x-if="step.data?.message !== undefined && step.stream === 'error'">
+                <div>
+                  <div class="text-xs text-slate-500 mb-1" x-text="t('error_info')"></div>
+                  <div class="json-block text-red-300" x-text="step.data.message"></div>
+                </div>
+              </template>
+              <!-- Raw fallback -->
+              <div>
+                <button @click="step.showRaw = !step.showRaw"
+                        class="text-xs text-slate-600 hover:text-slate-400 transition-colors">
+                  <span x-text="step.showRaw ? t('hide_raw') : t('show_raw')"></span>
+                </button>
+                <div x-show="step.showRaw" class="json-block mt-1.5" x-text="fmt(step.data)"></div>
+              </div>
+            </div>
+          </div>
+          </div>
+        </template>
+      </div>
+    </div><!-- /steps -->

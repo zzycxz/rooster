@@ -1,0 +1,67 @@
+    <!-- ╔══════════════════════════════╗ -->
+    <!-- ║  TAB: DOWNLOADER (AriaNg)    ║ -->
+    <!-- ╚══════════════════════════════╝ -->
+    <div x-show="activeTab === 'downloader'" class="flex-1 overflow-hidden flex flex-col min-h-0 bg-slate-950">
+      <!-- Top Action Bar -->
+      <div class="flex-none border-b border-slate-700/80 px-4 py-2.5 bg-slate-800/90 flex items-center justify-between gap-3 shadow-md">
+        <div class="flex items-center gap-2">
+          <span class="text-base">⬇️</span>
+          <span class="text-xs font-bold text-slate-200" x-text="t('tab_downloader')"></span>
+          <span class="text-[10px] text-slate-500 hidden sm:inline" x-text="'— ' + t('downloader_desc')"></span>
+        </div>
+        <div class="flex items-center gap-2">
+          <a :href="getAriaNgUrl()" target="_blank" class="text-[11px] text-blue-400 hover:text-blue-300 transition-colors px-2.5 py-1 rounded border border-blue-900/40 hover:border-blue-700 bg-blue-950/20 flex items-center gap-1 cursor-pointer font-medium active:scale-95">
+            <span>🔗</span>
+            <span x-text="t('open_new_window')"></span>
+          </a>
+        </div>
+      </div>
+      
+      <!-- AriaNg Iframe / Status Container -->
+      <div class="flex-1 w-full h-full relative bg-slate-900/40 flex flex-col">
+
+        <!-- Checking state -->
+        <div x-show="aria2Status === null || aria2Status === 'checking'"
+             class="flex flex-col items-center justify-center flex-1 gap-3 text-slate-400 text-sm">
+          <span class="animate-pulse text-2xl">⬇️</span>
+          <span x-text="t('aria2_checking')"></span>
+        </div>
+
+        <!-- Running: show iframe -->
+        <iframe
+          x-show="aria2Status === 'running'"
+          :src="aria2Status === 'running' ? getAriaNgUrl() : 'about:blank'"
+          class="w-full h-full border-none bg-slate-950 flex-1"
+          allow="clipboard-read; clipboard-write"
+          style="min-height: 450px;"
+        ></iframe>
+
+        <!-- Not running / not installed: friendly error panel -->
+        <div x-show="aria2Status === 'stopped' || aria2Status === 'not_installed'"
+             class="flex flex-col items-center justify-center flex-1 gap-4 text-center px-8 py-12">
+          <div class="text-5xl">⬇️</div>
+          <div class="text-slate-200 font-semibold text-base" x-text="t('aria2_not_running_title')"></div>
+          <div class="text-slate-400 text-xs max-w-md leading-relaxed" x-text="t('aria2_not_running_desc')"></div>
+          <div x-show="aria2Status === 'not_installed' && aria2Error"
+               class="text-red-300 text-xs bg-red-950/40 border border-red-900/50 rounded px-3 py-2 max-w-md"
+               x-text="aria2Error"></div>
+          <div class="flex flex-wrap gap-2 justify-center mt-1">
+            <button @click="startAria2()"
+                    x-show="aria2Status !== 'not_installed'"
+                    class="text-xs px-4 py-1.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white rounded font-semibold transition-all cursor-pointer"
+                    x-text="t('aria2_start')"></button>
+            <button @click="checkAria2Status()"
+                    class="text-xs px-4 py-1.5 bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-200 rounded font-semibold transition-all cursor-pointer"
+                    x-text="t('aria2_retry')"></button>
+          </div>
+          <div class="text-slate-500 text-xs mt-2 leading-relaxed">
+            <span x-text="t('aria2_install_hint')"></span>
+            <code class="bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded mx-1">winget install aria2</code>
+            <span x-text="t('aria2_install_or')"></span>
+            <a href="https://aria2.github.io/" target="_blank"
+               class="text-blue-400 hover:underline ml-1">aria2.github.io</a>
+          </div>
+        </div>
+
+      </div>
+    </div>

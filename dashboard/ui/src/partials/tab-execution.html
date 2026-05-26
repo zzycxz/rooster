@@ -1,0 +1,255 @@
+    <!-- ╔══════════════════════════════╗ -->
+    <!-- ║  TAB: EXECUTION              ║ -->
+    <!-- ╚══════════════════════════════╝ -->
+    <div x-show="activeTab === 'execution'" class="flex-1 overflow-hidden flex flex-row min-h-0 bg-slate-900">
+
+      <!-- 🗣️ 会话历史侧边栏 (Chat History Sidebar) -->
+      <div class="chat-sidebar w-60 flex-none bg-slate-800/80 border-r border-slate-700/80 flex flex-col p-3 gap-3 overflow-hidden select-none hidden md:flex"
+           :class="chatSidebarOpen ? 'open' : ''">
+        <!-- ➕ 新开对话 (New Chat) 按钮 -->
+        <button
+          @click="startNewChat()"
+          :disabled="isRunning"
+          class="w-full h-10 flex-none rounded-lg border border-slate-700/60 bg-gradient-to-r from-green-950/40 to-emerald-950/40 hover:from-green-900/60 hover:to-emerald-900/60 hover:border-green-500/50 flex items-center justify-center gap-2 text-slate-200 text-xs font-semibold shadow transition-all duration-300 active:scale-[0.98]"
+          :class="isRunning ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'"
+        >
+          <span class="text-sm">➕</span>
+          <span x-text="t('new_chat')"></span>
+        </button>
+
+        <!-- 📜 历史会话列表 -->
+        <div class="flex-1 overflow-y-auto space-y-1.5 pr-0.5">
+          <div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider px-2 mb-2" x-text="t('recent_chats')">
+          </div>
+          <template x-for="(sess, index) in sessionsList" :key="String(sess.sessionId) + '-' + index">
+            <div
+              class="group relative w-full h-11 rounded-lg px-3 flex items-center gap-2.5 transition-all duration-200"
+              :class="sess.sessionId === sessionId
+                      ? 'bg-green-950/30 border border-green-500/30 text-green-300'
+                      : 'hover:bg-slate-800/60 text-slate-400 border border-transparent'"
+            >
+              <!-- 气泡图标 -->
+              <span class="text-xs flex-shrink-0" :class="sess.sessionId === sessionId ? 'text-green-400' : 'text-slate-500'">💬</span>
+              <!-- 会话名 -->
+              <button
+                @click="selectSession(sess.sessionId)"
+                :disabled="isRunning"
+                class="flex-1 text-left truncate text-xs font-medium outline-none text-slate-300"
+                :class="isRunning ? 'cursor-not-allowed' : 'cursor-pointer'"
+                x-text="sess.title"
+              ></button>
+              <!-- 删除按钮 -->
+              <button
+                @click.stop="deleteChatSession(sess.sessionId)"
+                :disabled="isRunning"
+                class="opacity-0 group-hover:opacity-100 flex-shrink-0 w-5 h-5 rounded hover:bg-slate-700/80 flex items-center justify-center text-[10px] text-slate-500 hover:text-red-400 transition-all duration-200 outline-none"
+                :class="isRunning ? 'cursor-not-allowed' : 'cursor-pointer'"
+                title="删除会话"
+              >
+                🗑️
+              </button>
+            </div>
+          </template>
+          <!-- 空状态 -->
+          <div x-show="sessionsList.length === 0" class="text-center text-slate-600 text-xs py-8" x-text="t('no_active_chats')">
+          </div>
+        </div>
+      </div>
+      <!-- Mobile chat sidebar overlay -->
+      <div class="sidebar-overlay" :class="chatSidebarOpen ? 'show' : ''" @click="chatSidebarOpen = false"></div>
+
+      <!-- 💬 聊天主体区域 -->
+      <div class="flex-1 flex flex-col min-h-0 p-4 gap-3 overflow-hidden">
+        <!-- Chat sidebar toggle (mobile only) -->
+        <button @click="chatSidebarOpen = !chatSidebarOpen" class="md:hidden flex-none flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-400 hover:text-white cursor-pointer">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+          <span x-text="t('recent_chats')"></span>
+        </button>
+
+        <!-- Pipeline -->
+      <div class="flex-none bg-slate-800 rounded-lg border border-slate-700 px-3 py-1.5">
+        <div class="flex items-center gap-0 overflow-x-auto">
+          <template x-for="(stage, idx) in pipeline" :key="stage.id">
+            <div class="flex items-center flex-shrink-0">
+              <div
+                class="pipeline-node flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-center"
+                :class="pipelineNodeClass(stage.status)"
+              >
+                <span class="text-sm" x-text="stage.icon"></span>
+                <span class="text-[11px] font-semibold" x-text="t('node_' + stage.id)"></span>
+                <span
+                  class="text-[10px] opacity-75"
+                  :class="stage.status === 'running' ? 'pulse text-yellow-400' : ''"
+                  x-text="pipelineStatusText(stage.status)"
+                ></span>
+              </div>
+              <div
+                x-show="idx < pipeline.length - 1"
+                class="w-6 h-px flex-shrink-0 mx-0.5 transition-colors duration-300"
+                :class="stage.status === 'done' ? 'bg-green-500' : 'bg-slate-600'"
+              ></div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Subtask progress bar (visible only during COMPLEX missions with subtasks) -->
+      <div x-show="isRunning && subtaskTotal > 0" x-cloak
+           class="flex-none bg-slate-800 rounded-lg border border-slate-700 px-4 py-2 flex items-center gap-3">
+        <span class="text-xs text-slate-400 whitespace-nowrap" x-text="`⚙️ ${t('subtask_prefix')} ${subtaskCompleted} / ${subtaskTotal}`"></span>
+        <div class="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+          <div class="h-full bg-green-500 transition-all duration-300 rounded-full"
+               :style="`width: ${subtaskTotal > 0 ? Math.round(subtaskCompleted / subtaskTotal * 100) : 0}%`"></div>
+        </div>
+        <span class="text-xs text-slate-500"
+              x-text="`${subtaskTotal > 0 ? Math.round(subtaskCompleted / subtaskTotal * 100) : 0}%`"></span>
+      </div>
+
+      <!-- Audit verdicts log (inline, compact) -->
+      <div x-show="auditVerdicts.length > 0" x-cloak
+           class="flex-none bg-slate-800 rounded-lg border border-slate-700 px-4 py-2 space-y-1.5 max-h-36 overflow-y-auto">
+        <div class="text-[10px] text-slate-500 font-bold uppercase tracking-widest" x-text="t('audit_trail')"></div>
+        <template x-for="(a, index) in auditVerdicts.slice(-5)" :key="String(a.ts) + '-' + index">
+          <div class="flex items-center gap-2 text-xs">
+            <span class="px-1.5 py-0.5 rounded font-mono font-bold text-[10px]"
+                  :class="{
+                    'bg-green-900/40 text-green-400': a.verdict === 'affirm',
+                    'bg-amber-900/40 text-amber-300': a.verdict === 'remand',
+                    'bg-red-900/40 text-red-400': a.verdict === 'escalate',
+                    'bg-blue-900/40 text-blue-400': a.verdict === 'closure',
+                    'bg-purple-900/40 text-purple-400': a.verdict === 'replan',
+                  }"
+                  x-text="a.verdict.toUpperCase()"></span>
+            <span class="text-slate-500 font-mono" x-text="a.subtask_id"></span>
+            <span x-show="a.provider" class="px-1 py-0.5 rounded text-[10px] font-mono"
+                  :class="{
+                    'bg-violet-900/30 text-violet-300': a.provider === 'local',
+                    'bg-cyan-900/30 text-cyan-300': a.provider !== 'local',
+                  }"
+                  x-text="a.provider"></span>
+            <span class="text-slate-400 truncate flex-1" x-text="a.reason"></span>
+          </div>
+        </template>
+      </div>
+
+      <!-- Chat messages + Input (unified scroll container) -->
+      <div class="flex-1 overflow-y-auto min-h-0 flex flex-col gap-3 pr-1" id="chat-container">
+        <!-- Empty state -->
+        <div
+          x-show="chatMessages.length === 0"
+          class="flex-1 flex flex-col items-center justify-center text-slate-600 gap-3 py-8"
+        >
+          <span class="text-5xl">🐓</span>
+          <span class="text-base text-slate-500" x-text="t('chat_empty')"></span>
+          <span class="text-xs text-slate-600 text-center max-w-xs" x-text="t('chat_hint')"></span>
+        </div>
+
+        <template x-for="(msg, index) in chatMessages" :key="String(msg.id) + '-' + index">
+          <div
+            class="flex gap-2"
+            :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
+          >
+            <!-- Avatar -->
+            <span
+              x-show="msg.role !== 'user'"
+              class="flex-shrink-0 w-7 h-7 rounded-full bg-green-900 border border-green-700 flex items-center justify-center text-sm self-end mb-1"
+            >🐓</span>
+
+            <div
+              class="max-w-[65%] px-4 py-2.5 leading-relaxed text-sm"
+              :class="[
+                msg.role === 'user'  ? 'bubble-user text-blue-100'
+                : msg.role === 'error' ? 'bubble-err  text-red-200'
+                :                        'bubble-ai   text-slate-100',
+                msg.streaming ? 'cursor-blink' : ''
+              ]"
+            >
+              <div x-show="msg.role !== 'user'" class="text-xs text-slate-500 mb-1"
+                   x-text="msg.role === 'error' ? t('exec_error') : '🐓 Rooster'"></div>
+              <div
+                class="break-words"
+                :class="[
+                  msg.streaming && !msg.content ? 'cursor-blink text-slate-500' : '',
+                  msg.role !== 'user' ? 'prose prose-sm prose-invert max-w-none' : 'whitespace-pre-wrap'
+                ]"
+                x-html="msg.role !== 'user' ? renderMarkdown(msg.content || (msg.streaming ? '' : '—')) : (msg.content || '')"
+              ></div>
+            </div>
+
+            <span
+              x-show="msg.role === 'user'"
+              class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-900 border border-blue-700 flex items-center justify-center text-sm self-end mb-1"
+            >👤</span>
+          </div>
+        </template>
+
+        <!-- Input box (sticky bottom inside scroll container) -->
+        <div class="sticky bottom-0 mt-auto pt-2 bg-slate-900">
+          <div class="bg-slate-800 rounded-lg border border-slate-700 flex flex-col gap-1.5 p-2">
+            <!-- Model selector row -->
+            <div class="flex items-center gap-2 px-1">
+              <span class="text-xs text-slate-500" x-text="t('model_selector_label')"></span>
+              <select
+                x-model="selectedProvider"
+                class="bg-slate-700 text-slate-200 text-xs rounded px-2 py-0.5 border border-slate-600 outline-none"
+                :disabled="isRunning"
+              >
+                <option value="" x-text="t('model_auto')"></option>
+                <template x-for="p in availableProviders" :key="p.id">
+                  <option :value="p.id" x-text="p.label"></option>
+                </template>
+              </select>
+              <span x-show="selectedProvider" class="text-xs text-green-500/70">●</span>
+            </div>
+            <!-- Image thumbnails strip -->
+            <div x-show="pendingImages.length > 0" class="flex gap-2 px-1 flex-wrap">
+              <template x-for="(img, idx) in pendingImages" :key="idx">
+                <div class="relative group w-12 h-12 flex-shrink-0 rounded overflow-hidden border border-slate-600">
+                  <img :src="img" class="w-full h-full object-cover" />
+                  <button
+                    @click="pendingImages.splice(idx, 1)"
+                    class="absolute top-0 right-0 bg-red-900/80 text-red-200 text-xs w-4 h-4 flex items-center justify-center rounded-bl opacity-0 group-hover:opacity-100 transition-opacity"
+                  >✕</button>
+                </div>
+              </template>
+            </div>
+            <div class="flex items-end gap-2"
+                 @dragover.prevent="$el.classList.add('ring-1','ring-green-500/50')"
+                 @dragleave="$el.classList.remove('ring-1','ring-green-500/50')"
+                 @drop.prevent="$el.classList.remove('ring-1','ring-green-500/50'); handleImageDrop($event)">
+            <textarea
+              x-model="chatInput"
+              x-ref="chatTextarea"
+              @input="$el.style.height = 'auto'; $el.style.height = Math.min($el.scrollHeight, 200) + 'px'"
+              @keydown.enter.prevent="if(!$event.shiftKey && !$event.isComposing) { sendMessage(); $el.style.height = 'auto'; }"
+              @paste="handleImagePaste($event)"
+              :placeholder="t('chat_placeholder')"
+              rows="1"
+              style="min-height: 32px; max-height: 200px; overflow-y: auto;"
+              class="flex-1 bg-transparent resize-none outline-none text-slate-100 placeholder-slate-600 text-sm px-2 py-1 leading-relaxed"
+              :disabled="isRunning || !gatewayConnected"
+            ></textarea>
+            <div class="flex flex-col gap-1.5 flex-shrink-0">
+              <button
+                @click="sendMessage()"
+                :disabled="(!chatInput.trim() && pendingImages.length === 0) || isRunning || !gatewayConnected"
+                class="px-4 py-1.5 rounded text-xs font-semibold transition-all"
+                :class="(chatInput.trim() || pendingImages.length > 0) && !isRunning && gatewayConnected
+                        ? 'bg-green-600 hover:bg-green-500 text-white cursor-pointer'
+                        : 'bg-slate-700 text-slate-500 cursor-not-allowed'"
+              >
+                <span x-text="isRunning ? t('running') : t('send')"></span>
+              </button>
+              <button
+                x-show="isRunning"
+                @click="showStopConfirm = true"
+                class="px-4 py-1.5 rounded text-xs font-semibold bg-red-900 hover:bg-red-800 text-red-200 cursor-pointer transition-all"
+                x-text="t('stop')"
+              ></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /execution -->
+  </div><!-- /execution-outer -->

@@ -342,14 +342,31 @@ class LLMClient:
                 async def _do_stream(msgs=send_messages):
                     nonlocal committed
                     yielded_any = False
+                    last_usage = None
                     async with llm_traffic_controller.slot(current_p, purpose="llm_stream"):
                         async for delta in self._internal_client.chat_stream(model, msgs, **kwargs):
                             if delta.content or delta.tool_calls:
                                 yielded_any = True
                                 committed = True
+                            # Capture usage data from the final streaming chunk
+                            if delta.usage:
+                                last_usage = delta.usage
                             yield delta
                     if not yielded_any and not committed:
                         raise Exception(f"Empty content from {current_p} (model: {model})")
+                    # Record token usage to metrics after stream completes
+                    if last_usage and last_usage.total_tokens > 0:
+                        try:
+                            from gateway.metrics import metrics
+
+                            metrics.observe_tokens(
+                                provider=current_p,
+                                prompt_tokens=last_usage.prompt_tokens,
+                                completion_tokens=last_usage.completion_tokens,
+                                model=model,
+                            )
+                        except Exception:
+                            pass  # metrics failure should not affect stream
 
                 async for delta in _do_stream():
                     yield delta

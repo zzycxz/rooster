@@ -84,6 +84,47 @@ async def _authenticate_ws(websocket: WebSocket) -> bool:
     return False
 
 
+@router.post("/api/chat")
+async def http_chat(request: Request):
+    """HTTP bridge for scheduled tasks (Guardian) and external integrations.
+
+    Accepts JSON: {"message": "...", "session_id": "..."}.
+    Internally dispatches through the same chat.send pipeline used by WebSocket clients.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    message_text = body.get("message", "").strip()
+    session_id = body.get("session_id", "scheduled")
+
+    if not message_text:
+        raise HTTPException(status_code=400, detail="Missing 'message' field")
+
+    from ..run_manager import global_run_manager
+    from ..event_handler import AgentEventHandler
+    from sessions.store import global_session_store
+    from ..router import global_router
+
+    session = global_session_store.get_or_create(session_id)
+    session.add_message(role="user", content=message_text)
+    global_session_store.save_session(session_id)
+
+    run = global_run_manager.create_run(session_id)
+
+    async def _noop_broadcast(event_data: Dict[str, Any]):
+        pass
+
+    event_handler = AgentEventHandler(_noop_broadcast)
+    await event_handler.emit(run.run_id, session_id, "lifecycle", {"phase": "start"})
+
+    agent_task = asyncio.create_task(global_router.process_run(run, session, message_text, event_handler))
+    global_run_manager.register_task(run.run_id, agent_task)
+
+    return {"status": "started", "runId": run.run_id, "sessionKey": session_id}
+
+
 @router.websocket("/ws/gateway")
 async def websocket_endpoint(websocket: WebSocket):
     if not await _authenticate_ws(websocket):
