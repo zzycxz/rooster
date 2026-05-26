@@ -27,21 +27,53 @@ from typing import Optional, Dict, Any, List
 
 try:
     import psutil
+
     _PSUTIL_AVAILABLE = True
 except ImportError:
     _PSUTIL_AVAILABLE = False
 
 # 安全自愈允许安装的包白名单，防止利用 stderr 注入下载恶意包
-_ALLOWED_PACKAGES = frozenset({
-    "requests", "httpx", "aiohttp",
-    "pandas", "numpy", "scipy",
-    "openpyxl", "xlrd", "xlwt",
-    "pillow", "matplotlib",
-    "beautifulsoup4", "lxml",
-    "pydantic", "pyyaml", "toml",
-    "python-docx", "pypdf2", "reportlab",
-    "rich", "tqdm", "psutil"
-})
+_ALLOWED_PACKAGES = frozenset(
+    {
+        "requests",
+        "httpx",
+        "aiohttp",
+        "pandas",
+        "numpy",
+        "scipy",
+        "openpyxl",
+        "xlrd",
+        "xlwt",
+        "pillow",
+        "matplotlib",
+        "beautifulsoup4",
+        "lxml",
+        "pydantic",
+        "pyyaml",
+        "toml",
+        "python-docx",
+        "pypdf",
+        "reportlab",
+        "rich",
+        "tqdm",
+        "psutil",
+        # project core dependencies
+        "openai",
+        "fastapi",
+        "uvicorn",
+        "starlette",
+        "websockets",
+        "playwright",
+        "python-dotenv",
+        "rank-bm25",
+        "pyautogui",
+        "pyperclip",
+        "presidio-analyzer",
+        "markdownify",
+        "huggingface-hub",
+    }
+)
+
 
 # Load .env and .env.local
 def load_env():
@@ -50,7 +82,7 @@ def load_env():
     # Load .env.local first (secrets, higher priority)
     env_local = os.path.join(base, ".env.local")
     if os.path.exists(env_local):
-        with open(env_local, 'r', encoding='utf-8') as f:
+        with open(env_local, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.split("#", 1)[0].strip()  # strip inline comments
                 if "=" in line and not line.startswith("#"):
@@ -61,7 +93,7 @@ def load_env():
     # Load .env (defaults, lower priority)
     env_path = os.path.join(base, ".env")
     if os.path.exists(env_path):
-        with open(env_path, 'r', encoding='utf-8') as f:
+        with open(env_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.split("#", 1)[0].strip()  # strip inline comments
                 if "=" in line and not line.startswith("#"):
@@ -69,14 +101,15 @@ def load_env():
                     if k not in os.environ:
                         os.environ[k] = v.strip('"').strip("'")
 
+
 load_env()
 
 # ── Directories / Logging ────────────────────────────────────────────────────
-_ROOT_DIR           = os.path.dirname(os.path.abspath(__file__))
-_DATA_DIR           = os.path.join(_ROOT_DIR, ".rooster")
-_LOG_DIR            = os.path.join(_DATA_DIR, "logs")
-_PIDFILE            = os.path.join(_DATA_DIR, "guardian.pid")
-_STATUS_FILE        = os.path.join(_DATA_DIR, "guardian_status.json")
+_ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+_DATA_DIR = os.path.join(_ROOT_DIR, ".rooster")
+_LOG_DIR = os.path.join(_DATA_DIR, "logs")
+_PIDFILE = os.path.join(_DATA_DIR, "guardian.pid")
+_STATUS_FILE = os.path.join(_DATA_DIR, "guardian_status.json")
 os.makedirs(_LOG_DIR, exist_ok=True)
 os.makedirs(_DATA_DIR, exist_ok=True)
 _stream = sys.stdout
@@ -85,39 +118,38 @@ if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
-        
-handlers = [logging.FileHandler(os.path.join(_LOG_DIR, "guardian.log"), encoding='utf-8')]
+
+handlers = [logging.FileHandler(os.path.join(_LOG_DIR, "guardian.log"), encoding="utf-8")]
 if _stream is not None:
     handlers.append(logging.StreamHandler(_stream))
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - [GUARDIAN] - %(levelname)s - %(message)s',
-    handlers=handlers
+    level=logging.INFO, format="%(asctime)s - [GUARDIAN] - %(levelname)s - %(message)s", handlers=handlers
 )
 logger = logging.getLogger(__name__)
 
 # ── Configuration (all overridable via env vars) ─────────────────────────────
-MAX_FIX_RETRIES         = int(os.environ.get("GUARDIAN_MAX_RETRIES", "3"))
+MAX_FIX_RETRIES = int(os.environ.get("GUARDIAN_MAX_RETRIES", "3"))
 
 # Heartbeat
-_HEARTBEAT_INTERVAL     = int(os.environ.get("GUARDIAN_HEARTBEAT_INTERVAL", "30"))
-_HEARTBEAT_TIMEOUT      = int(os.environ.get("GUARDIAN_HEARTBEAT_TIMEOUT",  "10"))
-_HEARTBEAT_MAX_FAILS    = int(os.environ.get("GUARDIAN_HEARTBEAT_MAX_FAILS", "3"))
-_STARTUP_GRACE          = int(os.environ.get("GUARDIAN_STARTUP_GRACE",      "60"))
+_HEARTBEAT_INTERVAL = int(os.environ.get("GUARDIAN_HEARTBEAT_INTERVAL", "30"))
+_HEARTBEAT_TIMEOUT = int(os.environ.get("GUARDIAN_HEARTBEAT_TIMEOUT", "10"))
+_HEARTBEAT_MAX_FAILS = int(os.environ.get("GUARDIAN_HEARTBEAT_MAX_FAILS", "3"))
+_STARTUP_GRACE = int(os.environ.get("GUARDIAN_STARTUP_GRACE", "60"))
 
 # Restart throttle
-_RESTART_WINDOW         = int(os.environ.get("GUARDIAN_RESTART_WINDOW",          "300"))
-_MAX_RESTARTS_IN_WINDOW = int(os.environ.get("GUARDIAN_MAX_RESTARTS_IN_WINDOW",  "5"))
+_RESTART_WINDOW = int(os.environ.get("GUARDIAN_RESTART_WINDOW", "300"))
+_MAX_RESTARTS_IN_WINDOW = int(os.environ.get("GUARDIAN_MAX_RESTARTS_IN_WINDOW", "5"))
 
 # Resource monitoring (requires psutil)
-_RES_CPU_LIMIT_PCT      = float(os.environ.get("GUARDIAN_CPU_LIMIT",             "95"))
-_RES_MEM_LIMIT_MB       = float(os.environ.get("GUARDIAN_MEM_LIMIT_MB",         "2048"))
-_RES_CHECK_INTERVAL     = int(os.environ.get("GUARDIAN_RES_CHECK_INTERVAL",      "15"))
+_RES_CPU_LIMIT_PCT = float(os.environ.get("GUARDIAN_CPU_LIMIT", "95"))
+_RES_MEM_LIMIT_MB = float(os.environ.get("GUARDIAN_MEM_LIMIT_MB", "2048"))
+_RES_CHECK_INTERVAL = int(os.environ.get("GUARDIAN_RES_CHECK_INTERVAL", "15"))
 _RES_VIOLATION_DURATION = int(os.environ.get("GUARDIAN_RES_VIOLATION_DURATION", "120"))
 
 # Alerts (Webhook: Feishu / DingTalk / Slack compatible JSON)
-_WEBHOOK_URL            = os.environ.get("GUARDIAN_WEBHOOK_URL", "")
+_WEBHOOK_URL = os.environ.get("GUARDIAN_WEBHOOK_URL", "")
+
 
 class Guardian:
     def __init__(self, target_script: str = "src/main.py"):
@@ -145,7 +177,7 @@ class Guardian:
         self._gateway_port = int(os.environ.get("GATEWAY_PORT", "8765"))
         # Register signal handlers
         signal.signal(signal.SIGINT, self._on_signal)
-        if hasattr(signal, 'SIGTERM'):
+        if hasattr(signal, "SIGTERM"):
             signal.signal(signal.SIGTERM, self._on_signal)
 
     # ------------------------------------------------------------------
@@ -190,7 +222,7 @@ class Guardian:
             "timestamp": time.time(),
         }
         try:
-            with open(_STATUS_FILE, 'w', encoding='utf-8') as f:
+            with open(_STATUS_FILE, "w", encoding="utf-8") as f:
                 json.dump(status, f, indent=2, ensure_ascii=False)
         except Exception:
             pass
@@ -212,10 +244,7 @@ class Guardian:
             except Exception:
                 pass
         if platform.system() == "Windows":
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(pid)],
-                capture_output=True, timeout=10
-            )
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, timeout=10)
         else:
             try:
                 os.killpg(os.getpgid(pid), signal.SIGKILL)
@@ -229,7 +258,7 @@ class Guardian:
         """Write PID file; return False if another Guardian is already running."""
         if os.path.exists(_PIDFILE):
             try:
-                with open(_PIDFILE, 'r') as f:
+                with open(_PIDFILE, "r") as f:
                     old_pid = int(f.read().strip())
                 alive = False
                 if _PSUTIL_AVAILABLE:
@@ -241,14 +270,12 @@ class Guardian:
                     except (OSError, ProcessLookupError):
                         pass
                 if alive:
-                    logger.critical(
-                        f"🚫 Another Guardian is already running (PID={old_pid}), exiting."
-                    )
+                    logger.critical(f"🚫 Another Guardian is already running (PID={old_pid}), exiting.")
                     return False
             except (ValueError, IOError):
                 pass
         try:
-            with open(_PIDFILE, 'w') as f:
+            with open(_PIDFILE, "w") as f:
                 f.write(str(os.getpid()))
         except Exception as e:
             logger.warning(f"⚠️ Cannot write PID file: {e}")
@@ -258,7 +285,7 @@ class Guardian:
         """Clean up PID file (only delete if we own it)."""
         try:
             if os.path.exists(_PIDFILE):
-                with open(_PIDFILE, 'r') as f:
+                with open(_PIDFILE, "r") as f:
                     stored_pid = int(f.read().strip())
                 if stored_pid == os.getpid():
                     os.remove(_PIDFILE)
@@ -281,9 +308,12 @@ class Guardian:
         # Quick connectivity check
         try:
             conn = http.client.HTTPConnection("127.0.0.1", aria2_port, timeout=2)
-            conn.request("POST", "/jsonrpc",
+            conn.request(
+                "POST",
+                "/jsonrpc",
                 body=b'{"jsonrpc":"2.0","id":"ping","method":"aria2.getVersion","params":[]}',
-                headers={"Content-Type": "application/json"})
+                headers={"Content-Type": "application/json"},
+            )
             resp = conn.getresponse()
             conn.close()
             if resp.status < 400:
@@ -296,6 +326,7 @@ class Guardian:
         try:
             # Find aria2c binary
             import shutil
+
             aria2c_bin = shutil.which("aria2c")
             if not aria2c_bin:
                 logger.warning("⚠️ aria2c not found in PATH, skipping auto-launch.")
@@ -309,10 +340,11 @@ class Guardian:
                 "--daemon",
             ]
             import platform
+
             kwargs = {}
             if platform.system() == "Windows":
                 kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
-            
+
             subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kwargs)
             time.sleep(1)
             logger.info(f"✅ aria2c daemon started on port {aria2_port}.")
@@ -324,7 +356,7 @@ class Guardian:
     # ------------------------------------------------------------------
     def _backoff_sleep(self, attempt: int):
         """Exponential backoff with random jitter (cap 30s)."""
-        base = min(2 ** attempt, 30)
+        base = min(2**attempt, 30)
         jitter = random.uniform(0, base * 0.2)
         delay = base + jitter
         logger.info(f"⏳ Backing off {delay:.1f}s before restart...")
@@ -363,11 +395,7 @@ class Guardian:
     # Stream relay (runs in background thread)
     # ------------------------------------------------------------------
     @staticmethod
-    def _relay_stream(
-        src,
-        dst,
-        collector: Optional[List[str]]
-    ):
+    def _relay_stream(src, dst, collector: Optional[List[str]]):
         """Read src line-by-line, write to dst; optionally collect into list."""
         try:
             for line in src:
@@ -402,9 +430,7 @@ class Guardian:
 
             ok = False
             try:
-                conn = http.client.HTTPConnection(
-                    "127.0.0.1", self._gateway_port, timeout=_HEARTBEAT_TIMEOUT
-                )
+                conn = http.client.HTTPConnection("127.0.0.1", self._gateway_port, timeout=_HEARTBEAT_TIMEOUT)
                 conn.request("GET", "/api/health")
                 resp = conn.getresponse()
                 conn.close()
@@ -444,9 +470,9 @@ class Guardian:
             if self._child is None or self._child.poll() is not None:
                 return
             try:
-                proc    = psutil.Process(self._child.pid)
+                proc = psutil.Process(self._child.pid)
                 cpu_pct = proc.cpu_percent(interval=1)
-                mem_mb  = proc.memory_info().rss / 1024 / 1024
+                mem_mb = proc.memory_info().rss / 1024 / 1024
             except psutil.NoSuchProcess:
                 return
             except Exception as e:
@@ -504,9 +530,7 @@ class Guardian:
 
         try:
             if platform.system() == "Windows":
-                result = subprocess.run(
-                    ["netstat", "-ano"], capture_output=True, timeout=10
-                )
+                result = subprocess.run(["netstat", "-ano"], capture_output=True, timeout=10)
                 stdout_str = ""
                 if result.stdout:
                     try:
@@ -524,13 +548,9 @@ class Guardian:
                     return True
                 for pid in pids:
                     logger.info(f"🔫 Killing process PID={pid} on port {port}")
-                    subprocess.run(
-                        ["taskkill", "/PID", pid, "/F"], capture_output=True, timeout=10
-                    )
+                    subprocess.run(["taskkill", "/PID", pid, "/F"], capture_output=True, timeout=10)
             else:
-                result = subprocess.run(
-                    ["lsof", "-ti", f":{port}"], capture_output=True, timeout=10
-                )
+                result = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, timeout=10)
                 stdout_str = ""
                 if result.stdout:
                     try:
@@ -543,9 +563,7 @@ class Guardian:
                     return True
                 for pid in pids:
                     logger.info(f"🔫 Killing process PID={pid.strip()} on port {port}")
-                    subprocess.run(
-                        ["kill", "-9", pid.strip()], capture_output=True, timeout=10
-                    )
+                    subprocess.run(["kill", "-9", pid.strip()], capture_output=True, timeout=10)
             time.sleep(2)
             logger.info(f"✅ Port {port} cleaned up.")
             return True
@@ -562,15 +580,18 @@ class Guardian:
             return
         try:
             from urllib.parse import urlparse
+
             parsed = urlparse(_WEBHOOK_URL)
-            host   = parsed.netloc
-            path   = parsed.path or "/"
+            host = parsed.netloc
+            path = parsed.path or "/"
             if parsed.query:
                 path += "?" + parsed.query
-            payload = json.dumps({
-                "msg_type": "text",
-                "content": {"text": f"[Rooster Guardian] {message}"},
-            })
+            payload = json.dumps(
+                {
+                    "msg_type": "text",
+                    "content": {"text": f"[Rooster Guardian] {message}"},
+                }
+            )
             if parsed.scheme == "https":
                 conn = http.client.HTTPSConnection(host, timeout=5)
             else:
@@ -600,14 +621,12 @@ class Guardian:
             # Restart throttle
             if not self._check_restart_throttle():
                 self._notify_critical(
-                    f"Restart storm: more than {_MAX_RESTARTS_IN_WINDOW} restarts "
-                    f"in {_RESTART_WINDOW}s, stopping."
+                    f"Restart storm: more than {_MAX_RESTARTS_IN_WINDOW} restarts in {_RESTART_WINDOW}s, stopping."
                 )
                 break
 
             logger.info(
-                f"🚀 Starting child process: {self.target_script} "
-                f"(attempt {self.retry_count + 1}/{MAX_FIX_RETRIES})"
+                f"🚀 Starting child process: {self.target_script} (attempt {self.retry_count + 1}/{MAX_FIX_RETRIES})"
             )
 
             env = {**os.environ, "PYTHONIOENCODING": "utf-8", "ROOSTER_GUARDIAN_MODE": "true"}
@@ -615,31 +634,23 @@ class Guardian:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                encoding='utf-8',
+                encoding="utf-8",
                 bufsize=1,
                 env=env,
             )
             if platform.system() != "Windows":
                 popen_kwargs["start_new_session"] = True
-            self._child = subprocess.Popen(
-                [sys.executable, self.target_script], **popen_kwargs
-            )
+            self._child = subprocess.Popen([sys.executable, self.target_script], **popen_kwargs)
             self._child_start_time = time.time()
             self._heartbeat_killed = False
-            self._resource_killed  = False
-            self._heartbeat_fails  = 0
+            self._resource_killed = False
+            self._heartbeat_fails = 0
 
             # Start heartbeat + resource monitoring + schedule trigger threads
-            self._heartbeat_thread = threading.Thread(
-                target=self._heartbeat_loop, daemon=True
-            )
-            self._resource_thread = threading.Thread(
-                target=self._resource_monitor_loop, daemon=True
-            )
+            self._heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
+            self._resource_thread = threading.Thread(target=self._resource_monitor_loop, daemon=True)
             if self._schedule_thread is None or not self._schedule_thread.is_alive():
-                self._schedule_thread = threading.Thread(
-                    target=self._schedule_loop, daemon=True
-                )
+                self._schedule_thread = threading.Thread(target=self._schedule_loop, daemon=True)
                 self._schedule_thread.start()
             self._heartbeat_thread.start()
             self._resource_thread.start()
@@ -649,14 +660,10 @@ class Guardian:
             # Relay stdout / collect stderr in background threads
             stderr_lines: List[str] = []
             t_out = threading.Thread(
-                target=self._relay_stream,
-                args=(self._child.stdout, sys.stdout, None),
-                daemon=True
+                target=self._relay_stream, args=(self._child.stdout, sys.stdout, None), daemon=True
             )
             t_err = threading.Thread(
-                target=self._relay_stream,
-                args=(self._child.stderr, sys.stderr, stderr_lines),
-                daemon=True
+                target=self._relay_stream, args=(self._child.stderr, sys.stderr, stderr_lines), daemon=True
             )
             t_out.start()
             t_err.start()
@@ -745,7 +752,7 @@ class Guardian:
         if match:
             pkg = match.group(1).strip()
             # 严格安全过滤：仅允许安装白名单内的依赖包
-            top_pkg = pkg.split('.')[0]
+            top_pkg = pkg.split(".")[0]
             if top_pkg not in _ALLOWED_PACKAGES:
                 logger.critical(
                     f"🛡️ [Security Sentinel] 拦截到未授权的自动依赖安装请求：'{pkg}'。 "
@@ -801,14 +808,16 @@ class Guardian:
             return False
         minute_f, hour_f, dom_f, month_f, dow_f = m.groups()
         from datetime import timedelta as _td
-        _gpm = GuardianProcess._parse_cron_field
+
+        _gpm = Guardian._parse_cron_field
         minutes = _gpm(minute_f, range(0, 60))
         hours = _gpm(hour_f, range(0, 24))
         doms = _gpm(dom_f, range(1, 32))
         months = _gpm(month_f, range(1, 13))
         dows = [d % 7 for d in _gpm(dow_f, range(0, 8))]
-        return (dt.minute in minutes and dt.hour in hours and dt.day in doms
-                and dt.month in months and dt.weekday() in dows)
+        return (
+            dt.minute in minutes and dt.hour in hours and dt.day in doms and dt.month in months and dt.weekday() in dows
+        )
 
     def _schedule_loop(self):
         """Background thread: check .rooster/schedules.json every 60s and fire due tasks."""
@@ -818,7 +827,9 @@ class Guardian:
         while not self._shutdown:
             try:
                 if not os.path.exists(schedules_path):
-                    time.sleep(60)
+                    # Dynamic sleep: no schedules file, use default 60s
+                    _sleep_seconds = min(self._calculate_next_fire_delay(schedules_path, last_fire), 60)
+                    time.sleep(_sleep_seconds)
                     continue
 
                 with open(schedules_path, "r", encoding="utf-8") as f:
@@ -887,16 +898,65 @@ class Guardian:
             except Exception as e:
                 logger.warning(f"⚠️ [Schedule] 调度检查失败: {e}")
 
-            time.sleep(60)
+            # Dynamic sleep: avoid drift for interval/once/cron triggers
+            _sleep_seconds = min(self._calculate_next_fire_delay(schedules_path, last_fire), 60)
+            time.sleep(_sleep_seconds)
+
+    def _calculate_next_fire_delay(self, schedules_path: str, last_fire: Dict[str, str] = None) -> float:
+        """Calculate how many seconds until the nearest scheduled trigger.
+        Returns min(delay, 60) — sleeps at most 60s to avoid excessive CPU.
+        """
+        try:
+            if not os.path.exists(schedules_path):
+                return 60.0
+            with open(schedules_path, "r", encoding="utf-8") as f:
+                schedules = json.load(f)
+            now = datetime.now()
+            min_delay = 60.0
+            if last_fire is None:
+                last_fire = {}
+            for entry in schedules:
+                if not entry.get("enabled", True):
+                    continue
+                trigger = entry.get("trigger", {})
+                trigger_type = trigger.get("type", "cron")
+                sid = entry.get("id", "")
+                if trigger_type == "interval":
+                    # interval: next fire is interval_sec from last fire or from now
+                    interval_sec = trigger.get("interval_sec", 120)
+                    last_fire_str = last_fire.get(sid)  # reuse local dict from _schedule_loop
+                    if last_fire_str:
+                        try:
+                            last_dt = datetime.fromisoformat(last_fire_str)
+                            elapsed = (now - last_dt).total_seconds()
+                            remaining = interval_sec - elapsed
+                            if remaining > 0:
+                                min_delay = min(min_delay, remaining)
+                        except (ValueError, TypeError):
+                            pass
+                elif trigger_type == "once":
+                    run_once_at = trigger.get("run_once_at", "")
+                    if run_once_at:
+                        try:
+                            target_dt = datetime.fromisoformat(run_once_at)
+                            delay = (target_dt - now).total_seconds()
+                            if delay > 0:
+                                min_delay = min(min_delay, delay)
+                        except (ValueError, TypeError):
+                            pass
+            return min_delay
+        except Exception:
+            return 60.0
 
     def _fire_scheduled_task(self, task_text: str, session_id: str):
-        """通过 Gateway HTTP API 触发定时任务。"""
         try:
             port = self._gateway_port
-            payload = json.dumps({
-                "message": task_text,
-                "session_id": session_id or "scheduled",
-            }).encode("utf-8")
+            payload = json.dumps(
+                {
+                    "message": task_text,
+                    "session_id": session_id or "scheduled",
+                }
+            ).encode("utf-8")
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
             conn.request("POST", "/api/chat", body=payload, headers={"Content-Type": "application/json"})
             resp = conn.getresponse()
@@ -904,6 +964,7 @@ class Guardian:
             conn.close()
         except Exception as e:
             logger.warning(f"⚠️ [Schedule] 任务触发失败: {e}")
+
 
 if __name__ == "__main__":
     guardian = Guardian()
