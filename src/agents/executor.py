@@ -166,6 +166,15 @@ class AgentExecutor:
         self.orchestrator = self._orchestrator_cache[config.session_id]
         session_history = config.history
 
+        # --- FIX: Ensure prompt is in session_history to avoid losing it at step 2 ---
+        _prompt_already_in_history = False
+        if session_history and session_history[-1].get("role") == "user":
+            if config.prompt and config.prompt.strip() in session_history[-1].get("content", ""):
+                _prompt_already_in_history = True
+                
+        if not _prompt_already_in_history and config.prompt:
+            session_history.append({"role": "user", "content": config.prompt})
+
         # 2. Inject security guard and LLM capabilities into tool registry
         if config.tool_registry:
             if config.allowed_paths:
@@ -203,6 +212,9 @@ class AgentExecutor:
         # Pre-compute full tool info for the system prompt (constant per run).
         # FC schemas are now computed per-step via the ToolRouter (see below).
         tools_info = config.tool_registry.get_all_tool_schemas() if config.tool_registry else None
+        # Check if FC schemas are available so prompt can skip tool discovery instructions
+        all_fc = config.tool_registry.get_all_fc_schemas() if config.tool_registry else []
+        fc_tools_count = len(all_fc)
 
         while step < config.max_steps:
             step += 1
@@ -221,6 +233,7 @@ class AgentExecutor:
                 workspace_dir=config.workspace_dir,
                 tools_info=tools_info,
                 ltm_memory=ltm_block,
+                fc_tools_count=fc_tools_count,
             )
             system_prompt = self.prompt_builder.build_system_prompt(params)
 
@@ -254,7 +267,7 @@ class AgentExecutor:
             messages = self.prompt_builder.compose_messages(
                 system_prompt=system_prompt,
                 history=session_history,
-                user_input=config.prompt if step == 1 else "",
+                user_input="",  # Prompt is already in session_history
                 blackboard_context=blackboard_ctx,
             )
 
@@ -384,6 +397,29 @@ class AgentExecutor:
                     session_history.append({"role": "assistant", "content": full_content})
 
                 audit_manager.log_step_detail(config.session_id, step, "raw_llm_out.txt", full_content)
+
+                # --- [歧义拦截门] CONFIRM_REQUIRED 检测 ---
+                # 在执行任何工具之前，先检查 LLM 是否发出了歧义问询信号。
+                # 若检测到，立即中断循环，把问题推送给用户，等待下一轮对话。
+                _confirm_signal = self._extract_confirm_required(full_content)
+                if _confirm_signal:
+                    _formatted_question = self._format_clarification_message(
+                        _confirm_signal.get("question", ""),
+                        _confirm_signal.get("options", []),
+                    )
+                    # 若 LLM 原始输出中已经包含了格式化的文字说明，则不重复发送 JSON 块
+                    # 仅当 full_content 主体不包含自然语言问句时，才补发格式化版本
+                    if not any(kw in full_content for kw in ["请选择", "请确认", "请问", "哪个", "哪一"]):
+                        await self.event_handler.emit_assistant_delta(
+                            session_key=config.session_key,
+                            client_run_id=run_id,
+                            text=_formatted_question,
+                        )
+                    executor_logger.info(
+                        f"[CONFIRM_REQUIRED] 歧义拦截门触发 (Step {step})，"
+                        f"暂停执行，等待用户澄清：{_confirm_signal.get('question', '')[:80]}"
+                    )
+                    break  # 不执行任何工具，退出 ReAct 循环，等待下一轮用户回复
 
                 # --- Phase 3: Tool execution ---
                 if native_tool_calls:
@@ -633,10 +669,26 @@ class AgentExecutor:
             session = global_session_store.get_or_create(config.session_id)
             for msg in session_history[len(session.history) :]:
                 if msg.get("role") == "tool":
-                    # Keep tool message summary (first 200 chars) instead of completely discarding
+                    # Sanitize tool results before persisting:
+                    # Strip magnet/ED2K URIs so they never pollute future session context.
+                    # Reusing a cached magnet from a previous download is a critical correctness bug:
+                    # the LLM would skip the actual search and re-download the wrong file.
                     content = msg.get("content", "") or ""
                     if isinstance(content, str) and content.strip():
-                        session.add_message("tool", content[:200] + "..." if len(content) > 200 else content)
+                        # Replace full magnet URIs (including the info_hash) with a safe placeholder
+                        sanitized = re.sub(
+                            r"magnet:\?xt=urn:btih:[a-fA-F0-9]{32,40}[^\s'\"\]]*",
+                            "[magnet_uri_redacted]",
+                            content,
+                        )
+                        # Replace ED2K URIs similarly
+                        sanitized = re.sub(
+                            r"ed2k://[^\s'\"\]]*",
+                            "[ed2k_uri_redacted]",
+                            sanitized,
+                        )
+                        summary = sanitized[:200] + "..." if len(sanitized) > 200 else sanitized
+                        session.add_message("tool", summary)
                     continue
                 if msg.get("_internal"):
                     continue
@@ -937,3 +989,65 @@ class AgentExecutor:
     def _clean_thought_chatter(self, text: str) -> str:
         # <think> tags are handled during stream; remove fragile regex chatter cleaning
         return text.strip()
+
+    # ----------------------------------------------------------------
+    # Clarification Gate helpers
+    # ----------------------------------------------------------------
+
+    def _extract_confirm_required(self, content: str) -> Optional[Dict[str, Any]]:
+        """从 LLM 输出中提取 CONFIRM_REQUIRED 信号块。
+
+        LLM 可能在纯文本中夹杂一个 JSON 块，也可能直接输出纯 JSON。
+        本方法使用贪心 JSON 扫描，而非严格的格式匹配，以提高鲁棒性。
+        """
+        if not content or "CONFIRM_REQUIRED" not in content:
+            return None
+        try:
+            # 先尝试从 ```json ... ``` 代码块中提取
+            fenced = re.findall(r"```(?:json)?\s*([\s\S]*?)```", content)
+            candidates = fenced if fenced else [content]
+            for candidate in candidates:
+                # 在候选段中找所有 { ... } 块（贪心，从最外层括号开始）
+                depth = 0
+                start = -1
+                for i, ch in enumerate(candidate):
+                    if ch == "{":
+                        if depth == 0:
+                            start = i
+                        depth += 1
+                    elif ch == "}":
+                        depth -= 1
+                        if depth == 0 and start != -1:
+                            blob = candidate[start : i + 1]
+                            try:
+                                data = json.loads(blob)
+                                if (
+                                    isinstance(data, dict)
+                                    and data.get("type") == "CONFIRM_REQUIRED"
+                                    and data.get("question")
+                                ):
+                                    return data
+                            except json.JSONDecodeError:
+                                pass
+                            start = -1
+        except Exception as exc:
+            executor_logger.debug(f"[CONFIRM_REQUIRED] 信号提取失败 (忽略): {exc}")
+        return None
+
+    def _format_clarification_message(self, question: str, options: list) -> str:
+        """将 CONFIRM_REQUIRED 信号格式化为用户友好的选项消息。
+
+        格式设计原则：
+        - 问题放在最前面，让用户一眼知道需要做什么
+        - 选项编号清晰，用户回复数字即可
+        - 末尾提示交互方式
+        """
+        lines = [f"❓ **需要您确认一下：**\n\n{question}"]
+        if options:
+            lines.append("\n**请从以下选项中选择：**")
+            for i, opt in enumerate(options, 1):
+                lines.append(f"  **{i}.** {opt}")
+            lines.append(
+                "\n请回复选项序号（如 `1`、`2`）或直接输入您想要的具体描述。"
+            )
+        return "\n".join(lines)

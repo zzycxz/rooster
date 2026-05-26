@@ -228,13 +228,6 @@ class MissionRunner:
         else:
             # 1. 流式规划
             # 1. Streaming planning
-            # Emit strategist_start lifecycle event for Dashboard pipeline
-            await self.event_handler.emit_lifecycle(
-                session_key=msg.session_id,
-                client_run_id=current_mission_plan.task_id,
-                status="strategist_start",
-            )
-
             current_mission_plan = MissionPlan(
                 task_id=f"T{int(time.time())}",
                 goal=reframed_text,
@@ -242,6 +235,13 @@ class MissionRunner:
                 subtasks=[],
             )
             subtask_list = []
+
+            # Emit strategist_start lifecycle event for Dashboard pipeline
+            await self.event_handler.emit_lifecycle(
+                session_key=msg.session_id,
+                client_run_id=current_mission_plan.task_id,
+                status="strategist_start",
+            )
 
             async for subtask in self.strategist.plan_stream(reframed_text):
                 await channel.send_message(
@@ -495,6 +495,49 @@ class MissionRunner:
                 # Propagate provider info (may differ from initial if failover occurred)
                 if report and not report.provider_used:
                     report.provider_used = subtask_executor.llm_client.provider
+
+                # --- [歧义拦截门] CONFIRM_REQUIRED 路由 (MISSION 模式) ---
+                # 执行官在子任务执行过程中发现歧义时，返回 CONFIRM_REQUIRED 类型的 Report。
+                # 任务编排器居中转发，晨2用户并挂起当前子任务，将用户回复注入指令后重试。
+                if getattr(report, "type", "FINAL_REPORT") == "CONFIRM_REQUIRED":
+                    question = report.evidence.get("question", "") or report.observation or ""
+                    options = report.evidence.get("options", [])
+                    clarification_text = self._format_subtask_clarification(st.id, question, options)
+                    await channel.send_message(to=msg.sender_id, text=clarification_text)
+
+                    user_answer = await self._wait_for_clarification(
+                        session_id=msg.session_id,
+                        sender_id=msg.sender_id,
+                        channel=channel,
+                        subtask_id=st.id,
+                        timeout=300,
+                    )
+
+                    if user_answer:
+                        logger.info(f"[歧义拦截门] [{st.id}] 用户已澄清: {user_answer[:80]}")
+                        # 将用户回复作为补充约束注入子任务指令，重新构造 SubTask
+                        updated_instruction = (
+                            f"{st.instruction}\n"
+                            f"\n[\u7528\u6237\u6f84\u6e05] {user_answer}\n"
+                            "\u8bf7严格按照用户确认的内容执行，不得再次猜测。"
+                        )
+                        st = st.model_copy(update={"instruction": updated_instruction})
+                        current_retry += 1  # 此次重试不计入审计次数限制
+                        await channel.send_message(
+                            to=msg.sender_id,
+                            text=f"⚡ [重新执行] [{st.id}] 根据您的选择继续执行...",
+                        )
+                        continue  # 重试当前子任务
+                    else:
+                        logger.warning(f"[歧义拦截门] [{st.id}] 用户澄清超时，子任务标记为 FAILED")
+                        executed_tasks[st.id] = Report(
+                            subtask_id=st.id,
+                            status="FAILED",
+                            observation=f"子任务 {st.id} 因歧义澄清超时而失败，未收到用户确认。",
+                            failure_code="CLARIFICATION_TIMEOUT",
+                        )
+                        completed_task_ids.add(st.id)
+                        return
 
                 if report.status == "ESCALATE":
                     raise Exception(f"__ESCALATE__: {report.observation}")
@@ -801,3 +844,59 @@ class MissionRunner:
 
         # Clean up MissionTactician state to prevent unbounded memory growth in long-running processes
         self.tactician.states.pop(current_mission_plan.task_id, None)
+
+    # ----------------------------------------------------------------
+    # Clarification Gate helpers (MISSION mode)
+    # ----------------------------------------------------------------
+
+    def _format_subtask_clarification(self, subtask_id: str, question: str, options: list) -> str:
+        """将 CONFIRM_REQUIRED 信号格式化为任务级的用户问询消息。"""
+        lines = [
+            f"\u2753 **[子任务 `{subtask_id}` 需要您确认：]**\n\n{question}"
+        ]
+        if options:
+            lines.append("\n**请从以下选项中选择：**")
+            for i, opt in enumerate(options, 1):
+                lines.append(f"  **{i}.** {opt}")
+            lines.append(
+                "\n请回复选项序号（如 `1`、`2`）或直接输入您想要的具体描述。"
+            )
+        return "\n".join(lines)
+
+    async def _wait_for_clarification(
+        self,
+        session_id: str,
+        sender_id: str,
+        channel: Any,
+        subtask_id: str,
+        timeout: int = 300,
+    ) -> Optional[str]:
+        """挂起当前子任务，等待用户回复澄清指令。
+
+        复用 _PENDING_CONFIRMATIONS 机制，但返回用户原始文本而非布尔值。
+        timeout 内无回复返回 None，调用方应将子任务标记为 FAILED。
+        """
+        event = asyncio.Event()
+        _PENDING_CONFIRMATIONS[session_id] = {
+            "event": event,
+            "subtask_id": subtask_id,
+            "clarification_mode": True,  # 区分普通 confirms 与 clarifications
+        }
+        try:
+            await asyncio.wait_for(event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            _PENDING_CONFIRMATIONS.pop(session_id, None)
+            await channel.send_message(
+                to=sender_id,
+                text=(
+                    f"⏰ 等待用户输入超时（{timeout}s），"
+                    f"子任务 `{subtask_id}` 已标记为失败。"
+                ),
+            )
+            return None
+        finally:
+            entry = _PENDING_CONFIRMATIONS.pop(session_id, None)
+
+        if entry and entry.get("response"):
+            return str(entry["response"])
+        return None

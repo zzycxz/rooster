@@ -18,6 +18,7 @@ class SystemPromptParams(BaseModel):
     extra_prompt: Optional[str] = None
     tools_info: Optional[List[Dict[str, Any]]] = None
     ltm_memory: Optional[str] = None
+    fc_tools_count: int = 0  # Number of FC schemas available (0 = no FC, skip discovery)
 
 
 class PromptBuilder:
@@ -58,7 +59,7 @@ class PromptBuilder:
         # Here we merge original logic into Layer 5 or as supplementary paragraphs
         runtime_info = self._build_runtime_section(params)
         workspace_info = self._build_workspace_section(params.workspace_dir)
-        tools_info = self._build_tools_section(params.tools_info)
+        tools_info = self._build_tools_section(params.tools_info, params.fc_tools_count)
 
         supplement = "\n\n".join([runtime_info, workspace_info, tools_info, params.extra_prompt or ""])
 
@@ -84,7 +85,7 @@ class PromptBuilder:
         """工作目录信息"""  # Workspace directory info
         return f"## Workspace\nYour current workspace is: `{workspace_dir}`. You can read/write files here."
 
-    def _build_tools_section(self, tools: Optional[List[Dict[str, Any]]]) -> str:
+    def _build_tools_section(self, tools: Optional[List[Dict[str, Any]]], fc_tools_count: int = 0) -> str:
         """
         [V2.0 Kit-OS] 概览摘要模式。
         System Prompt 只注入：Kit 概览 + Meta 工具完整 Schema + 调用协议。
@@ -106,11 +107,23 @@ class PromptBuilder:
             # Degradation: if registry not initialized, list all tool names
             kit_overview = "Tools: " + ", ".join(t.get("name", "?") for t in tools)
 
+        if fc_tools_count > 0:
+            # FC schemas are sent via `tools` parameter — no need for discovery
+            tool_instruction = (
+                f"Your available tools ({fc_tools_count}) are defined in the `tools` parameter with full schemas.\n"
+                "Call them directly — do NOT use `tool_info` to discover tools you already have."
+            )
+        else:
+            # No FC — LLM must discover tools via tool_info
+            tool_instruction = (
+                "**IMPORTANT**: You do NOT receive full tool schemas upfront.\n"
+                "Use `tool_search` to find the right tool, then `tool_list` to get exact parameters."
+            )
+
         sections = [
             "## Available Capabilities",
             "",
-            "**IMPORTANT**: You do NOT receive full tool schemas upfront.",
-            "Use `tool_search` to find the right tool, then `tool_list` to get exact parameters.",
+            tool_instruction,
             "",
             kit_overview,
             "",

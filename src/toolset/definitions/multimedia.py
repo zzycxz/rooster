@@ -174,16 +174,17 @@ class MovieDownloaderTool(BaseTool):
     async def _run_inner(self, title: str, quality: str) -> str:
         import asyncio
 
-        search_query = f"{title} {quality}"
+        # Strip book-title marks which are often added by users and break BT search engines
+        clean_title = title.replace("《", "").replace("》", "").strip()
+        search_query = f"{clean_title} {quality}"
         magnet = await self._find_magnet(search_query)
 
         if not magnet:
             # Fallback: retry without quality keywords
-            # 降级：去掉画质词重试
-            magnet = await self._find_magnet(title)
+            magnet = await self._find_magnet(clean_title)
 
         if not magnet:
-            return "FAILED: no magnet link found for '" + title + "'. Try btdig.com or seedhub.cc manually."
+            return "FAILED: no magnet link found for '" + clean_title + "'. Try btdig.com or seedhub.cc manually."
 
         # Append mainstream trackers (prevent Thunder from failing to fetch torrent metadata)
         # 附加主流 Tracker（避免迅雷无法获取种子元数据）
@@ -366,24 +367,31 @@ class MovieDownloaderTool(BaseTool):
             query_is_adult = _looks_adult(q)
 
             if _looks_adult(joined) and not query_is_adult:
-                return -100.0  # Only during normal search: aggressively block spam/adult ads and polluted sources
-                return -100.0  # 仅在普通检索时，强力封杀垃圾擦边广告和污染源
+                # Only during normal search: aggressively block spam/adult ads and polluted sources
+                # 仅在普通检索时，强力封杀垃圾擦边广告和污染源
+                return -100.0
 
             terms = [
                 t
                 for t in re.split(r"[\s+]+", q.lower())
                 if len(t) > 1 and t not in _QUALITY_WORDS and (any("\u4e00" <= c <= "\u9fff" for c in t) or len(t) > 4)
             ]
+            import logging
+            logging.info(f"DEBUG _score_magnet: q={q!r}, terms={terms}, joined[:50]={joined[:50]!r}, dn={dn!r}")
             if not terms:
                 return 1.0
 
             hit_terms = [t for t in terms if (t in joined)]
             if not hit_terms:
-                return -1.0  # No search term match
-                return -1.0  # 未命中搜索词
+                # No search term match — magnet is irrelevant to query
+                # 未命中搜索词 —— 该磁力与查询无关
+                return -1.0
 
             dn_hits = sum(1 for t in terms if t in dn)
-            base_score = len(hit_terms) + dn_hits * 2.0
+            
+            # 降低仅靠 context 命中的权重，大幅提升文件名直接命中(dn_hits)的权重
+            # 这样即使广告出现在搜索词附近，其得分也远低于真正匹配的资源
+            base_score = len(hit_terms) * 1.0 + dn_hits * 10.0
 
             # ── Fine quality and size balancing control ─────────────────────
             # ── 精细画质与体积均衡控制 ──────────────────────────────────
@@ -403,6 +411,14 @@ class MovieDownloaderTool(BaseTool):
                 quality_bonus -= 2.0  # Oversized penalty / 超大体积降权
             elif "720p" in joined or "720" in joined:
                 quality_bonus += 0.5  # 720p secondary alternative / 720p 次优备选
+
+            # 【核心修复】防假种/防广告机制：
+            # 如果文件名(dn)完全没有命中用户的搜索词（dn_hits == 0），
+            # 说明这极大概率是页面上强行插入的“热门推荐”或广告（例如未上映的 Project Hail Mary），
+            # 此时剥夺其大部分画质加分，并削弱基础分，防止假种子靠着 1080p 的噱头得分反超真实资源
+            if dn_hits == 0:
+                quality_bonus *= 0.1
+                base_score *= 0.5
 
             return base_score + quality_bonus
 
@@ -510,12 +526,14 @@ class MovieDownloaderTool(BaseTool):
                             mag = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote_plus(name)}"
                             score = _score_magnet(mag, name, query)
 
-                            # Physical size penalty and sweet spot bonus
-                            # 物理体积惩罚与甜点奖励
-                            if size_bytes > 25 * 1024 * 1024 * 1024:
-                                score -= 3.0  # 超过 25G 的原盘大文件扣 3 分
-                            elif 2 * 1024 * 1024 * 1024 <= size_bytes <= 12 * 1024 * 1024 * 1024:
-                                score += 2.0  # 处于 2G - 12G 之间的优质甜点体积加 2 分
+                            # 只有在基础分合格（至少 >= 0）时，才应用体积奖惩，防止不相关的资源被体积加分复活
+                            if score >= 0:
+                                # Physical size penalty and sweet spot bonus
+                                # 物理体积惩罚与甜点奖励
+                                if size_bytes > 25 * 1024 * 1024 * 1024:
+                                    score -= 3.0  # 超过 25G 的原盘大文件扣 3 分
+                                elif 2 * 1024 * 1024 * 1024 <= size_bytes <= 12 * 1024 * 1024 * 1024:
+                                    score += 2.0  # 处于 2G - 12G 之间的优质甜点体积加 2 分
 
                             if score >= 1.0:
                                 candidates.append({"magnet": mag, "score": score})
@@ -525,10 +543,7 @@ class MovieDownloaderTool(BaseTool):
                     best = candidates[0]
                     if best["score"] >= 1.0:
                         logging.info(
-                            f"🎉 Phase 0 concurrent search success! Selected highest-scored torrent (score: {best['score']}): {best['magnet'][:60]}"
-                        )
-                        logging.info(
-                            f"🎉 阶段 0 并发群搜成功！已为您挑选评分最高的唯一最优种子 (得分: {best['score']}): {best['magnet'][:60]}"
+                            f"🎉 Phase 0 concurrent search success! Best score: {best['score']}: {best['magnet'][:60]}"
                         )
                         return best["magnet"]
         except Exception as e:
@@ -564,10 +579,15 @@ class MovieDownloaderTool(BaseTool):
                     except Exception:
                         pass
                     html = await page.content()
-                    result = _extract_all_candidates(html, query)
-                    if result:
+                    candidates = _extract_all_candidates(html, query)
+                    if candidates:
                         await browser.close()
-                        return result
+                        # _extract_all_candidates returns list[{magnet, score}]; pick highest-scored entry.
+                        # Returning the list directly would cause a TypeError in the caller (_run_inner).
+                        candidates.sort(key=lambda x: x["score"], reverse=True)
+                        best_magnet: str = candidates[0]["magnet"]
+                        logging.info(f"✅ Playwright btdig 成功，最优种子得分 {candidates[0]['score']}: {best_magnet[:60]}")
+                        return best_magnet
                 except Exception as e:
                     logging.warning(f"⚠️ Playwright btdig 失败: {e}")
                 await browser.close()

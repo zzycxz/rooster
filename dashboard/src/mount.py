@@ -31,7 +31,13 @@ def mount_dashboard(
     from .routes.config import handle_config_save, get_env_local_path
     from .app import create_dashboard_app
 
-    # Register dashboard as an event sink for agent events
+    # Register dashboard as an event sink for agent events.
+    # Unregister first to ensure idempotency: if Guardian restarts the process and
+    # mount_dashboard() is called again in the same interpreter session (e.g. via
+    # uvicorn --reload or hot-module re-import), the global _event_sinks list would
+    # accumulate duplicate references, causing every agent event to be broadcast N times.
+    from gateway.event_handler import unregister_event_sink
+    unregister_event_sink(broadcast_event)   # no-op if not yet registered
     register_event_sink(broadcast_event)
 
     # Create the dashboard sub-app
