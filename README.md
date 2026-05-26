@@ -282,7 +282,7 @@ rooster/
 │       ├── browser/            #   Browser tools (Playwright)
 │       └── audit/              #   Audit tools
 │
-├── tests/                      # Test suite (132 tests)
+├── tests/                      # Test suite (176 tests)
 └── .rooster/                   # Runtime data (gitignored)
     ├── SOUL.md                 #   Agent soul file
     ├── USER.md                 #   User profile file
@@ -491,11 +491,12 @@ The Setup panel also includes:
 
 ## 6. Dashboard
 
-Dashboard is a single-page web app (Alpine.js + Tailwind) with 11 panels:
+Dashboard is a single-page web app (Alpine.js + Tailwind) with 13 panels:
 
 | Panel | Features |
 |:---|:---|
 | **Execution** | Agent chat + real-time Pipeline visualization (Router→Strategist→Executor→Auditor status) + session management + image paste |
+| **Downloader** | Full-featured visual download manager (AriaNg integration + aria2c status) |
 | **Steps** | Detailed timeline of every Agent action (tool args / return values), with filter and search |
 | **Logs** | Real-time log stream (level filter + search + export + stack trace expand) |
 | **Errors** | Error collection (stack traces + fix suggestions) |
@@ -506,6 +507,7 @@ Dashboard is a single-page web app (Alpine.js + Tailwind) with 11 panels:
 | **Config** | .env config view (grouped by category, secrets masked) |
 | **Setup** | 10 provider cards + Ollama manager + HF model browser + role matrix + failover config + danger zone |
 | **Health** | Service connectivity check + CPU / Memory / Disk / Network / Top processes |
+| **Scheduler** | Cron task list + editor + execution history + dashboard |
 
 ---
 
