@@ -156,7 +156,9 @@ class MethodHandler:
                 if s.history:
                     # 智能提炼第一条真实的用户输入消息作为标题（排除内部工具响应）
                     # Intelligently extract the first real user message as the title (excluding tool responses)
-                    user_msgs = [m.content for m in s.history if m.role == "user" and not m.content.startswith("<tool_response")]
+                    user_msgs = [
+                        m.content for m in s.history if m.role == "user" and not m.content.startswith("<tool_response")
+                    ]
                     title = user_msgs[0][:20] if user_msgs else last_msg
                 else:
                     title = "新对话"  # New conversation

@@ -193,7 +193,7 @@ class DocxWriteTool(BaseTool):
             title_bold = style.get("title_bold", True)
             body_font = style.get("body_font", "宋体")
             body_size = Pt(style.get("body_size", 12))
-            body_bold = style.get("body_bold", False)
+            _body_bold = style.get("body_bold", False)  # noqa: F841 — TODO: pass to set_font() calls
             l1_font = style.get("level1_font", "黑体")
             l2_font = style.get("level2_font", "楷体")
             l3_font = style.get("level3_font", body_font)

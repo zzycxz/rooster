@@ -1,0 +1,16 @@
+<!-- ═══════════════════════════ STATUS BAR ═══════════════════════════ -->
+<footer class="hidden md:flex flex-none h-6 bg-slate-800 border-t border-slate-700 px-4 items-center gap-4 text-xs text-slate-500">
+  <span :class="wsConnected ? 'text-green-500' : 'text-red-400'"
+        x-text="wsConnected ? t('status_running') : t('status_disconnected')"></span>
+  <span class="text-slate-700">│</span>
+  <span x-text="t('status_steps') + steps.length"></span>
+  <span class="text-slate-700">│</span>
+  <span :class="errorCount > 0 ? 'text-red-400 font-semibold' : ''"
+        x-text="t('status_errors') + errorCount"></span>
+  <span class="text-slate-700">│</span>
+  <span x-text="t('status_tools') + tools.length"></span>
+  <span class="text-slate-700">│</span>
+  <span x-text="t('status_logs') + logs.length"></span>
+  <div class="flex-1"></div>
+  <span x-text="currentTime"></span>
+</footer>

@@ -1,0 +1,79 @@
+    <!-- ╔══════════════════════════════╗ -->
+    <!-- ║  TAB: ERRORS                 ║ -->
+    <!-- ╚══════════════════════════════╝ -->
+    <div x-show="activeTab === 'errors'" class="flex-1 overflow-y-auto p-4 space-y-3">
+      <!-- Empty state -->
+      <div x-show="errors.length === 0"
+           class="flex flex-col items-center justify-center h-full text-slate-600 gap-3 py-16">
+        <span class="text-5xl">✅</span>
+        <span class="text-base text-slate-500" x-text="t('no_errors')"></span>
+      </div>
+
+      <!-- Toolbar (only when errors exist) -->
+      <div x-show="errors.length > 0" class="flex items-center justify-between mb-2">
+        <span class="text-xs text-red-400 font-semibold" x-text="errors.length + ' ' + t('errors_suffix')"></span>
+        <button @click="errors=[]" class="text-xs text-slate-500 hover:text-red-400 transition-colors" x-text="t('clear_all')"></button>
+      </div>
+
+      <template x-for="(err, index) in errors" :key="String(err.id) + '-' + index">
+        <div class="bg-red-950/30 border border-red-800/50 rounded-lg overflow-hidden">
+          <!-- Error header -->
+          <div
+            class="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-white/5 select-none"
+            @click="err.expanded = !err.expanded"
+          >
+            <span class="text-red-400 text-base flex-shrink-0 mt-0.5">⛔</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-red-300 font-bold"
+                      x-text="err.excType || 'Error'"></span>
+                <span x-show="err.agent"
+                      class="text-xs bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded"
+                      x-text="err.agent"></span>
+                <span class="text-xs text-slate-500 ml-auto"
+                      x-text="formatTime(err.ts)"></span>
+              </div>
+              <div class="text-sm text-red-200 mt-1 break-words"
+                   x-text="err.message"></div>
+            </div>
+            <span class="text-slate-500 text-xs flex-shrink-0 mt-1"
+                  x-text="err.expanded ? '▾' : '▸'"></span>
+          </div>
+
+          <!-- Error body -->
+          <div x-show="err.expanded" class="border-t border-red-900/40 px-4 py-3 space-y-3">
+            <!-- Stack trace -->
+            <div x-show="err.traceback">
+              <div class="text-xs text-slate-400 font-semibold mb-1.5" x-text="t('stack_trace')"></div>
+              <pre
+                class="text-xs text-red-300/90 bg-slate-950/60 rounded p-3 overflow-x-auto whitespace-pre font-mono leading-relaxed border border-slate-800"
+                x-text="err.traceback"
+              ></pre>
+            </div>
+
+            <!-- Context -->
+            <div x-show="err.context">
+              <div class="text-xs text-slate-400 font-semibold mb-1.5" x-text="t('context')"></div>
+              <div class="text-xs text-slate-300 bg-slate-900/60 rounded p-2 border border-slate-700"
+                   x-text="err.context"></div>
+            </div>
+
+            <!-- Suggestion -->
+            <div x-show="err.suggestion"
+                 class="flex items-start gap-2 bg-yellow-950/40 border border-yellow-900/40 rounded p-2.5">
+              <span class="text-yellow-400 flex-shrink-0 mt-0.5">💡</span>
+              <div class="text-xs text-yellow-200" x-text="err.suggestion"></div>
+            </div>
+
+            <!-- Raw data toggle -->
+            <div>
+              <button @click="err.showRaw = !err.showRaw"
+                      class="text-xs text-slate-600 hover:text-slate-400 transition-colors">
+                <span x-text="err.showRaw ? t('hide_raw') : t('show_raw')"></span>
+              </button>
+              <div x-show="err.showRaw" class="json-block mt-1.5" x-text="fmt(err._raw)"></div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div><!-- /errors -->

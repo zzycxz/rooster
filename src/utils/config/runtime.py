@@ -16,6 +16,8 @@ class RuntimeConfig:
     AGENT_STUCK_THRESHOLD: int = _env_int("AGENT_STUCK_THRESHOLD", 4)
     AGENT_CONTEXT_LIMIT: int = _env_int("AGENT_CONTEXT_LIMIT", 131072)
     MAX_PARALLEL_SUBTASKS: int = _env_int("MAX_PARALLEL_SUBTASKS", 2)
+    # --- SubAgent recursion depth limit ---
+    MAX_SUBAGENT_DEPTH: int = _env_int("MAX_SUBAGENT_DEPTH", 3)
     LOG_LEVEL: str = _env("LOG_LEVEL", "INFO")
 
     # --- Context quota ratios ---
@@ -26,7 +28,11 @@ class RuntimeConfig:
 
     @property
     def OBSERVATION_CHAR_LIMIT(self) -> int:
-        return int(self.AGENT_CONTEXT_LIMIT * self.CONTEXT_RATIO_OBS * 3.5)
+        # Use chunker's CJK-aware estimate for accuracy (保守 fallback 2.5 when no sample)
+        # CJK-aware: 中文 ~0.67 字/token, 英文 ~4 字/token
+        from memory.chunker import estimate_char_limit
+
+        return estimate_char_limit(int(self.AGENT_CONTEXT_LIMIT * self.CONTEXT_RATIO_OBS))
 
     # --- Tool output ---
     SINGLE_TOOL_OUTPUT_LIMIT: int = _env_int("SINGLE_TOOL_OUTPUT_LIMIT", 8000)

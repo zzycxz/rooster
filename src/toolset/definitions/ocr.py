@@ -37,7 +37,9 @@ class OcrExtractTool(BaseTool):
             return f"Error: image file not found: {image_path}"
 
         try:
-            from paddleocr import PaddleOCR
+            import importlib.util
+            if not importlib.util.find_spec("paddleocr"):
+                raise ImportError
         except ImportError:
             return "Error: 'paddleocr' not installed. Please run: pip install paddlepaddle paddleocr"
 

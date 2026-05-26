@@ -43,7 +43,9 @@ def schedule_memory_compaction(memory_manager, session_id: str, history: List[Di
     async def _run() -> None:
         try:
             await memory_manager.flush_before_compaction(session_id, snapshot)
-            logger.debug("[MemoryCompactor] compaction complete for session=%s (%d messages)", session_id, len(snapshot))
+            logger.debug(
+                "[MemoryCompactor] compaction complete for session=%s (%d messages)", session_id, len(snapshot)
+            )
         except Exception as exc:
             logger.warning("[MemoryCompactor] compaction failed for session=%s: %s", session_id, exc)
         finally:

@@ -228,6 +228,13 @@ class MissionRunner:
         else:
             # 1. 流式规划
             # 1. Streaming planning
+            # Emit strategist_start lifecycle event for Dashboard pipeline
+            await self.event_handler.emit_lifecycle(
+                session_key=msg.session_id,
+                client_run_id=current_mission_plan.task_id,
+                status="strategist_start",
+            )
+
             current_mission_plan = MissionPlan(
                 task_id=f"T{int(time.time())}",
                 goal=reframed_text,
@@ -526,6 +533,12 @@ class MissionRunner:
                     is_affirm = True
                 else:
                     # 叶节点：调 LLM 审计
+                    # Emit auditor_start lifecycle event for Dashboard pipeline
+                    await self.event_handler.emit_lifecycle(
+                        session_key=msg.session_id,
+                        client_run_id=current_mission_plan.task_id,
+                        status="auditor_start",
+                    )
                     verdict = await self.auditor.review(report, st, is_leaf=True)
                     is_affirm = verdict is not None and verdict.verdict == AuditVerdictType.AFFIRM
 
@@ -741,16 +754,46 @@ class MissionRunner:
 
         if completed_task_ids:
             # 任务结束时一次性蒸馏记忆（避免子任务级别频繁蒸馏）
+            # Emit all_subtasks_done lifecycle event for Dashboard pipeline
+            await self.event_handler.emit_lifecycle(
+                session_key=msg.session_id,
+                client_run_id=current_mission_plan.task_id,
+                status="all_subtasks_done",
+            )
+
             self.memory_manager.update_fact(
                 f"任务完成: {reframed_text[:80]}",
                 fact_type=MemoryFactType.DECISION_LOG,
             )
+            # Auto-write key facts to LTM — not dependent on LLM calling memory_add_fact
+            # Automatically persist file paths, execution results, and tool call traces
             for tid in completed_task_ids:
                 if tid in executed_tasks:
                     report = executed_tasks[tid]
+                    # Record file paths and artifacts to LTM
                     if report.artifacts:
                         for art in report.artifacts:
                             self.memory_manager.record_artifact(art, f"任务 {tid} 产出")
+                            # Auto-write artifact paths as LTM facts
+                            self.memory_manager.update_fact(
+                                f"产出文件: {art} (任务 {tid}, 目标: {reframed_text[:50]})",
+                                fact_type=MemoryFactType.ARTIFACT_CREATED,
+                            )
+                    # Record execution result summary to LTM
+                    if report.observation and report.observation.strip():
+                        summary = report.observation[:200]
+                        self.memory_manager.update_fact(
+                            f"[{tid}] 执行结果: {summary}",
+                            fact_type=MemoryFactType.DECISION_LOG,
+                        )
+                    # Record tool call traces to LTM
+                    evidence = getattr(report, "evidence", {}) or {}
+                    tool_trace = evidence.get("tool_call_trace", [])
+                    if tool_trace:
+                        self.memory_manager.update_fact(
+                            f"[{tid}] 工具调用: {', '.join(str(t)[:80] for t in tool_trace[:5])}",
+                            fact_type=MemoryFactType.TOOL_RESULT,
+                        )
 
             await channel.send_message(to=msg.sender_id, text="✅ **[任务结案]** 所有步骤已通过审计。")
             # Task succeeded — remove the checkpoint so it doesn't get replayed

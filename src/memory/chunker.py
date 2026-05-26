@@ -42,6 +42,22 @@ def _chars_for_tokens(max_tokens: int, text_sample: str = "") -> int:
     return max(int(max_tokens * chars_per_token), 64)
 
 
+def estimate_char_limit(max_tokens: int, text_sample: str = "") -> int:
+    """CJK-aware estimation of character limit for a given token budget.
+
+    Thin public wrapper around ``_chars_for_tokens`` so that executor.py
+    and runtime.py can ``from memory.chunker import estimate_char_limit``
+    without reaching into private internals.
+    """
+    # Flatten session history dicts if caller passes a list of messages
+    if isinstance(text_sample, list):
+        text_sample = " ".join(
+            m.get("content", "") if isinstance(m, dict) else str(m)
+            for m in text_sample
+        )
+    return _chars_for_tokens(max_tokens, text_sample)
+
+
 def _make_chunk_id(content: str, source_path: str = "") -> str:
     """生成 chunk_id，混合 source_path 防止跨源碰撞。"""  # Generate chunk_id, mix in source_path to prevent cross-source collisions
     payload = f"{source_path}||{content}"

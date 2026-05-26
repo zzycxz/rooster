@@ -1,0 +1,144 @@
+    <!-- ╔══════════════════════════════╗ -->
+    <!-- ║  TAB: HEALTH CHECK           ║ -->
+    <!-- ╚══════════════════════════════╝ -->
+    <div x-show="activeTab === 'health'" class="flex-1 overflow-y-auto p-4">
+      <div class="max-w-2xl space-y-4">
+
+        <div class="flex items-center gap-3">
+          <button @click="runHealthCheck()"
+                  :disabled="healthLoading"
+                  class="px-4 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded text-xs font-semibold text-slate-200 transition-colors">
+            <span x-show="!healthLoading" x-text="t('recheck')"></span>
+            <span x-show="healthLoading" x-text="t('checking')"></span>
+          </button>
+          <span x-show="healthData"
+                :class="healthData?.ok ? 'text-green-400' : 'text-red-400'"
+                class="text-xs font-semibold"
+                x-text="healthData?.ok ? t('all_ok') : t('has_issues')"></span>
+        </div>
+
+        <!-- Results table -->
+        <div x-show="healthData" class="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="border-b border-slate-700 text-slate-400">
+                <th class="px-4 py-2.5 text-left font-medium w-1/4" x-text="t('col_service')"></th>
+                <th class="px-4 py-2.5 text-left font-medium w-1/6" x-text="t('col_status')"></th>
+                <th class="px-4 py-2.5 text-left font-medium" x-text="t('col_details')"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="name in Object.keys(healthData?.checks || {})" :key="name">
+                <tr class="border-b border-slate-700/50 hover:bg-slate-700/30">
+                  <td class="px-4 py-2.5 font-mono text-slate-300" x-text="name"></td>
+                  <td class="px-4 py-2.5">
+                    <span :class="healthData?.checks?.[name]?.ok ? 'bg-green-900/60 text-green-300 border-green-700' : 'bg-red-900/60 text-red-300 border-red-700'"
+                          class="px-2 py-0.5 rounded border text-xs"
+                          x-text="healthData?.checks?.[name]?.ok ? '✓ OK' : '✗ ' + t('failed')"></span>
+                  </td>
+                  <td class="px-4 py-2.5 text-slate-400 font-mono break-all"
+                      x-text="healthData?.checks?.[name]?.msg || healthData?.checks?.[name]?.version || healthData?.checks?.[name]?.http || (healthData?.checks?.[name]?.url ? '→ ' + healthData?.checks?.[name]?.url : '')"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <!--  server System Resources -->
+        <div x-show="systemData" class="space-y-3">
+          <div class="flex items-center gap-3">
+            <h3 class="text-sm font-bold text-slate-300 border-l-2 border-cyan-500 pl-2" x-text="t('server_resources')"></h3>
+            <span x-show="systemData?.platform" class="text-[10px] text-slate-500 font-mono"
+                  x-text="(systemData?.platform?.system || '') + ' ' + (systemData?.platform?.release || '') + ' / ' + (systemData?.platform?.node || '')"></span>
+          </div>
+
+          <!-- CPU / Memory gauges -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <!-- CPU -->
+            <div class="bg-slate-800 border border-slate-700 rounded-lg p-3 space-y-1.5">
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-slate-300 font-semibold" x-text="t('cpu_label')"></span>
+                <span class="font-mono text-slate-400"
+                      x-text="(systemData?.cpu?.percent ?? '-') + '%  |  ' + (systemData?.cpu?.cores ?? '-') + ' ' + t('cores') + (systemData?.cpu?.freq_mhz ? '  |  ' + systemData.cpu.freq_mhz + ' MHz' : '')"></span>
+              </div>
+              <div class="w-full h-2.5 rounded-full" :class="_barBg()">
+                <div class="h-2.5 rounded-full transition-all duration-500"
+                     :class="_barColor(systemData?.cpu?.percent || 0)"
+                     :style="'width:' + Math.min(systemData?.cpu?.percent || 0, 100) + '%'"></div>
+              </div>
+            </div>
+            <!-- Memory -->
+            <div class="bg-slate-800 border border-slate-700 rounded-lg p-3 space-y-1.5">
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-slate-300 font-semibold" x-text="t('memory_label')"></span>
+                <span class="font-mono text-slate-400"
+                      x-text="(systemData?.memory?.used_gb ?? '-') + ' / ' + (systemData?.memory?.total_gb ?? '-') + ' GB'"></span>
+              </div>
+              <div class="w-full h-2.5 rounded-full" :class="_barBg()">
+                <div class="h-2.5 rounded-full transition-all duration-500"
+                     :class="_barColor(systemData?.memory?.percent || 0)"
+                     :style="'width:' + Math.min(systemData?.memory?.percent || 0, 100) + '%'"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Disks -->
+          <div x-show="(systemData?.disks || []).length > 0" class="bg-slate-800 border border-slate-700 rounded-lg p-3 space-y-2">
+            <div class="text-xs text-slate-400 font-semibold mb-1" x-text="t('disks_label')"></div>
+            <template x-for="(disk, i) in (systemData?.disks || [])" :key="i">
+              <div class="space-y-1">
+                <div class="flex items-center justify-between text-[11px]">
+                  <span class="font-mono text-slate-300" x-text="disk.mountpoint"></span>
+                  <span class="text-slate-500" x-text="disk.used_gb + ' / ' + disk.total_gb + ' GB (' + disk.percent + '%)'"></span>
+                </div>
+                <div class="w-full h-1.5 rounded-full" :class="_barBg()">
+                  <div class="h-1.5 rounded-full transition-all duration-500"
+                       :class="_barColor(disk.percent)"
+                       :style="'width:' + Math.min(disk.percent, 100) + '%'"></div>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Network + Top Processes -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <!-- Network -->
+            <div class="bg-slate-800 border border-slate-700 rounded-lg p-3">
+              <div class="text-xs text-slate-400 font-semibold mb-2" x-text="t('network_label')"></div>
+              <div class="grid grid-cols-2 gap-2 text-[11px]">
+                <div class="text-slate-500" x-text="t('sent_label') + ' ↑'"></div>
+                <div class="text-right font-mono text-slate-300" x-text="(systemData?.network?.sent_mb ?? '-') + ' MB'"></div>
+                <div class="text-slate-500" x-text="t('recv_label') + ' ↓'"></div>
+                <div class="text-right font-mono text-slate-300" x-text="(systemData?.network?.recv_mb ?? '-') + ' MB'"></div>
+              </div>
+            </div>
+            <!-- Top Processes -->
+            <div class="bg-slate-800 border border-slate-700 rounded-lg p-3">
+              <div class="text-xs text-slate-400 font-semibold mb-2" x-text="t('top_processes')"></div>
+              <div x-show="(systemData?.top_processes || []).length === 0" class="text-[11px] text-slate-600">—</div>
+              <template x-for="(proc, i) in (systemData?.top_processes || [])" :key="i">
+                <div class="flex items-center justify-between text-[11px] py-0.5">
+                  <span class="font-mono text-slate-400 truncate" style="max-width:60%" x-text="proc.name"></span>
+                  <span class="text-slate-500" x-text="(proc.memory_percent || 0).toFixed(1) + '%'"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty state -->
+        <div x-show="!healthData && !healthLoading"
+             class="flex flex-col items-center justify-center py-12 text-slate-600 gap-2">
+          <span class="text-4xl">🩺</span>
+          <span class="text-sm" x-text="t('health_prompt')"></span>
+        </div>
+
+        <!-- Go to setup shortcut -->
+        <div x-show="healthData && !healthData?.ok" class="text-xs text-slate-400">
+          <span x-text="t('health_issue_prefix')"></span>
+          <button @click="switchTab('setup')" class="text-blue-400 hover:underline" x-text="t('health_issue_link')"></button>
+          <span x-text="t('health_issue_suffix')"></span>
+        </div>
+
+      </div>
+    </div><!-- /health -->

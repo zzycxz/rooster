@@ -41,6 +41,7 @@ class SubAgentSpawnArgs(BaseModel):
     timeout_seconds: int = Field(120, description="子任务最大执行时间（秒），超时后强制终止")
     model_hint: str = Field("", description="可选：指定子 Agent 使用的 LLM（如 'cloud', 'local'），空=继承主 Agent")
     wait_for_result: bool = Field(True, description="True=同步等待结果返回；False=后台异步执行，立即返回 agent_id")
+    spawn_depth: int = Field(0, description="当前递归深度，由主 Agent 传递，0=顶层")
 
 
 class SubAgentSpawnTool(BaseTool):
@@ -63,6 +64,22 @@ class SubAgentSpawnTool(BaseTool):
     args_schema: Type[BaseModel] = SubAgentSpawnArgs
 
     async def execute(self, args: SubAgentSpawnArgs) -> ToolResult:
+        # --- Recursion depth guard ---
+        from utils.config import settings
+
+        # Always use depth from execution context (trust system, not LLM-supplied value)
+        current_depth = self.context.get("spawn_depth", 0)
+        args.spawn_depth = current_depth
+
+        if args.spawn_depth >= settings.MAX_SUBAGENT_DEPTH:
+            return ToolResult.error(
+                f"❌ SubAgent 递归深度超限 (current={args.spawn_depth}, max={settings.MAX_SUBAGENT_DEPTH}). "
+                f"无法继续创建子 Agent，请在当前层级完成任务。"
+            )
+
+        # Propagate incremented depth into SubAgent's context for nested calls
+        self.context["spawn_depth"] = current_depth + 1
+
         agent_id = f"sub_{uuid.uuid4().hex[:8]}"
         os.makedirs(_SUBAGENT_DIR, exist_ok=True)
 

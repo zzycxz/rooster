@@ -44,6 +44,7 @@ def create_dashboard_app(
     from .routes.models import router as models_router, wire as wire_models
     from .routes.system import router as system_router, wire as wire_system
     from .routes.scheduler import router as scheduler_router, wire as wire_scheduler
+    from .routes.mcp import router as mcp_router, wire as wire_mcp
     from .ws import router as ws_router, wire as wire_ws
 
     app.include_router(config_router)
@@ -52,11 +53,13 @@ def create_dashboard_app(
     app.include_router(models_router)
     app.include_router(system_router)
     app.include_router(scheduler_router)
+    app.include_router(mcp_router)
     app.include_router(ws_router)
 
     # Wire shared state into routers
     wire_skills(skills_dir, get_skill_loader, invalidate_skill_loader)
     wire_memory(rooster_dir)
+    wire_mcp(rooster_dir)
     wire_models(hf_downloads, hf_download_dir, get_env_local_path)
     wire_system(get_skill_loader, get_env_local_path)
     wire_scheduler(rooster_dir)

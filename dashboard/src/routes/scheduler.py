@@ -389,7 +389,7 @@ async def api_create_task(data: Dict[str, Any] = Body(...)):
 
     entry = {
         "id": task_id,
-        "task": data.get("name", ""),
+        "task": data.get("task", ""),
         "session_id": data.get("session_id", "sess_schedule"),
         "frequency": "DAILY",
         "time": "08:00",
@@ -449,9 +449,11 @@ async def api_create_task(data: Dict[str, Any] = Body(...)):
             resolved = script_path
 
         if os.path.exists(resolved):
+            import asyncio
             os_name = f"RoosterTask_{task_id}"
             freq_map = {"DAILY": "DAILY", "WEEKLY": "WEEKLY", "ONCE": "ONCE"}
-            os_task_result = _os_create_task(
+            os_task_result = await asyncio.to_thread(
+                _os_create_task,
                 os_name, resolved, entry["time"],
                 freq_map.get(entry["frequency"], "DAILY"),
                 schedule_id=task_id
@@ -493,7 +495,7 @@ async def api_update_task(task_id: str, data: Dict[str, Any] = Body(...)):
     # Update allowed fields
     for field in ("name", "description", "tags", "priority", "concurrency_policy",
                   "retry", "timeout_sec", "trigger", "execution", "notifications",
-                  "variables", "history_retention_days"):
+                  "variables", "history_retention_days", "task"):
         if field in data:
             existing[field] = data[field]
 
@@ -518,9 +520,10 @@ async def api_update_task(task_id: str, data: Dict[str, Any] = Body(...)):
     script_path = exec_config.get("script_path", "")
     os_result = ""
     if script_path:
+        import asyncio
         # Delete old, create new
         old_os_name = f"RoosterTask_{task_id}"
-        _os_delete_task(old_os_name)
+        await asyncio.to_thread(_os_delete_task, old_os_name)
 
         if not os.path.isabs(script_path) and _project_root:
             resolved = os.path.normpath(os.path.join(_project_root, script_path))
@@ -528,7 +531,8 @@ async def api_update_task(task_id: str, data: Dict[str, Any] = Body(...)):
             resolved = script_path
         if os.path.exists(resolved) and existing.get("enabled", True):
             freq_map = {"DAILY": "DAILY", "WEEKLY": "WEEKLY", "ONCE": "ONCE"}
-            os_result = _os_create_task(
+            os_result = await asyncio.to_thread(
+                _os_create_task,
                 old_os_name, resolved, existing.get("time", "08:00"),
                 freq_map.get(existing.get("frequency", "DAILY"), "DAILY"),
                 schedule_id=task_id
@@ -546,8 +550,9 @@ async def api_delete_task(task_id: str):
     _atomic_write_json(_schedules_path(), schedules)
 
     # Remove OS task
+    import asyncio
     os_name = f"RoosterTask_{task_id}"
-    _os_delete_task(os_name)
+    await asyncio.to_thread(_os_delete_task, os_name)
     return {"ok": True}
 
 
@@ -560,10 +565,11 @@ async def api_toggle_task(task_id: str):
             s["enabled"] = new_enabled
 
             os_name = f"RoosterTask_{task_id}"
+            import asyncio
             if new_enabled:
-                _os_enable_task(os_name)
+                await asyncio.to_thread(_os_enable_task, os_name)
             else:
-                _os_disable_task(os_name)
+                await asyncio.to_thread(_os_disable_task, os_name)
 
             _atomic_write_json(_schedules_path(), schedules)
             return {"ok": True, "enabled": new_enabled}

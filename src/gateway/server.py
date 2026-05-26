@@ -5,7 +5,6 @@ Dashboard routes are mounted separately by the dashboard sub-package at startup.
 """
 
 import os
-import asyncio
 import logging
 from typing import Any, Dict
 

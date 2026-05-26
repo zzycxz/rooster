@@ -12,8 +12,11 @@ from utils.vision.interaction import DesktopInteraction
 # pywinauto 是 Windows 专属依赖，其他平台跳过导入
 if platform.system().lower() == "windows":
     try:
-        import pywinauto
-        from pywinauto import Desktop
+        import importlib.util
+        if not importlib.util.find_spec("pywinauto"):
+            raise ImportError
+        import pywinauto  # noqa: F401 — availability check
+        from pywinauto import Desktop  # noqa: F401 — availability check
     except ImportError:
         pass
 

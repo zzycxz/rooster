@@ -107,6 +107,21 @@ class MetricsRegistry:
                 result[m.name] = entry
         return result
 
+    def observe_tokens(self, provider: str, prompt_tokens: int, completion_tokens: int, model: str = ""):
+        "Record token usage for a provider/model combination."
+        c = self.counter("llm_tokens_prompt_total", "Total prompt tokens across all providers")
+        c.inc(prompt_tokens)
+        c2 = self.counter("llm_tokens_completion_total", "Total completion tokens across all providers")
+        c2.inc(completion_tokens)
+        # Per-provider tracking
+        provider_prompt = self.counter(f"llm_tokens_prompt_{provider}", f"Prompt tokens for {provider}")
+        provider_prompt.inc(prompt_tokens)
+        provider_completion = self.counter(f"llm_tokens_completion_{provider}", f"Completion tokens for {provider}")
+        provider_completion.inc(completion_tokens)
+        if model:
+            model_total = self.counter(f"llm_tokens_{provider}_{model}", f"Total tokens for {provider}/{model}")
+            model_total.inc(prompt_tokens + completion_tokens)
+
 
 # Global singleton
 metrics = MetricsRegistry()

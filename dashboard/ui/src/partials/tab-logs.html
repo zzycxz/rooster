@@ -1,0 +1,82 @@
+    <!-- ╔══════════════════════════════╗ -->
+    <!-- ║  TAB: LOGS                   ║ -->
+    <!-- ╚══════════════════════════════╝ -->
+    <div x-show="activeTab === 'logs'" class="flex-1 overflow-hidden flex flex-col min-h-0">
+      <!-- Toolbar -->
+      <div class="flex-none border-b border-slate-700 px-4 py-2 bg-slate-800 flex items-center gap-3 flex-wrap">
+        <select
+          x-model="logLevelFilter"
+          class="bg-slate-700 text-slate-200 text-xs rounded px-2 py-1 border border-slate-600 outline-none"
+        >
+          <option value="ALL" x-text="t('all_levels')"></option>
+          <option value="DEBUG">DEBUG</option>
+          <option value="INFO">INFO</option>
+          <option value="WARNING">WARNING</option>
+          <option value="ERROR">ERROR</option>
+          <option value="CRITICAL">CRITICAL</option>
+        </select>
+
+        <input
+          x-model="logSearch"
+          :placeholder="t('search_logs')"
+          class="bg-slate-700 text-slate-200 text-xs rounded px-2 py-1 border border-slate-600 outline-none w-44 placeholder-slate-600"
+        />
+
+        <label class="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer select-none">
+          <input type="checkbox" x-model="logAutoScroll" class="accent-green-500" />
+          <span x-text="t('auto_scroll')"></span>
+        </label>
+
+        <div class="flex-1"></div>
+        <span class="text-xs text-slate-500"
+              x-text="filteredLogs.length + ' / ' + logs.length + ' ' + t('entries_suffix')"></span>
+        <button @click="exportLogs()"
+                class="text-xs text-blue-400 hover:text-blue-300 transition-colors px-1" x-text="t('export')"></button>
+        <button @click="logs=[]"
+                class="text-xs text-slate-500 hover:text-red-400 transition-colors px-1" x-text="t('clear')"></button>
+      </div>
+
+      <!-- Log stream -->
+      <div class="flex-1 overflow-y-auto font-mono text-xs" id="log-container">
+        <div class="min-w-max">
+          <template x-for="(log, index) in filteredLogs" :key="String(log.id) + '-' + index">
+            <div
+              class="log-line flex items-start gap-2 px-3 py-0.5 min-h-[20px]"
+              :class="log.level==='ERROR'||log.level==='CRITICAL' ? 'bg-red-950/20'
+                    : log.level==='WARNING' ? 'bg-yellow-950/10' : ''"
+            >
+              <span class="text-slate-600 flex-shrink-0 w-18 pt-px"
+                    x-text="formatTime(log.ts)"></span>
+              <span
+                class="flex-shrink-0 w-16 pt-px font-bold"
+                :class="logLevelColor(log.level)"
+                x-text="log.level"
+              ></span>
+              <span class="text-slate-500 flex-shrink-0 w-44 truncate pt-px"
+                    x-text="log.logger" :title="log.logger"></span>
+              <div class="flex-1 min-w-0 pt-px">
+                <span class="text-slate-200 break-all leading-relaxed"
+                      x-text="log.message"></span>
+                <!-- Stack trace (expandable) -->
+                <div x-show="log.traceback">
+                  <button @click.stop="log.showTrace = !log.showTrace"
+                          class="text-red-400 hover:text-red-300 text-xs mt-1 block">
+                    <span x-text="log.showTrace ? t('hide_stack') : t('show_stack')"></span>
+                  </button>
+                  <pre x-show="log.showTrace"
+                       class="text-red-300 text-xs mt-1 whitespace-pre-wrap bg-red-950/30 rounded p-2 leading-relaxed"
+                       x-text="log.traceback"></pre>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- Empty state -->
+          <div x-show="logs.length === 0"
+               class="flex flex-col items-center justify-center py-16 text-slate-600 gap-3">
+            <span class="text-4xl">📝</span>
+            <span x-text="t('waiting_logs')"></span>
+          </div>
+        </div>
+      </div>
+    </div><!-- /logs -->

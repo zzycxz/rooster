@@ -179,7 +179,38 @@ async def _fetch_tool_list(client, url: str) -> List[Dict[str, Any]]:
             return result
         if isinstance(result, dict):
             return result.get("tools", [])
-    # 降级：直接 HTTP GET /tools/list
+    # SSE fallback: POST /sse with JSON-RPC "tools/list"
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            resp = await c.post(
+                f"{url.rstrip('/')}/sse",
+                json={"jsonrpc": "2.0", "method": "tools/list", "id": 1},
+                headers={"Content-Type": "application/json"},
+            )
+            if resp.status_code < 500:
+                content_type = resp.headers.get("content-type", "")
+                if "text/event-stream" in content_type:
+                    # Parse SSE event stream: extract JSON from "data:" lines
+                    data = None
+                    for line in resp.text.split("\n"):
+                        line = line.strip()
+                        if line.startswith("data:"):
+                            payload = line[len("data:"):].strip()
+                            if payload:
+                                import json as _json
+                                data = _json.loads(payload)
+                                break
+                else:
+                    data = resp.json()
+                if isinstance(data, dict) and "result" in data:
+                    tools = data["result"].get("tools", [])
+                    if isinstance(tools, list):
+                        return tools
+    except Exception:
+        pass  # SSE not supported, fall through
+    # Final fallback: HTTP GET /tools/list
     return await _http_get_tools(url)
 
 

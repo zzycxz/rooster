@@ -6,7 +6,7 @@ _IS_WINDOWS = platform.system().lower() == "windows"
 
 if _IS_WINDOWS:
     try:
-        from ctypes import wintypes
+        from ctypes import wintypes  # noqa: F401 — availability check
         import win32gui
 
         HAS_WIN32 = True
