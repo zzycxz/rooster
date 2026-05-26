@@ -131,6 +131,9 @@ class MovieDownloaderTool(BaseTool):
     """
     一步式电影下载工具：自动搜索磁力链接并唤起本地迅雷客户端开始下载。
     无需手动分两步操作，直接传入影片名即可完成完整下载流程。
+
+    重要：调用前必须确认用户意图。如果搜索结果中存在多个同名/相似名资源（如不同年份、
+    不同版本），必须先用 CONFIRM_REQUIRED 询问用户要下载哪一个，不要自行猜测。
     """
 
     name: str = "movie_downloader"
@@ -138,7 +141,9 @@ class MovieDownloaderTool(BaseTool):
     description: str = (
         "All-in-one movie downloader: searches for magnet/torrent links and immediately launches "
         "the local Xunlei (Thunder) client to start downloading. "
-        "Just provide the movie title. Handles search, link extraction, and download trigger automatically."
+        "Just provide the movie title. Handles search, link extraction, and download trigger automatically. "
+        "IMPORTANT: If multiple versions exist (e.g. different years, theatrical vs director's cut), "
+        "you MUST ask the user which one to download via CONFIRM_REQUIRED before calling this tool."
     )
     domain: str = "craft"
     args_schema: Type[BaseModel] = MovieDownloaderArgs
@@ -248,77 +253,15 @@ class MovieDownloaderTool(BaseTool):
         except Exception as e:
             return "FAILED to launch client: " + str(e) + "\nmagnet: " + magnet
 
-        # Wait for Thunder popup to render
-        # 等待迅雷弹窗渲染
-        await asyncio.sleep(3.0)
-        try:
-            from toolset.definitions.visual_control import DesktopController
-
-            # Poll for blue confirm button to appear (max 45s)
-            # Thunder is an Electron app, UIA cannot sense internal controls, use color to locate blue button
-            # 轮询等待蓝色确认按钮出现（最多 45 秒）
-            # Thunder 是 Electron 应用，UIA 无法感知内部控件，用颜色定位蓝色按钮
-            clicked = False
-            for _attempt in range(22):
-                # Before each screenshot, ensure Thunder window is in foreground
-                # This ensures blue coordinates in screenshot belong to Thunder, not taskbar
-                # 每次截图前先确保迅雷窗口在最顶层
-                # 这样截图里的蓝色坐标才属于迅雷，不会误点任务栏其他控件
-                thunder_hwnd = self._find_thunder_hwnd()
-                if thunder_hwnd:
-                    self._force_thunder_foreground(thunder_hwnd)
-                    await asyncio.sleep(0.4)  # Wait for Thunder window to fully render to foreground
-                    await asyncio.sleep(0.4)  # 等迅雷窗口完全渲染到前台
-
-                pos = await self._find_blue_button(DesktopController, hwnd=thunder_hwnd)
-                if pos:
-                    # Click and verify: if button still exists, retry click up to 3 times
-                    # 点击并验证：若按钮仍存在则再次点击，最多重试 3 次
-                    for _click_try in range(3):
-                        if thunder_hwnd:
-                            self._force_thunder_foreground(thunder_hwnd)
-                            await asyncio.sleep(0.15)
-                        await DesktopController.perform_click(pos[0], pos[1])
-                        await asyncio.sleep(0.7)
-
-                        # After click, if button disappears, consider success; otherwise update coordinates and retry
-                        # 点击后若已找不到按钮，认为成功；否则更新坐标再试
-                        pos_after = await self._find_blue_button(DesktopController, hwnd=thunder_hwnd)
-                        if not pos_after:
-                            clicked = True
-                            break
-                        pos = pos_after
-
-                    if clicked:
-                        break
-                else:
-                    # May be blocked by Thunder VIP/ad popup; try auto-dismiss then continue searching
-                    # 可能被迅雷会员/广告弹窗遮挡，尝试自动关闭后继续找按钮
-                    if thunder_hwnd and _attempt in (3, 7, 11, 15):
-                        await self._dismiss_thunder_blocking_popup(DesktopController, thunder_hwnd)
-                await asyncio.sleep(2.0)
-
-            if clicked:
-                await asyncio.sleep(2.0)
-                snap2 = await DesktopController.get_screenshot()
-                snap2_b64 = snap2.get("base64", "")
-                return (
-                    "OK magnet link found, Thunder launched and confirm button clicked\n"
-                    "magnet: " + magnet + "\n\n"
-                    "[IMAGE_BASE64_PNG]" + snap2_b64 + "[/IMAGE_BASE64_PNG]"
-                )
-            else:
-                snap3 = await DesktopController.get_screenshot()
-                snap3_b64 = snap3.get("base64", "")
-                return (
-                    "OK magnet link found and Thunder launched, but confirm button not found after 45s wait\n"
-                    "magnet: " + magnet + "\n\n"
-                    "[IMAGE_BASE64_PNG]" + snap3_b64 + "[/IMAGE_BASE64_PNG]"
-                )
-        except Exception as e:
-            return (
-                "OK magnet link found and Thunder launched\nmagnet: " + magnet + "\n(auto-click error: " + str(e) + ")"
-            )
+        # 非阻塞快速返回：迅雷已拉起，不等待弹窗确认
+        # Non-blocking quick return: Thunder launched, don't wait for popup confirmation
+        # 用户可在迅雷界面手动确认，或通过 Dashboard 的桌面截图观察状态
+        return (
+            f"✅ 已拉起系统默认客户端（迅雷）开始下载。\n"
+            f"- 磁力链接: `{magnet[:80]}...`\n"
+            f"- 注意：如迅雷弹出确认窗口，请在迅雷界面中手动点击确认。\n"
+            f"- aria2 静默通道不可用，已降级为系统协议调用。"
+        )
 
     async def _find_magnet(self, query: str) -> Optional[str]:
         """

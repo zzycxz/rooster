@@ -32,7 +32,9 @@ class AgentRunConfig(BaseModel):
     agent_id: str
     prompt: str
     workspace_dir: str
-    model: str = Field(default_factory=lambda: getattr(settings, "EXECUTOR_MODEL_NAME", None) or getattr(settings, "LOCAL_MODEL", ""))
+    model: str = Field(
+        default_factory=lambda: getattr(settings, "EXECUTOR_MODEL_NAME", None) or getattr(settings, "LOCAL_MODEL", "")
+    )
     history: List[Dict[str, str]] = []
     tool_registry: Optional[Any] = Field(default=None, exclude=True)
     max_steps: int = Field(default_factory=lambda: settings.AGENT_MAX_STEPS)
@@ -46,10 +48,12 @@ class AgentRunConfig(BaseModel):
     blackboard: Optional[Any] = Field(
         None, exclude=True, description="Per-mission 共享协调黑板（MissionBlackboard 实例），由 MissionRunner 注入"
     )
+    spawn_depth: int = Field(default=0, description="Recursion depth limit for spawned subagents")
 
     @classmethod
     def for_solo(cls, msg, session, tool_registry, allowed_paths=None, images=None) -> "AgentRunConfig":
-        history = [{"role": m.role, "content": m.content} for m in session.history[-20:]]
+        window = int(getattr(settings, "SESSION_HISTORY_WINDOW", 20))
+        history = [{"role": m.role, "content": m.content} for m in session.history[-window:]]
         return cls(
             session_id=msg.session_id,
             session_key=msg.session_id,
@@ -65,7 +69,8 @@ class AgentRunConfig(BaseModel):
 
     @classmethod
     def for_subtask(cls, msg, session, subtask, tool_registry, group_id: str, allowed_paths=None) -> "AgentRunConfig":
-        history = [{"role": m.role, "content": m.content} for m in session.history[-20:]]
+        window = int(getattr(settings, "SESSION_HISTORY_WINDOW", 20))
+        history = [{"role": m.role, "content": m.content} for m in session.history[-window:]]
         return cls(
             session_id=msg.session_id,
             session_key=msg.session_id,
@@ -109,6 +114,7 @@ class AgentExecutor:
         self._reflection_engine = None
         self._evolution_engine = None
         self._background_tasks: set = set()
+        self._orchestrator_cache = {}
 
     def _fire_background(self, coro):
         """Create a background task and hold a strong reference to prevent GC collection."""
@@ -146,10 +152,18 @@ class AgentExecutor:
         """Execute a complete Agent Turn with ReAct loop."""
         run_id = str(uuid.uuid4())
 
-        # 1. Initialize orchestrator
-        from agents.orchestrator import ToolOrchestrator
+        # 1. Initialize orchestrator (cached by session)
+        if config.session_id not in self._orchestrator_cache:
+            from agents.orchestrator import ToolOrchestrator
 
-        self.orchestrator = ToolOrchestrator(workspace_dir=config.workspace_dir, allowed_paths=config.allowed_paths)
+            self._orchestrator_cache[config.session_id] = ToolOrchestrator(
+                workspace_dir=config.workspace_dir, allowed_paths=config.allowed_paths
+            )
+            # LRU cleanup to prevent memory leaks
+            if len(self._orchestrator_cache) > 20:
+                oldest_key = next(iter(self._orchestrator_cache))
+                del self._orchestrator_cache[oldest_key]
+        self.orchestrator = self._orchestrator_cache[config.session_id]
         session_history = config.history
 
         # 2. Inject security guard and LLM capabilities into tool registry
@@ -163,18 +177,12 @@ class AgentExecutor:
             config.tool_registry.context["llm_client"] = self.llm_client
             config.tool_registry.context["current_model"] = config.model
             config.tool_registry.context["session_id"] = config.session_id
+            config.tool_registry.context["spawn_depth"] = config.spawn_depth
 
-            ctx_sig = id(config.tool_registry.context.get("llm_client"))
-            if getattr(config.tool_registry, "_last_ctx_sig", None) != ctx_sig:
-                for name in config.tool_registry.list_tool_names():
-                    tool_cls = type(config.tool_registry.get_tool(name))
-                    config.tool_registry.register_tool(tool_cls)
-                config.tool_registry._last_ctx_sig = ctx_sig
-            else:
-                executor_logger.debug("Tool registry context unchanged, skipping re-registration")
+            # Only update context dictionary; no need to re-register tools entirely
+            executor_logger.debug("Tool registry context updated.")
 
-        # 3. Start audit worker
-        await audit_manager.start_worker()
+        # 3. Trigger audit worker cleanup
         audit_manager.trigger_cleanup()
 
         await self.event_handler.emit_lifecycle(session_key=config.session_key, client_run_id=run_id, status="running")
@@ -217,11 +225,11 @@ class AgentExecutor:
             system_prompt = self.prompt_builder.build_system_prompt(params)
 
             context_limit = settings.AGENT_CONTEXT_LIMIT
-            context_limit_chars = int(context_limit * 3.5)
-
-            # Async compaction trigger at 0.6 threshold (before 0.7 prune).
-            estimated_chars = sum(len(m.get("content") or "") for m in session_history)
-            if estimated_chars > context_limit_chars * 0.6:
+            from utils.token_counter import count_message_tokens
+            
+            # Async compaction trigger at 0.6 threshold
+            estimated_tokens = count_message_tokens(session_history)
+            if estimated_tokens > context_limit * 0.6:
                 try:
                     from memory.memory_compactor import schedule_memory_compaction
 
@@ -231,20 +239,24 @@ class AgentExecutor:
                 except Exception as e:
                     executor_logger.warning(f"Compaction flush failed (degraded to pruning): {e}")
 
-            session_history = self._prune_history(session_history, max_total_chars=context_limit_chars)
-
-            messages = self.prompt_builder.compose_messages(
-                system_prompt=system_prompt, history=session_history, user_input=config.prompt if step == 1 else ""
-            )
+            session_history = self._prune_history(session_history, max_total_tokens=context_limit)
 
             # --- Blackboard: inject shared context from peer agents ---
             # Inject at step 1 (initial context) and every 3 steps after (mid-execution awareness).
             # Only if there's actually something to share.
+            # Inject BEFORE compose_messages so it appears before the user prompt, not after.
+            blackboard_ctx = None
             if config.blackboard and (step == 1 or step % 3 == 0):
                 shared_ctx = config.blackboard.get_context_snapshot(for_subtask=config.agent_id)
                 if shared_ctx:
-                    # Prepend as a system-level user message so it's always visible
-                    messages.append({"role": "user", "content": shared_ctx, "_internal": True})
+                    blackboard_ctx = shared_ctx
+
+            messages = self.prompt_builder.compose_messages(
+                system_prompt=system_prompt,
+                history=session_history,
+                user_input=config.prompt if step == 1 else "",
+                blackboard_context=blackboard_ctx,
+            )
 
             # On the first step, if the request includes images, upgrade the user
             # message to OpenAI vision format: [{type:"text",...},{type:"image_url",...}]
@@ -337,15 +349,6 @@ class AgentExecutor:
                 )
                 executor_logger.info(f"Output: {len(full_content)} characters received")
 
-                # Refusal detection is diagnostic only. Provider fallback is
-                # reserved for transport/provider failures inside LLMClient.
-                _refusal_phrases = settings.REFUSAL_PHRASES
-                _is_refusal = not native_tool_calls and any(p in full_content.lower() for p in _refusal_phrases)
-                if _is_refusal:
-                    executor_logger.warning(
-                        f"Refusal detected ('{full_content[:60].strip()}'); not switching provider automatically."
-                    )
-
                 # Empty response retry
                 if not full_content.strip() and not native_tool_calls:
                     empty_retry_max = 2
@@ -428,6 +431,10 @@ class AgentExecutor:
                                     ),
                                 }
                             )
+                    else:
+                        if _stuck_break_count > 0:
+                            _stuck_break_count = 0
+                            _recent_tool_calls.clear()
 
                 if not tool_calls:
                     executor_logger.info("No tool calls found. Breaking loop.")
@@ -462,6 +469,7 @@ class AgentExecutor:
                     break
 
                 # Parallel tool execution via dispatch module
+                # Each tool result is emitted immediately for Dashboard progress
                 tasks = [
                     execute_orchestrated_tool(
                         run_id,
@@ -483,7 +491,28 @@ class AgentExecutor:
                     for tool_name, args in tool_calls
                 ]
 
-                observations = await asyncio.gather(*tasks)
+                # Progressive observation: await each tool separately
+                # Emit tool_result as each completes for Dashboard UX
+                observations = []
+                for coro in asyncio.as_completed(tasks):
+                    try:
+                        obs = await coro
+                        observations.append(obs)
+                        # Emit individual tool result to Dashboard for real-time progress
+                        if self.event_handler:
+                            self._fire_background(
+                                self.event_handler.emit_tool_response(
+                                    session_key=config.session_key,
+                                    client_run_id=run_id,
+                                    tool_name="tool",
+                                    response=obs[:200] if obs else "",
+                                )
+                            )
+                    except Exception as tool_exc:
+                        # Individual tool failure does not crash other tools
+                        executor_logger.warning(f"Tool execution failed: {tool_exc}")
+                        obs = f"Tool execution error: {type(tool_exc).__name__}"
+                        observations.append(obs)
 
                 # [Round 8] Record which tools were called this step so the
                 # ToolRouter can keep their kit schemas in scope next step.
@@ -516,14 +545,6 @@ class AgentExecutor:
                         author=config.agent_id,
                     )
 
-                # Dynamic brain switch for large observations
-                # 有截图数据时禁止切换到云端，避免敏感数据泄露 / Block cloud switch when images present
-                _has_image_data = "[IMAGE_DATA:" in combined_obs
-                if len(combined_obs) > 3000 and self.llm_client.provider == "local" and not _has_image_data:
-                    executor_logger.debug(
-                        f"Large observation ({len(combined_obs)} chars); retaining current provider."
-                    )
-
                 # Strip base64 image data — 所有 provider 都 strip，截图不发出本机
                 if "[IMAGE_DATA:" in combined_obs:
                     combined_obs = re.sub(
@@ -542,9 +563,6 @@ class AgentExecutor:
                             else f"call_{i}"
                         )
                         session_history.append({"role": "tool", "tool_call_id": tc_id, "content": obs})
-                    session_history.append(
-                        {"role": "user", "content": "请根据以上工具执行结果，继续完成任务。", "_internal": True}
-                    )
                 else:
                     session_history.append({"role": "user", "content": combined_obs, "_internal": True})
 
@@ -566,7 +584,9 @@ class AgentExecutor:
                 await self.event_handler.emit_error(
                     session_key=config.session_key,
                     client_run_id=run_id,
-                    message=f"抱歉，系统在思考时遇到了小问题 (执行步骤 {step})。这通常是因为大模型接口超时或网络异常导致的，请稍后重试。\n\n技术细节: {str(e)}",
+                    message=f"抱歉，系统在思考时遇到了小问题 (执行步骤 {step}). "
+                    f"这通常是因为大模型接口超时或网络异常导致的，请稍后重试。\n\n"
+                    f"技术细节: [{type(e).__name__}] {str(e)[:100]}",
                 )
                 _loop_exception = e
                 break
@@ -613,6 +633,10 @@ class AgentExecutor:
             session = global_session_store.get_or_create(config.session_id)
             for msg in session_history[len(session.history) :]:
                 if msg.get("role") == "tool":
+                    # Keep tool message summary (first 200 chars) instead of completely discarding
+                    content = msg.get("content", "") or ""
+                    if isinstance(content, str) and content.strip():
+                        session.add_message("tool", content[:200] + "..." if len(content) > 200 else content)
                     continue
                 if msg.get("_internal"):
                     continue
@@ -627,8 +651,6 @@ class AgentExecutor:
             self._fire_background(self.memory_manager.periodic_housekeeping())
 
         await self.event_handler.emit_lifecycle(session_key=config.session_key, client_run_id=run_id, status="done")
-
-        await audit_manager.stop_worker()
 
         if _loop_exception is not None:
             raise _loop_exception
@@ -683,7 +705,11 @@ class AgentExecutor:
 
         prompt = "\n".join(phase_lines) + f"\n\n任务指令：{resolved_instruction}"
         if previous_observations:
-            prompt = f"{prompt}\n\n{previous_observations}"
+            obs = previous_observations
+            _MAX_PREV_OBS = 2000
+            if len(obs) > _MAX_PREV_OBS:
+                obs = obs[:_MAX_PREV_OBS] + f"\n... [上游输出截断，原长 {len(obs)} 字符]"
+            prompt = f"{prompt}\n\n{obs}"
 
         config.prompt = prompt
         config.agent_id = f"executor_{subtask.id}"
@@ -725,7 +751,7 @@ class AgentExecutor:
 
             # Try structured JSON report
             try:
-                json_match = re.search(r"(\{.*\})", final_content or "", re.DOTALL)
+                json_match = re.search(r"(\{.*?\})", final_content or "", re.DOTALL)
                 if json_match:
                     report_data = json.loads(json_match.group(1))
                     report_type = report_data.get("type", "FINAL_REPORT")
@@ -861,35 +887,43 @@ class AgentExecutor:
 
     # --- History and text utilities ---
 
-    def _prune_history(self, history: List[Dict[str, str]], max_total_chars: int = 40000) -> List[Dict[str, str]]:
+    def _prune_history(self, history: List[Dict[str, str]], max_total_tokens: int = 16000) -> List[Dict[str, str]]:
         if not history:
             return []
         if len(history) <= 4:
             return history
 
-        history_allowance = int(max_total_chars * settings.CONTEXT_RATIO_HISTORY)
-        current_chars = sum(len(m.get("content") or "") for m in history)
-        if current_chars <= history_allowance:
+        from utils.token_counter import count_message_tokens, count_tokens
+
+        history_allowance = int(max_total_tokens * settings.CONTEXT_RATIO_HISTORY)
+        current_tokens = count_message_tokens(history)
+        if current_tokens <= history_allowance:
             return history
 
         pruned = []
-        obs_cap = int(max_total_chars * settings.CONTEXT_RATIO_OBS)
+        # Fallback character estimation for truncation if needed
+        obs_cap_chars = int(max_total_tokens * settings.CONTEXT_RATIO_OBS * 3.5)
         for i, msg in enumerate(history):
             content = msg.get("content") or ""
             role = msg.get("role", "user")
             if role == "user" and i > 0 and i < len(history) - 2:
                 if "【视觉分析报告】" in content:
-                    pass
-                elif len(content) > obs_cap:
+                    visual_cap = obs_cap_chars * 2
+                    if len(content) > visual_cap:
+                        content = (
+                            content[:visual_cap]
+                            + f"\n... [Visual report auto-truncated, original length {len(content)} chars] ..."
+                        )
+                elif len(content) > obs_cap_chars:
                     content = (
-                        content[:obs_cap] + f"\n... [Content auto-truncated, original length {len(content)} chars] ..."
+                        content[:obs_cap_chars] + f"\n... [Content auto-truncated, original length {len(content)} chars] ..."
                     )
             entry = {k: v for k, v in msg.items()}
             entry["content"] = content
             pruned.append(entry)
 
-        total_len = sum(len(m.get("content") or "") for m in pruned)
-        if total_len > max_total_chars and len(pruned) > 8:
+        total_tokens = count_message_tokens(pruned)
+        if total_tokens > max_total_tokens and len(pruned) > 8:
             pruned = [pruned[0]] + pruned[-10:]
             pruned.insert(
                 1,
@@ -901,12 +935,5 @@ class AgentExecutor:
         return pruned
 
     def _clean_thought_chatter(self, text: str) -> str:
-        patterns = [
-            r"^(用户问|我知道|根据|当前时间|我需要|Runtime).*?\n\n",
-            r"^(用户|根据|因为|我将|系统).*?(答案|回答|结论|如下)[：:]\n*",
-            r"^.*?思维链.*?\n",
-        ]
-        cleaned = text
-        for p in patterns:
-            cleaned = re.sub(p, "", cleaned, flags=re.DOTALL | re.IGNORECASE | re.MULTILINE)
-        return cleaned.strip()
+        # <think> tags are handled during stream; remove fragile regex chatter cleaning
+        return text.strip()
