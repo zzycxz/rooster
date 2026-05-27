@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.5] - 2026-05-27
+
+### Fixed
+- **Executor Stability**: Enhanced executor handling of output truncation, blackboard state, ambiguity detection, and intent audit logic to improve production reliability.
+- **LLM Adapter Payload Validation**: Added strict payload validation in the LLM adapter layer to catch malformed requests before they reach upstream APIs.
+- **Search Fallback & Audit Tuning**: Improved search tool fallback behavior and tuned auditor scoring thresholds for more accurate result evaluation.
+- **Guardian Cron**: Fixed `NameError` in guardian cron trigger handling; corrected `pypdf` package name in dependencies.
+- **Production Stability**: Comprehensive production hardening across core modules — strengthened error handling, input validation, and edge-case coverage.
+
+### Added
+- **Dashboard Partial Split**: Refactored dashboard into partial templates with backend multi-module restructuring for better maintainability.
+- **Test Coverage**: Added guardian cron and executor function-calling protocol tests; fixed CI branch configuration.
+
+### Changed
+- **Core Module Architecture**: Backend modules reorganized for clearer separation of concerns.
+
 ## [0.3.0] - 2026-05-26
 
 ### Added
