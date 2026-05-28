@@ -54,6 +54,9 @@ _ALLOWED_CONFIG_KEYS = frozenset(
         "LOG_LEVEL",
         "AUDIT_STRICTNESS",
         "AGENT_MAX_STEPS",
+        "AGENT_STUCK_THRESHOLD",
+        "AUDIT_MAX_REMAND_RETRY",
+        "CHECKPOINT_ENABLED",
         "ENABLE_TUNNEL",
         "WEBHOOK_ENABLED",
         "MCP_DYNAMIC_ENABLED",
@@ -62,6 +65,7 @@ _ALLOWED_CONFIG_KEYS = frozenset(
         "PERMISSION_POLICY",
         "BLOCKED_TOOLS",
         "ALLOWED_TOOLS",
+        "CUSTOM_SECURITY_PATTERNS_JSON",
         "ALLOWED_PATHS",
         # --- New Multi-LLM Role Assignments ---
         "ROUTER_MODEL_MODE",
@@ -75,6 +79,10 @@ _ALLOWED_CONFIG_KEYS = frozenset(
         "LLM_FAILOVER_ORDER",
         "LLM_FAILOVER_RETRY_MAX",
         "LLM_MIN_INTERVAL",
+        # --- Feishu ---
+        "FEISHU_APP_ID",
+        "FEISHU_APP_SECRET",
+        "FEISHU_USER_OPEN_ID",
         # --- Aria2 ---
         "ARIA2_RPC_URL",
         "ARIA2_TOKEN",

@@ -30,8 +30,11 @@ class PrivacyRouter:
         self._local_dirs: list[Path] = []
         self._FILE_CACHE: dict[str, bool] = {}  # file_hash → is_sensitive
         self._SCAN_CACHE: dict[str, bool] = {}  # text_hash → is_sensitive
+        self._custom_pii_patterns: list = []    # [(name, compiled_regex), ...]
+        self._custom_loaded = False
         self._load_config()
         self._init_presidio()
+        self._load_custom_pii_patterns()
 
     # ─── 配置加载 / Config loading ───
 
@@ -41,6 +44,33 @@ class PrivacyRouter:
             d = d.strip()
             if d:
                 self._local_dirs.append(Path(d).expanduser().resolve())
+
+    def _load_custom_pii_patterns(self) -> None:
+        """从 CUSTOM_SECURITY_PATTERNS_JSON 加载 action=pii/both 的自定义规则。"""
+        import json
+        import re
+        try:
+            raw = os.getenv("CUSTOM_SECURITY_PATTERNS_JSON", "").strip()
+            if not raw:
+                return
+            entries = json.loads(raw)
+            for entry in entries:
+                action = entry.get("action", "").lower()
+                if action not in ("pii", "both"):
+                    continue
+                name = entry.get("name", "CUSTOM").upper().replace(" ", "_")
+                pattern_str = entry.get("regex", "")
+                if not pattern_str:
+                    continue
+                try:
+                    compiled = re.compile(pattern_str)
+                    self._custom_pii_patterns.append((name, compiled))
+                    logger.info(f"[PrivacyRouter] 加载自定义 PII 规则: name={name}, action={action}")
+                except re.error as e:
+                    logger.warning(f"[PrivacyRouter] 自定义 PII 规则 '{name}' 正则无效: {e}")
+            self._custom_loaded = True
+        except Exception as e:
+            logger.warning(f"[PrivacyRouter] 加载 CUSTOM_SECURITY_PATTERNS_JSON 失败: {e}")
 
     def _init_presidio(self):
         try:
@@ -110,6 +140,14 @@ class PrivacyRouter:
                 self._cache_result(file_path, True)
                 return "local", "pii_detected"
 
+            # L2: 自定义 PII 正则扫描 / Custom PII regex scan
+            if self._custom_pii_patterns and text:
+                for name, pattern in self._custom_pii_patterns:
+                    if pattern.search(text):
+                        logger.debug(f"[PrivacyRouter] 自定义 PII 规则命中: {name}")
+                        self._cache_result(file_path, True)
+                        return "local", f"custom_pii:{name}"
+
             # 全部未命中 → 云端 / All missed → cloud
             self._cache_result(file_path, False)
             return "cloud", "safe"
@@ -163,6 +201,7 @@ class PrivacyRouter:
             "local_dirs": [str(d) for d in self._local_dirs],
             "file_cache_size": len(self._FILE_CACHE),
             "scan_cache_size": len(self._SCAN_CACHE),
+            "custom_pii_rules": [name for name, _ in self._custom_pii_patterns],
         }
 
     # ─── 内部方法 / Internal methods ───

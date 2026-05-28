@@ -130,6 +130,14 @@ class RuntimeConfig:
     GUARD_PROMPT_INJECTION: str = _env("GUARD_PROMPT_INJECTION", "")  # true/false/""
     # true/false/"" (follow master switch)
     GUARD_SKILL_VERIFY: str = _env("GUARD_SKILL_VERIFY", "")
+    # 自定义安全检测规则 JSON，格式：
+    # [{"name": "规则名", "regex": "正则表达式", "action": "mask|pii|both"}, ...]
+    #   action=mask  → 在日志和 LLM 上下文中替换为 [MASKED_NAME]（追加进 SecretsMask）
+    #   action=pii   → 匹配内容路由到本地模型，不出网（追加进 PrivacyRouter）
+    #   action=both  → 同时应用 mask 和 pii
+    # Custom security detection rules JSON:
+    # [{"name": "RULE_NAME", "regex": "pattern", "action": "mask|pii|both"}, ...]
+    CUSTOM_SECURITY_PATTERNS_JSON: str = _env("CUSTOM_SECURITY_PATTERNS_JSON", "")
 
     # --- Tool Router (Round 8) ---
     # 是否启用 Kit-based FC Schema 路由（关闭时发送全部 schema，行为与 Round 8 之前相同）

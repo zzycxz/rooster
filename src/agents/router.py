@@ -134,26 +134,32 @@ class Router:
 
         # 动态事件处理器（支持流式打字机）
         # Dynamic event handler (supports streaming typewriter)
+        _streaming_buffer: list[str] = []  # 缓冲 running delta，非流式通道合并后发
+
         async def channel_broadcast(event_dict: dict):
             if event_dict.get("stream") == "assistant":
                 status = event_dict["data"].get("status")
                 text = event_dict["data"].get("text", "")
 
                 if status == "running" and triage_state == "[TALK]":
-                    # 直答模式：实时流式输出
-                    # Direct answer mode: real-time streaming output
-                    await channel.send_message(to=msg.sender_id, text=text)
+                    if getattr(channel, "supports_streaming", False):
+                        await channel.send_message(to=msg.sender_id, text=text)
+                    else:
+                        _streaming_buffer.append(text)
 
                 elif status == "done":
                     if triage_state in ["[DIRECT]", "[REFRAME]"]:
                         logger.debug("复杂任务，文字报告已扣押，等待审计放行...")
                     elif triage_state == "[TALK]":
-                        # 直答结束，补一个换行
-                        # Direct answer ended, append a newline
-                        await channel.send_message(to=msg.sender_id, text="\n")
+                        if getattr(channel, "supports_streaming", False):
+                            await channel.send_message(to=msg.sender_id, text="\n")
+                        else:
+                            # 合并缓冲区 delta 为一条消息发送
+                            merged = "".join(_streaming_buffer).strip()
+                            final_text = merged or text
+                            _streaming_buffer.clear()
+                            await channel.send_message(to=msg.sender_id, text=final_text)
                     else:
-                        # 其他情况（防止漏掉）
-                        # Other cases (prevent missing)
                         await channel.send_message(to=msg.sender_id, text=text)
 
         dynamic_event_handler = AgentEventHandler(broadcast_callback=channel_broadcast)
@@ -172,6 +178,14 @@ class Router:
                     text="⚠️ **[安全警示]** 您的请求包含敏感内容，已被系统拦截。",
                 )
                 return
+
+        # 2b. DIRECT → 下载类请求强制走 REFRAME，否则进规划管道找不到工具
+        # 2b. DIRECT → force download requests through REFRAME, otherwise planning pipeline can't find the tool
+        if triage_state == "[DIRECT]":
+            _download_kw = ["下载", "download", "install", "安装", "迅雷", "磁力", "torrent", "bt下载"]
+            if any(kw in msg.text.lower() for kw in _download_kw):
+                logger.info(f"下载请求被分诊为 DIRECT，强制走 REFRAME: {msg.text}")
+                triage_state = "[REFRAME]"
 
         # 3. TALK → SoloRunner
         if triage_state == "[TALK]":
@@ -200,7 +214,7 @@ class Router:
             reframe_name = getattr(settings, "REFRAMER_MODEL_NAME", settings.ROUTER_MODEL_NAME)
             reframe_llm = LLMClient(provider=reframe_mode, model=reframe_name)
             reframer = Reframer(reframe_llm)
-            reframed_text = await reframer.reframe(msg.text)
+            reframed_text = await reframer.reframe(msg.text, session_id=msg.session_id)
             logger.info(f"重构后任务: {reframed_text}")
         else:
             logger.info("任务清晰，跳过重构直达战略官。")

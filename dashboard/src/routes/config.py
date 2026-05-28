@@ -36,6 +36,7 @@ MASK_KEYS = frozenset(
         "FEISHU_APP_SECRET",
         "FEISHU_USER_OPEN_ID",
         "ARIA2_TOKEN",
+        "SMTP_DEFAULT_PASS",
     }
 )
 

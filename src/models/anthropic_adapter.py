@@ -215,13 +215,15 @@ class AnthropicAdapter(BaseModelClient):
 
         parsed = urlparse(self.base_url)
         host = parsed.hostname or ""
-        skip_proxy = any(np.strip() in host for np in no_proxy.split(",") if np.strip()) if no_proxy else True
+        skip_proxy = any(np.strip() in host for np in no_proxy.split(",") if np.strip()) if no_proxy else False
         proxy_url = None if skip_proxy else (http_proxy if http_proxy else None)
 
+        # 设置 trust_env=False 防止 httpx 自动读取可能损坏的系统全局环境变量
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=60.0,
             proxy=proxy_url,
+            trust_env=False,
         )
 
     # ── helpers ─────────────────────────────────────────────────────────
@@ -274,6 +276,7 @@ class AnthropicAdapter(BaseModelClient):
         MAX_RETRIES = 2
 
         for attempt in range(MAX_RETRIES + 1):
+            yielded_any = False
             try:
                 async with self.client.stream("POST", "v1/messages", json=payload, headers=self._headers()) as response:
                     if response.status_code != 200:
@@ -282,7 +285,6 @@ class AnthropicAdapter(BaseModelClient):
                             f"Anthropic API Error: {response.status_code} - {error_text.decode('utf-8', 'ignore')}"
                         )
 
-                    yielded_any = False
                     # Accumulate tool_use blocks across streaming events
                     pending_tool_blocks: Dict[int, Dict[str, Any]] = {}
                     # Track content block indices → types
@@ -383,13 +385,15 @@ class AnthropicAdapter(BaseModelClient):
                 break  # success — exit retry loop
 
             except (httpx.NetworkError, httpx.TimeoutException) as e:
-                if attempt < MAX_RETRIES:
+                logger.error(f"🌐 [Anthropic] 网络异常 (尝试 {attempt+1}/{MAX_RETRIES+1}): 请求 {self.base_url} 失败: {e}")
+                if attempt < MAX_RETRIES and not yielded_any:
                     import asyncio
 
                     await asyncio.sleep(2 * (attempt + 1))
                     continue
                 raise e
             except Exception as e:
+                logger.error(f"🚨 [Anthropic] 未知异常: {e}")
                 raise e
 
     # ── non-streaming ───────────────────────────────────────────────────

@@ -115,6 +115,34 @@ def _get_provider_min_interval(provider: str) -> float:
 PROVIDER_POOL = ["mimo", "zhipu", "jiutian", "local"]
 
 
+def _inline_system_for_mimo(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """MiMo API 服务端会把 system 角色转成 developer 角色，导致 400 验证错误。
+    Workaround: 把 system prompt 内联到第一条 user 消息中，避免发送 system 角色。
+
+    MiMo API server converts system role to developer role, causing 400 validation error.
+    Workaround: inline system prompt into the first user message to avoid sending system role.
+    """
+    if not messages or messages[0].get("role") != "system":
+        return messages
+
+    msgs = list(messages)  # shallow copy
+    sys_msg = msgs.pop(0)
+    sys_content = sys_msg.get("content") or ""
+
+    if not sys_content:
+        return msgs
+
+    # Prepend system instructions to the first user message
+    if msgs and msgs[0].get("role") == "user":
+        original = msgs[0].get("content") or ""
+        msgs[0] = {**msgs[0], "content": f"[System Instructions]\n{sys_content}\n[/System Instructions]\n\n{original}"}
+    else:
+        # No user message found — insert one
+        msgs.insert(0, {"role": "user", "content": f"[System Instructions]\n{sys_content}"})
+
+    return msgs
+
+
 def _get_provider_cooldown(provider: str) -> float:
     """获取 provider 剩余冷却时间（秒）"""  # Get remaining provider cooldown time (seconds)
     until = _provider_cooldowns.get(provider, 0)
@@ -319,8 +347,9 @@ class LLMClient:
 
         if not settings.LLM_FAILOVER_ENABLED:
             await self._wait_provider_rate_limit(self.provider)
+            _msgs = _inline_system_for_mimo(messages) if self.provider == "mimo" else messages
             async with llm_traffic_controller.slot(self.provider, purpose="llm_stream"):
-                async for delta in self._internal_client.chat_stream(model, messages, **kwargs):
+                async for delta in self._internal_client.chat_stream(model, _msgs, **kwargs):
                     yield delta
             return
 
@@ -335,16 +364,23 @@ class LLMClient:
                 # that don't support it (everyone except MiMo).  MiMo *requires* it to be
                 # echoed back in thinking mode; other providers reject it with 400.
                 if current_p == "mimo":
-                    send_messages = messages
+                    # MiMo workaround: inline system prompt into user message to avoid
+                    # server-side system→developer conversion that causes 400 errors.
+                    send_messages = _inline_system_for_mimo(messages)
                 else:
                     send_messages = [{k: v for k, v in m.items() if k != "reasoning_content"} for m in messages]
 
-                async def _do_stream(msgs=send_messages):
+                # Enable MiMo thinking mode. mimo-v2.5 thinks via reasoning_content field.
+                mimo_kwargs = dict(kwargs)
+                if current_p == "mimo" and getattr(settings, "MIMO_THINKING_ENABLED", False):
+                    mimo_kwargs.setdefault("enable_thinking", True)
+
+                async def _do_stream(msgs=send_messages, _kw=mimo_kwargs if current_p == "mimo" else kwargs):
                     nonlocal committed
                     yielded_any = False
                     last_usage = None
                     async with llm_traffic_controller.slot(current_p, purpose="llm_stream"):
-                        async for delta in self._internal_client.chat_stream(model, msgs, **kwargs):
+                        async for delta in self._internal_client.chat_stream(model, msgs, **_kw):
                             if delta.content or delta.tool_calls:
                                 yielded_any = True
                                 committed = True
@@ -402,20 +438,25 @@ class LLMClient:
 
         if not settings.LLM_FAILOVER_ENABLED:
             await self._wait_provider_rate_limit(self.provider)
+            _msgs = _inline_system_for_mimo(messages) if self.provider == "mimo" else messages
             async with llm_traffic_controller.slot(self.provider, purpose="llm_non_stream"):
-                return await self._internal_client.chat_non_stream(model, messages, **kwargs)
+                return await self._internal_client.chat_non_stream(model, _msgs, **kwargs)
 
         last_exc = None
         for current_p in self._iter_pipeline_for(messages):
             try:
                 model = await self._prepare_provider(current_p)
                 send_messages = (
-                    messages
+                    _inline_system_for_mimo(messages)
                     if current_p == "mimo"
                     else [{k: v for k, v in m.items() if k != "reasoning_content"} for m in messages]
                 )
 
-                async def _do_non_stream(_m=model, _msgs=send_messages, _kw=dict(kwargs), _provider=current_p):
+                mimo_kwargs = dict(kwargs)
+                if current_p == "mimo" and getattr(settings, "MIMO_THINKING_ENABLED", False):
+                    mimo_kwargs.setdefault("thinking", {"type": "enabled"})
+
+                async def _do_non_stream(_m=model, _msgs=send_messages, _kw=mimo_kwargs if current_p == "mimo" else kwargs, _provider=current_p):
                     await self._wait_provider_rate_limit(_provider)
                     async with llm_traffic_controller.slot(_provider, purpose="llm_non_stream"):
                         return await self._internal_client.chat_non_stream(_m, _msgs, **_kw)

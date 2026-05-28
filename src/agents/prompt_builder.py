@@ -29,10 +29,14 @@ class PromptBuilder:
 
     def __init__(self, config: Optional[Dict[str, Any]] = None, llm_client=None, model: str = ""):
         self.config = config or {}
-        self.soul_loader = SoulLoader(
-            rooster_dir=".rooster", prompts_dir="src/prompts", llm_client=llm_client, model=model
-        )
-        self.skill_loader = SkillLoader(skills_dir="skills")
+        # 不传路径参数，让 SoulLoader 用 __file__ 自动推导绝对路径
+        # 避免因 CWD 不同（src/ 启动时）导致 .rooster 和 prompts 路径错乱
+        self.soul_loader = SoulLoader(llm_client=llm_client, model=model)
+        # SkillLoader 同样用 __file__ 推导，避免 CWD 敏感
+        # skills/ 目录在项目根（rooster/skills/），需要从 src/ 再往上一级
+        _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # rooster/src/
+        _project_root = os.path.dirname(_src_dir)                               # rooster/
+        self.skill_loader = SkillLoader(skills_dir=os.path.join(_project_root, "skills"))
 
     def build_system_prompt(self, params: SystemPromptParams) -> str:
         """

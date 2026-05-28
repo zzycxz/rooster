@@ -42,33 +42,29 @@ class OpenAILikeClient(BaseModelClient):
 
         parsed = urlparse(self.base_url)
         host = parsed.hostname or ""
-        skip_proxy = any(np.strip() in host for np in no_proxy.split(",") if np.strip()) if no_proxy else True
+        skip_proxy = any(np.strip() in host for np in no_proxy.split(",") if np.strip()) if no_proxy else False
         proxy_url = None if skip_proxy else (http_proxy if http_proxy else None)
 
-        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=45.0, proxy=proxy_url)
+        # 设置 trust_env=False 防止 httpx 自动读取可能损坏的系统全局环境变量
+        # Disable trust_env to prevent system proxy environment variables from hijacking the explicit proxy routing
+        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=45.0, proxy=proxy_url, trust_env=False)
 
     async def chat_stream(
         self, model: str, messages: List[Dict[str, Any]], **kwargs
     ) -> AsyncGenerator[LLMResponseDelta, None]:
         payload = {"model": model, "messages": self._safe_messages(messages), "stream": True, **kwargs}
-        
-        try:
-            with open("debug_glm_payload.json", "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logger.error(f"Failed to dump payload: {e}")
 
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
 
         MAX_RETRIES = 2
         for attempt in range(MAX_RETRIES + 1):
+            yielded_any = False
             try:
                 async with self.client.stream("POST", "chat/completions", json=payload, headers=headers) as response:
                     if response.status_code != 200:
                         error_text = await response.aread()
                         raise Exception(f"API Error: {response.status_code} - {error_text.decode('utf-8', 'ignore')}")
 
-                    yielded_any = False
                     # [Phase2] 流式 tool_calls 聚合缓冲区
                     # [Phase2] Streaming tool_calls aggregation buffer
                     pending_tool_calls: Dict[int, dict] = {}
@@ -128,7 +124,10 @@ class OpenAILikeClient(BaseModelClient):
                                     tc_entry["id"] = tc_delta["id"]
 
                             yield LLMResponseDelta(
-                                content=str(content), role=delta_obj.get("role"), finish_reason=finish_reason
+                                content=str(content),
+                                role=delta_obj.get("role"),
+                                finish_reason=finish_reason,
+                                reasoning_content=reasoning or None,
                             )
                         except json.JSONDecodeError:
                             logger.debug(f"⚠️ [OpenAILike] 无法解析 JSON: {data_str}")
@@ -149,20 +148,21 @@ class OpenAILikeClient(BaseModelClient):
                         )
                         yielded_any = True
                     elif accumulated_reasoning:
-                        # Reasoning-only turn (e.g. standard text reply from a thinking model):
-                        # Fallback: if we only got reasoning and no actual content/tools,
-                        # inject the reasoning as content to prevent downstream JSON parse failures.
+                        # Reasoning-only turn: reasoning was already streamed per-chunk
+                        # via reasoning_content. Yield empty content; executor handles retries.
                         yield LLMResponseDelta(
-                            content=accumulated_reasoning,
+                            content="",
                             finish_reason=None,
                             reasoning_content=accumulated_reasoning,
                         )
+                        yielded_any = True
 
                     if not yielded_any:
                         logger.warning("⚠️ [OpenAILike] 流结束，但未产生任何有效 content。")
                 break  # 成功则跳出重试  # Exit retry loop on success
             except (httpx.NetworkError, httpx.TimeoutException) as e:
-                if attempt < MAX_RETRIES:
+                logger.error(f"🌐 [OpenAILike] 网络异常 (尝试 {attempt+1}/{MAX_RETRIES+1}): 请求 {self.base_url} 失败: {e}")
+                if attempt < MAX_RETRIES and not yielded_any:
                     import asyncio
 
                     await asyncio.sleep(2 * (attempt + 1))
@@ -172,6 +172,7 @@ class OpenAILikeClient(BaseModelClient):
                 # Must raise to trigger LLMClient Failover mechanism
                 raise e
             except Exception as e:
+                logger.error(f"🚨 [OpenAILike] 未知异常: {e}")
                 # 直接抛出异常
                 raise e
 
@@ -212,9 +213,6 @@ class OpenAILikeClient(BaseModelClient):
                     logger.info(f"🔧 [OpenAILike] 非流式 tool_calls 收到: {len(tool_calls)} 个工具调用")
                 elif not content:
                     logger.warning(f"⚠️ 模型返回内容为空 | 原报文: {result}")
-                    if reasoning:
-                        content = reasoning
-                        logger.info("🔧 [OpenAILike] 回退机制：使用 reasoning_content 填充空 content")
 
                 return LLMResponseDelta(
                     content=str(content),
@@ -266,6 +264,10 @@ class OpenAILikeClient(BaseModelClient):
             else:
                 new_msg.pop("content", None)
             
+            # 兼容性处理：非 OpenAI 兼容端（如九天、GLM）若遇到 developer 角色可能报 400，自动降级为 system
+            if new_msg.get("role") == "developer":
+                new_msg["role"] = "system"
+            
             new_msg.pop("reasoning_content", None)
             new_msg.pop("_internal", None)
             safe_msg.append(new_msg)
@@ -273,3 +275,4 @@ class OpenAILikeClient(BaseModelClient):
 
     async def close(self):
         await self.client.aclose()
+

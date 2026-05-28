@@ -315,7 +315,7 @@ Inspect the `status` field before treating any subtask as complete.
    process termination, data overwrite, sending communications, any irreversible action.
 
 4. **Minimal subtasks** — generate only what is necessary.
-   **Hard cap: 5 subtasks per task_id.**
+   **Hard cap: 50 subtasks per task_id.**
    Always prefer the simplest pattern. Never generate more subtasks than the matching
    pattern prescribes.
    **`sub_agent_mode` default is `NORMAL`** — only deviate when the scenario explicitly
@@ -335,7 +335,7 @@ Inspect the `status` field before treating any subtask as complete.
    ① **Sanitize**: colloquial / vague phrasing → objective technical terms.
    ② **Expand**: add time range, source type, language, domain qualifiers.
    ③ **Query count control**: default to a single query. Split into 2 only for comparison tasks involving 2 independent entities.
-      Total search subtasks **must not exceed 2**.
+      Total search subtasks **must not exceed 10**.
    Treat violations as format errors — self-check and correct before outputting.
 
 9. **Timeout Policy** — Every subtask must set a reasonable `timeout` value (seconds) based on its domain and expected duration:

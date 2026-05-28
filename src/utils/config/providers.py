@@ -66,7 +66,8 @@ class ProvidersConfig:
     # --- Xiaomi MiMo ---
     MIMO_URL: str = _env("MIMO_URL", "https://api.xiaomimimo.com/v1")
     MIMO_KEY: str = _env("MIMO_KEY", "")
-    MIMO_MODEL: str = _env("MIMO_MODEL", "mimo-v2.5-pro")
+    MIMO_MODEL: str = _env("MIMO_MODEL", "mimo-v2.5")
+    MIMO_THINKING_ENABLED: bool = _env_bool("MIMO_THINKING_ENABLED", False)
 
     # --- Role-specific model overrides ---
     STRATEGIST_MODEL_MODE: str = _env("STRATEGIST_MODEL_MODE", "zhipu")

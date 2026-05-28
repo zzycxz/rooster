@@ -46,4 +46,4 @@ class ChannelsConfig:
     DOWNLOADER_PROVIDER: str = _env("DOWNLOADER_PROVIDER", "system_default")
     DOWNLOADER_ENABLED: bool = _env_bool("DOWNLOADER_ENABLED", True)
     ARIA2_RPC_URL: str = _env("ARIA2_RPC_URL", "http://localhost:6800/jsonrpc")
-    ARIA2_RPC_SECRET: str = _env("ARIA2_RPC_SECRET", "")
+    ARIA2_RPC_SECRET: str = _env("ARIA2_TOKEN", "")

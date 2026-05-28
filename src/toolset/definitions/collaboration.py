@@ -15,12 +15,22 @@ class FeishuPushFileArgs(BaseModel):
 class FeishuPushFileTool(Tool):
     name = "feishu_push_file"
     kit = "Network"
-    description = "将本地生成的小型非敏感文件（如 Excel、Word、图片等报告成果）直接推送至当前的飞书对话框。"
+    description = "仅限飞书渠道：将本地文件推送至飞书对话框。非飞书渠道（网页/命令行）不可使用此工具，文件直接在本地查看即可。"
     args_schema: Type[BaseModel] = FeishuPushFileArgs
     workspace_dir: str = "."
 
     async def execute(self, args: FeishuPushFileArgs) -> ToolResult:
         file_path = args.file_path
+
+        # ── 渠道守卫：仅允许飞书渠道调用 ──
+        # ── Channel guard: only allow calls from Feishu channel ──
+        session_id = self.context.get("session_id", "")
+        if not session_id.startswith("feishu_"):
+            return ToolResult.error(
+                "❌ feishu_push_file 仅限飞书渠道使用。"
+                "当前渠道不是飞书，请直接在本地查看生成的文件。"
+            )
+
         # Safely get the injected workspace_dir
         # 安全获取注入的 workspace_dir
         ws_dir = getattr(self, "workspace_dir", ".")
@@ -65,27 +75,7 @@ class FeishuPushFileTool(Tool):
             if not feishu_channel:
                 return ToolResult.error("❌ 飞书通道未启动，无法推送。")
 
-            # Prefer getting precise session_id from context
-            # 优先从上下文获取精确的 session_id
-            session_id = self.context.get("session_id")
-            target_to = None
-
-            if session_id and session_id.startswith("feishu_"):
-                target_to = session_id.replace("feishu_", "")
-
-            # Fallback: if context is lost, try to find an active session
-            # 兜底方案：如果上下文丢失，尝试寻找活跃会话
-            if not target_to:
-                from sessions.store import SessionStore
-
-                active_sessions = SessionStore.get_instance().list_sessions()
-                for sid in active_sessions:
-                    if sid.startswith("feishu_"):
-                        target_to = sid.replace("feishu_", "")
-                        break
-
-            if not target_to:
-                return ToolResult.error("❌ 当前不是通过飞书在交互，推送功能已禁用。")
+            target_to = session_id.replace("feishu_", "")
 
             # 5. Smart detection: if image, prefer send_image API for inline display
             # 5. 智能识别：如果是图片，优先调用 send_image 接口以实现内联显示
