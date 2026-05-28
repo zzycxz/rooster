@@ -649,6 +649,44 @@
           </div>
         </div>
 
+        <!-- 📧 SECTION 4.5: Email / SMTP (Optional) -->
+        <div class="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
+          <div class="px-4 py-2.5 border-b border-slate-700 flex items-center gap-2">
+            <span>📧</span>
+            <span class="text-sm font-semibold text-slate-200">邮件发送配置 (SMTP)</span>
+            <span class="text-[10px] text-slate-500 ml-auto">可选 — 用于 email_send 工具</span>
+          </div>
+          <div class="p-4 space-y-3">
+            <p class="text-[11px] text-slate-500">配置后 Agent 可直接发送邮件，无需每次询问账号密码。139 邮箱使用 smtp.139.com:465，QQ 邮箱使用 smtp.qq.com:465。</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label class="space-y-1">
+                <span class="text-xs text-slate-400">SMTP_DEFAULT_HOST（服务器地址）</span>
+                <input type="text" x-model="setupForm.SMTP_DEFAULT_HOST"
+                       placeholder="smtp.139.com"
+                       class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+              </label>
+              <label class="space-y-1">
+                <span class="text-xs text-slate-400">SMTP_DEFAULT_PORT（端口，SSL 填 465）</span>
+                <input type="text" x-model="setupForm.SMTP_DEFAULT_PORT"
+                       placeholder="465"
+                       class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+              </label>
+              <label class="space-y-1">
+                <span class="text-xs text-slate-400">SMTP_DEFAULT_USER（发件人邮箱）</span>
+                <input type="text" x-model="setupForm.SMTP_DEFAULT_USER"
+                       placeholder="yourname@139.com"
+                       class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+              </label>
+              <label class="space-y-1">
+                <span class="text-xs text-slate-400">SMTP_DEFAULT_PASS（授权码，非登录密码）</span>
+                <input type="password" x-model="setupForm.SMTP_DEFAULT_PASS"
+                       placeholder="POP3/SMTP 授权码"
+                       class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+              </label>
+            </div>
+          </div>
+        </div>
+
         <!-- ⬇️ SECTION 5: Aria2 Downloader (Optional) -->
         <div class="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
           <div class="px-4 py-2.5 border-b border-slate-700 flex items-center gap-2">

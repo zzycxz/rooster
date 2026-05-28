@@ -97,7 +97,7 @@ class MultimediaDownloadTool(BaseTool):
         import httpx as _httpx
 
         rpc_url = os.getenv("ARIA2_RPC_URL", "http://localhost:6800/jsonrpc")
-        rpc_secret = os.getenv("ARIA2_RPC_SECRET", "")
+        rpc_secret = os.getenv("ARIA2_TOKEN", "")
 
         payload = {"jsonrpc": "2.0", "method": "aria2.addUri", "id": "rooster_dispatch", "params": [[uri]]}
 

@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 class StreamEventType(str, Enum):
     TEXT_DELTA = "text_delta"
+    THINK_DELTA = "think_delta"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
     SUBTASK_START = "subtask_start"
@@ -68,6 +69,16 @@ class StreamBuffer:
             data={"text": text},
         )
         self._text_acc += text
+        self._buffer.append(event)
+
+    async def push_think_delta(self, text: str):
+        event = StreamEvent(
+            type=StreamEventType.THINK_DELTA,
+            run_id=self.run_id,
+            session_id=self.session_id,
+            seq=self._next_seq(),
+            data={"text": text},
+        )
         self._buffer.append(event)
 
     async def push_tool_call(self, tool_name: str, args: dict):

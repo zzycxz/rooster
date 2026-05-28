@@ -23,10 +23,15 @@ class SoulLoader:
     """
 
     def __init__(
-        self, rooster_dir: str = ".rooster", prompts_dir: str = "src/prompts", llm_client=None, model: str = ""
+        self, rooster_dir: str = "", prompts_dir: str = "", llm_client=None, model: str = ""
     ):
-        self.rooster_dir = os.path.abspath(rooster_dir)
-        self.prompts_dir = os.path.abspath(prompts_dir)
+        # 使用 __file__ 推导绝对路径，避免因启动目录(CWD)不同导致路径错乱 bug
+        # __file__ = rooster/src/memory/soul_loader.py
+        # 上一级 = rooster/src/memory/ → 上两级 = rooster/src/ → 上三级 = rooster/（项目根）
+        _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # rooster/src/
+        _project_root = os.path.dirname(_src_dir)                                # rooster/
+        self.rooster_dir = os.path.abspath(rooster_dir) if rooster_dir else os.path.join(_project_root, ".rooster")
+        self.prompts_dir = os.path.abspath(prompts_dir) if prompts_dir else os.path.join(_src_dir, "prompts")
         self.soul_path = os.path.join(self.rooster_dir, "SOUL.md")
         self.user_path = os.path.join(self.rooster_dir, "USER.md")
         self._llm_client = llm_client

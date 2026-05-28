@@ -65,8 +65,11 @@ class Strategist:
 
         # 组装五层 Prompt
         # Assemble five-layer Prompt
+        # 使用 __file__ 构建绝对路径，避免因 CWD 不同导致 src/src/prompts 双层路径 bug
+        _prompts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
+        _strategist_prompt = "strategist.md" if os.path.exists(os.path.join(_prompts_dir, "strategist.md")) else "base.md"
         system_prompt = soul_loader.build_system_prompt(
-            base_prompt_name="strategist.md" if os.path.exists("src/prompts/strategist.md") else "base.md",
+            base_prompt_name=_strategist_prompt,
             ltm_context=ltm_context,
             skills_digest=self._get_skills_digest(),
         )
@@ -81,7 +84,7 @@ class Strategist:
             # Timeout guards against LLM hangs that would block MissionRunner indefinitely.
             response = await asyncio.wait_for(
                 self.llm_client.chat_non_stream(
-                    messages=messages, model=settings.STRATEGIST_MODEL_NAME, temperature=0.1
+                    messages=messages, model=settings.STRATEGIST_MODEL_NAME, temperature=0.1, max_tokens=32768
                 ),
                 timeout=settings.STRATEGIST_LLM_TIMEOUT,
             )
@@ -189,8 +192,11 @@ class Strategist:
         ltm_context = memory_manager.get_summary_for_prompt(query=user_request)
 
         # 组装五层 Prompt
+        # 使用 __file__ 构建绝对路径，避免因 CWD 不同导致 src/src/prompts 双层路径 bug
+        _prompts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
+        _strategist_prompt = "strategist.md" if os.path.exists(os.path.join(_prompts_dir, "strategist.md")) else "base.md"
         system_prompt = soul_loader.build_system_prompt(
-            base_prompt_name="strategist.md" if os.path.exists("src/prompts/strategist.md") else "base.md",
+            base_prompt_name=_strategist_prompt,
             ltm_context=ltm_context,
             skills_digest=self._get_skills_digest(),
         )
@@ -205,8 +211,9 @@ class Strategist:
         yielded_ids = set()
 
         try:
-            async for delta in self.llm_client.chat_stream(
-                messages=messages, model=settings.STRATEGIST_MODEL_NAME, temperature=0.1
+            async with asyncio.timeout(settings.STRATEGIST_LLM_TIMEOUT):
+              async for delta in self.llm_client.chat_stream(
+                messages=messages, model=settings.STRATEGIST_MODEL_NAME, temperature=0.1, max_tokens=32768
             ):
                 if delta.content:
                     full_content += delta.content
@@ -266,8 +273,20 @@ class Strategist:
                                             continue
                         except Exception:
                             continue
+        except asyncio.TimeoutError:
+            logger.error(
+                f"❌ [Strategist] plan_stream() 超时 ({settings.STRATEGIST_LLM_TIMEOUT:.0f}s)，降级 FAILSAFE"
+            )
         except Exception as e:
             logger.error(f"❌ [Strategist] 流式规划异常: {e}")
+
+        # 诊断日志：打印 LLM 原始返回的前 500 字符
+        if not yielded_ids:
+            logger.warning(f"🔍 [Strategist 诊断] yielded_ids 为空, full_content 长度={len(full_content)}")
+            if full_content:
+                logger.warning(f"🔍 [Strategist 诊断] LLM 原始返回前 500 字符:\n{full_content[:500]}")
+            else:
+                logger.warning(f"🔍 [Strategist 诊断] full_content 为空，LLM 可能未返回任何内容")
 
         # [DAY 5 Robust] 终极抢救机制：如果流式拆分完全失败，在流结束后使用全量正则进行静态强解析
         # [DAY 5 Robust] Ultimate rescue: if streaming split completely fails, use full regex static parse after stream ends
@@ -379,10 +398,11 @@ class Strategist:
             {"role": "user", "content": "请立即进行战略重组并返回纯 JSON 蓝图。"},
         ]
 
+        response = None
         try:
             response = await asyncio.wait_for(
                 self.llm_client.chat_non_stream(
-                    messages=messages, model=settings.STRATEGIST_MODEL_NAME, temperature=0.3
+                    messages=messages, model=settings.STRATEGIST_MODEL_NAME, temperature=0.3, max_tokens=32768
                 ),
                 timeout=settings.STRATEGIST_LLM_TIMEOUT,
             )
@@ -449,6 +469,24 @@ class Strategist:
             raise Exception("重规划超时，维持原计划")
 
         except Exception as e:
-            raw_snippet = response.content[:100] if "response" in dir() else "<no response>"
+            raw_snippet = response.content[:100] if response is not None and hasattr(response, "content") else "<no response>"
             logger.error(f"❌ [Strategist] 重规划崩盘 (Raw: {raw_snippet}...): {e}")
-            raise Exception(f"重规划引擎解析失败: {str(e)}")
+            # FAILSAFE: 降级为原始目标的单任务方案，而不是直接崩溃
+            logger.warning("⚠️ [Strategist] replan FAILSAFE: 降级为单任务执行原始目标")
+            return MissionPlan(
+                task_id=current_plan.task_id,
+                goal=current_plan.goal,
+                original_goal=target_goal,
+                os_context=current_plan.os_context,
+                autonomy=current_plan.autonomy,
+                replan_count=current_plan.replan_count + 1,
+                max_replan=current_plan.max_replan,
+                replan_history=current_plan.replan_history,
+                subtasks=[SubTask(
+                    id="FAILSAFE",
+                    instruction=target_goal,
+                    domain="SYSTEM",
+                    tool="system_fallback",
+                    on_failure="RETRY",
+                )],
+            )

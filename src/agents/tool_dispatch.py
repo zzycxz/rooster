@@ -194,16 +194,22 @@ async def execute_orchestrated_tool(
 
         guard = InputGuard.get()
         report = guard.scan_args(name, args)
-        if report.has_findings:
+        if not report.is_clean:
             for finding in report.findings:
+                issue = getattr(finding, "issue", getattr(finding, "message", "unknown"))
+                value_preview = getattr(finding, "value", getattr(finding, "value_preview", ""))
                 _logger.warning(
                     f"[InputGuard] {finding.severity.upper()} '{name}'.{finding.field}: "
-                    f"{finding.issue} — value={str(finding.value)[:80]}"
+                    f"{issue} — value={str(value_preview)[:80]}"
                 )
             if report.has_critical:
                 # 只有 critical 级（真实路径穿越）才硬阻断
                 # Only critical level (actual path traversal) triggers hard block
-                reasons = "; ".join(f.issue for f in report.findings if f.severity == "critical")
+                reasons = "; ".join(
+                    getattr(f, "issue", getattr(f, "message", "critical finding"))
+                    for f in report.findings
+                    if f.severity == "critical"
+                )
                 return f'<tool_response name="{name}">⚠️ SECURITY: Input validation failed — {reasons}</tool_response>'
     except Exception as _ig_err:
         _logger.debug(f"[InputGuard] Scan skipped (degraded): {_ig_err}")

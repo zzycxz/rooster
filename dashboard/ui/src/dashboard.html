@@ -237,6 +237,9 @@
     <%- include('partials/tab-config.html') %>
 
 
+    <%- include('partials/tab-security.html') %>
+
+
     <%- include('partials/tab-setup.html') %>
 
 
@@ -284,6 +287,7 @@ function app() {
         tab_memory: 'Memory',
         tab_metrics: 'Metrics',
         tab_config: 'Config',
+        tab_security: 'Security',
         tab_setup: 'Setup',
         tab_health: 'Health',
         tab_scheduler: 'Scheduler',
@@ -395,6 +399,7 @@ function app() {
         status_done: 'Done',
         status_failed: 'Failed',
         exec_error: 'Execution Error',
+        thinking_label: 'Thinking...',
         chat_placeholder: 'Enter a task command... (Enter to send, Shift+Enter for newline)',
         send: 'Send',
         running: 'Running',
@@ -733,6 +738,7 @@ function app() {
         tab_memory: '长期记忆',
         tab_metrics: '性能监控',
         tab_config: '系统配置',
+        tab_security: '安全管理',
         tab_setup: '初始配置',
         tab_health: '健康诊断',
         tab_scheduler: '定时任务',
@@ -844,6 +850,7 @@ function app() {
         status_done: '已完成',
         status_failed: '已失败',
         exec_error: '执行错误',
+        thinking_label: '思考中...',
         chat_placeholder: '输入任务指令... (Enter 发送 · Shift+Enter 换行)',
         send: '发 送',
         running: '⏳ 执行中',
@@ -1196,6 +1203,7 @@ function app() {
       { id: 'memory',    icon: '🧠', label: 'Memory' },
       { id: 'metrics',   icon: '📊', label: 'Metrics' },
       { id: 'config',    icon: '⚙️',  label: 'Config' },
+      { id: 'security',  icon: '🛡️',  label: 'Security' },
       { id: 'setup',     icon: '🔑', label: 'Setup' },
       { id: 'health',    icon: '🩺', label: 'Health' },
       { id: 'scheduler', icon: '⏰', label: 'Scheduler' },
@@ -1298,7 +1306,22 @@ function app() {
       ARIA2_RPC_URL:      'http://localhost:6800/jsonrpc',
       ARIA2_TOKEN:        '',
     },
+    securityForm: {
+      GATEWAY_API_KEY: '',
+      WEBHOOK_HMAC_SECRET: '',
+      PERMISSION_POLICY: 'balanced',
+      BLOCKED_TOOLS: '',
+      ALLOWED_TOOLS: '',
+      ALLOWED_PATHS: '',
+      CHECKPOINT_ENABLED: 'true',
+      AUDIT_MAX_REMAND_RETRY: '1',
+      AGENT_STUCK_THRESHOLD: '4',
+      AGENT_MAX_STEPS: '20',
+    },
     setupSaving:    false,
+    securitySaving: false,
+    securityConfigLoaded: false,
+    pendingConfigSaveAction: 'setup',
     showConfigRestartModal: false,
     showStopConfirm: false,
     setupSaved:     false,
@@ -1541,6 +1564,7 @@ function app() {
       else { this._stopSystemTimer(); }
       if (id === 'setup') { this.scanOllama(); this.loadSetupConfig(); }
       if (id === 'config' && !this.config) this.fetchConfig();
+      if (id === 'security' && !this.securityConfigLoaded) this.loadSecurityConfig();
       if (id === 'downloader') this.checkAria2Status();
       if (id === 'scheduler') { this.fetchSchedules(); this.fetchSchedulerDashboard(); }
     },
@@ -1796,7 +1820,18 @@ function app() {
 
     // ── Setup Wizard ─────────────────────────────────────────
     async saveSetup() {
+      this.pendingConfigSaveAction = 'setup';
       this.showConfigRestartModal = true;
+    },
+    async saveSecurityConfig() {
+      this.pendingConfigSaveAction = 'security';
+      this.showConfigRestartModal = true;
+    },
+    async confirmSaveConfig() {
+      if (this.pendingConfigSaveAction === 'security') {
+        return this.confirmSaveSecurity();
+      }
+      return this.confirmSaveSetup();
     },
     async confirmSaveSetup() {
       this.showConfigRestartModal = false;
@@ -1831,6 +1866,45 @@ function app() {
         this.setupError = e.message;
       } finally {
         this.setupSaving = false;
+      }
+    },
+
+    async confirmSaveSecurity() {
+      this.showConfigRestartModal = false;
+      this.securitySaving = true;
+      try {
+        const payload = {};
+        const secretKeys = new Set(['GATEWAY_API_KEY', 'WEBHOOK_HMAC_SECRET']);
+        for (const [k, v] of Object.entries(this.securityForm)) {
+          const value = String(v ?? '').trim();
+          if (!value) continue;
+          if (secretKeys.has(k) && value.includes('*')) continue;
+          payload[k] = value;
+        }
+
+        if (Object.keys(payload).length === 0) {
+          this.addToast('Security', 'No changes to save', 'info');
+          return;
+        }
+
+        const headers = { 'Content-Type': 'application/json' };
+        if (this._wsToken) headers['X-API-Key'] = this._wsToken;
+        const res = await fetch('/api/config/save', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+        if (json.ok) {
+          this.addToast('Security', 'Security settings saved. Restarting...', 'info');
+          setTimeout(() => location.reload(), 5000);
+        } else {
+          this.addToast('Security', json.error || 'Save failed', 'error');
+        }
+      } catch (e) {
+        this.addToast('Security', e.message, 'error');
+      } finally {
+        this.securitySaving = false;
       }
     },
 
@@ -3000,38 +3074,10 @@ function app() {
           );
           break;
 
-        case 'agent_event': {
-          const ev = msg.data;   // AgentEvent shape
-          try {
-            this._addStep(ev);
-            if (ev.stream === 'tool')      this._handleTool(ev);
-            if (ev.stream === 'error')     this._addError(ev.data || {}, ev.ts ?? msg.ts, ev);
-          } catch(ex) { console.error('[Dashboard] _addStep/_handleTool error:', ex); }
-          // Debug: verify steps array is growing
-          if (this.steps.length > 0 && this.steps.length % 5 === 0) {
-            console.log('[Dashboard] steps count:', this.steps.length, 'tools:', this.tools.length, 'logs:', this.logs.length);
-          }
-          if (ev.stream === 'lifecycle') {
-            this._updatePipeline(ev.data?.status || ev.data?.phase);
-            // Capture audit verdicts for the inline trail
-            if (ev.data?.status === 'audit_verdict') {
-              const sid = ev.data.subtask_id;
-              this.auditVerdicts.push({
-                ts: ev.ts,
-                subtask_id: sid,
-                verdict: ev.data.verdict,
-                result_verdict: ev.data.result_verdict,
-                reason: ev.data.reason,
-                recommendation: ev.data.recommendation,
-                command: ev.data.command,
-                provider: this._subtaskProviders?.[sid] || "",
-              });
-              // Keep last 50
-              if (this.auditVerdicts.length > 50) this.auditVerdicts = this.auditVerdicts.slice(-50);
-            }
-          }
+        case 'agent_event':
+          // Agent events are already handled by _handleGateway via the Gateway WS.
+          // Processing them here would cause duplicates (Steps, Tools, Pipeline all doubled).
           break;
-        }
 
         case 'error':
           this._addError(msg.data || {}, msg.ts, null);
@@ -3327,20 +3373,41 @@ function app() {
           }
         }
 
+        if (d.stream === 'think') {
+          if (d.data?.status === 'running') {
+            const last = this.chatMessages[this.chatMessages.length - 1];
+            if (last && last.role === 'assistant') {
+              last.thinkContent = (last.thinkContent || '') + (d.data?.text || '');
+              last.isThinking = true;
+            } else {
+              this.chatMessages.push({ id: Date.now(), role: 'assistant', thinkContent: d.data?.text || '', content: '', streaming: true, isThinking: true });
+            }
+          }
+        }
+
         if (d.stream === 'assistant') {
           if (d.data?.status === 'running') {
             const last = this.chatMessages[this.chatMessages.length - 1];
             if (last && last.role === 'assistant') {
               last.content += (d.data?.text || '');
+              if (d.data?.text) last.isThinking = false;
             } else {
               this.chatMessages.push({ id: Date.now(), role: 'assistant', content: d.data?.text || '', streaming: true });
             }
           } else if (d.data?.status === 'done') {
             const last = this.chatMessages[this.chatMessages.length - 1];
-            if (last) last.streaming = false;
+            if (last) {
+              last.streaming = false;
+              last.isThinking = false;
+            }
             this.isRunning = false;
           }
         } else if (d.stream === 'error') {
+          // Remove empty placeholder if no content arrived yet
+          const lastMsg = this.chatMessages[this.chatMessages.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.content && !lastMsg.thinkContent) {
+            this.chatMessages.pop();
+          }
           this.chatMessages.push({ id: Date.now(), role: 'error', content: d.data?.message || 'Execution error', streaming: false });
           this.isRunning = false;
         } else if (d.stream === 'lifecycle') {
@@ -3382,6 +3449,8 @@ function app() {
       this.subtaskTotal = 0;
       this.subtaskCompleted = 0;
       this.chatMessages.push({ id: Date.now(), role: 'user', content: text || `[${images.length} image(s)]` });
+      // Push placeholder immediately so the AI bubble appears without delay
+      this.chatMessages.push({ id: Date.now() + 1, role: 'assistant', content: '', thinkContent: '', streaming: true, isThinking: false });
       this.isRunning = true;
       this.pipeline.forEach(p => p.status = 'idle');
 
@@ -3714,6 +3783,27 @@ function app() {
         }
       } catch (e) {
         console.error('Failed to load masked env config:', e);
+      }
+    },
+
+    async loadSecurityConfig() {
+      try {
+        const headers = {};
+        if (this._wsToken) headers['X-API-Key'] = this._wsToken;
+        const res = await fetch('/api/config/masked', { headers });
+        const json = await res.json();
+        if (json && json.env) {
+          for (const key of Object.keys(this.securityForm)) {
+            if (json.env[key] !== undefined && json.env[key] !== null) {
+              this.securityForm[key] = String(json.env[key]);
+            }
+          }
+          this.securityForm.GATEWAY_API_KEY = '';
+          this.securityForm.WEBHOOK_HMAC_SECRET = '';
+        }
+        this.securityConfigLoaded = true;
+      } catch (e) {
+        console.error('Failed to load security config:', e);
       }
     },
 

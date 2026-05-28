@@ -7,130 +7,6 @@ from utils.config import settings
 logger = logging.getLogger(__name__)
 
 
-class StaticRuleEngine:
-    """
-    [意图静态清洗与工具映射引擎]
-    采用纯本地静态的高性能正则/关键词管道，在不损耗 LLM 算力及不触发安全审查的前提下，
-    将影视、软件等下载意图 100% 确定性地”洗白”为标准化的中性工具调用指令。
-    """
-
-    # [Intent static cleaning and tool mapping engine]
-    # Uses pure local static high-performance regex/keyword pipeline to 100% deterministically
-    # 'sanitize' movie/software download intents into standardized neutral tool call instructions
-
-    @staticmethod
-    def clean_target(text: str, remove_keywords: list) -> str:
-        """剥离多余的前缀和无关修饰词，提炼核心实体"""  # Strip extraneous prefixes and irrelevant modifiers, extract core entity
-        cleaned = text.strip()
-        # 清除前缀助词，如"帮我下载"、"请问哪里有安装"等
-        # 注意：时间限定词（最新、新上映、刚出的）必须保留在 title 中，否则搜索会匹配到错误版本
-        # Remove prefix particles — but preserve temporal qualifiers (最新/新上映/刚出的) in title
-        prefix_pat = r"^(?:帮我|请帮我|请问?|求|想要|我想?|有没有?|麻烦)?[\s]*(?:下载|安装|获取|找一找|搜一搜|搜索|搞一个|整一个|download|install|setup)?[\s]*(?:电影|视频|影片|软件|安装包|破解版|免费版|movie|software|app)?[\s]*"
-        cleaned = re.sub(prefix_pat, "", cleaned, flags=re.IGNORECASE)
-        # 清除后缀助词，使用 + 匹配一个或多个连续存在的后缀，彻底去除尾巴（增加浏览器、软件等修饰词匹配）
-        # Remove suffix particles, match one or more consecutive suffixes
-        suffix_pat = r"[\s]*(?:的?磁力|的?种子|的?资源|下载|安装|资源|1080p|4k|mp4|mkv|magnet|torrent|bt|链接|地址|官網|官网|的磁力资源|磁力资源|资源种子|资源下载|高清|超清|蓝光|hd|\.mp4|\.mkv|浏览器|软件)+$"
-        cleaned = re.sub(suffix_pat, "", cleaned, flags=re.IGNORECASE)
-        # 兜底去除可能残存的前导”的”字与空格
-        # Fallback removal of possible residual leading '的' character and spaces
-        cleaned = re.sub(r"^(?:的|[\s])+", "", cleaned)
-        return cleaned.strip()
-
-    @classmethod
-    def match_and_reframe(cls, user_input: str) -> tuple[bool, str]:
-        """
-        进行规则判定并重构。
-        返回 (is_matched, reframed_instruction)
-        """
-        # Perform rule determination and reframing
-        text = user_input.strip()
-        lower_text = text.lower()
-
-        # 1. 影视多媒体下载规则 (Movie Download Rule)
-        # 匹配特征：用户提到了”电影”、”磁力”、”视频”、”迅雷”，或者包含 magnet:/torrent/mkv/mp4 等媒体格式后缀，或者是一些常见的影视行为词
-        # 1. Movie multimedia download rule
-        # Match features: user mentions '电影', '磁力', '视频', '迅雷', or contains magnet:/torrent/mkv/mp4 media format suffixes
-        movie_triggers = [
-            "电影",
-            "影片",
-            "视频",
-            "画质",
-            "高清",
-            "mkv",
-            "mp4",
-            "magnet",
-            "torrent",
-            "种子",
-            "磁力",
-            "迅雷",
-            "迅雷下载",
-            "movie",
-            "bt",
-        ]
-        is_movie = any(trig in lower_text for trig in movie_triggers)
-
-        if is_movie:
-            title = cls.clean_target(text, movie_triggers)
-            if title:
-                # 若影片名包含明确年份或序号（如 "误杀2019" / "误杀2"），可安全短路直接执行
-                # 若无年份，可能存在同名多版本歧义（如"误杀" = 2019国产版 or 2015印度版），
-                # 必须透传给 LLM Reframer 让其做歧义感知判断，不可盲目短路
-                import re as _re
-                has_year = bool(_re.search(r"\b(19|20)\d{2}\b", title))
-                has_serial = bool(_re.search(r"[2-9]$|第[二三四五六七八九十]|II|III|IV|2$|3$", title))
-                is_unambiguous = has_year or has_serial
-                if is_unambiguous:
-                    reframed = (
-                        f'调用 resource-downloader 技能，参数 title="{title}"，type="movie"，quality="1080p"。'
-                        f"该技能将自动并发检索各大种子站最优资源并唤起迅雷完成自愈下载。"
-                    )
-                    return True, reframed
-                # 无明确年份/序号 → 透传 LLM，让其判断是否需要 CLARIFICATION_NEEDED
-                return False, user_input
-
-        # 2. 软件及工具安装规则 (Software Installation Rule)
-        # 匹配特征：含有”安装”、”软件”、”应用”、”app”、”install”、”setup”，或者以常见的可执行后缀结尾如 .exe, .msi, .dmg
-        # 2. Software and tool installation rule
-        # Match features: contains '安装', '软件', '应用', 'app', 'install', 'setup', or executable suffixes like .exe, .msi, .dmg
-        software_triggers = [
-            "安装",
-            "软件",
-            "应用",
-            "app",
-            "install",
-            "setup",
-            "exe",
-            "msi",
-            "dmg",
-            "apk",
-            "官方下载",
-            "官网",
-        ]
-        is_software = any(trig in lower_text for trig in software_triggers)
-
-        if is_software:
-            software_name = cls.clean_target(text, software_triggers)
-            if software_name:
-                reframed = (
-                    f'调用 resource-downloader 技能，参数 title="{software_name}"，type="software"。'
-                    f"该技能将安全寻获官方下载地址并启动直链下载。"
-                )
-                return True, reframed
-
-        # 3. 兜底判定：如果包含通用的下载词（如 download / 下载），但既没有明显匹配电影也没有明显匹配软件，默认使用更安全的 web_search 检索法
-        # 3. Fallback: if contains generic download words but no clear movie/software match, default to safer web_search approach
-        general_triggers = ["下载", "download"]
-        if any(trig in lower_text for trig in general_triggers):
-            target = cls.clean_target(text, general_triggers)
-            if target:
-                reframed = (
-                    f'调用 resource-downloader 技能，参数 title="{target}"，type="software"。'
-                    f"该技能将安全寻获官方下载地址并启动直链下载。"
-                )
-                return True, reframed
-
-        return False, user_input
-
 
 class Reframer:
     """
@@ -149,14 +25,23 @@ class Reframer:
         # Load external Prompt assets
         self.prompt_path = os.path.join(os.path.dirname(__file__), "..", "prompts", "intent_reframer.md")
 
-    async def reframe(self, user_input: str) -> str:
+    async def reframe(self, user_input: str, session_id: str = None) -> str:
         """执行重构动作"""  # Execute reframing action
-        # --- 1. 本地静态极速清洗与分流管道（Zero-LLM Latency & Safe Purify） ---
-        # --- 1. Local static ultra-fast cleaning and routing pipeline (Zero-LLM Latency & Safe Purify) ---
-        static_matched, static_reframed = StaticRuleEngine.match_and_reframe(user_input)
-        if static_matched:
-            logger.info("⚡ [Reframer] 静态分流清洗管道命中！零 LLM 耗时直达工具端。")
-            return static_reframed
+        
+        history_context = ""
+        if session_id:
+            try:
+                from sessions.store import global_session_store
+                session = global_session_store.get_or_create(session_id)
+                if session.history:
+                    lines = []
+                    for m in session.history[-6:]:
+                        role_str = "用户" if m.role == "user" else "AI助手"
+                        content_preview = m.content[:500] + "..." if len(m.content) > 500 else m.content
+                        lines.append(f"{role_str}: {content_preview}")
+                    history_context = "\n".join(lines)
+            except Exception as e:
+                logger.warning(f"⚠️ [Reframer] 获取 Session 历史失败: {e}")
 
         reframed_text = user_input  # 初始化，防止异常时 UnboundLocalError
 
@@ -174,7 +59,14 @@ class Reframer:
         try:
             import asyncio
 
-            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_input}]
+            messages = [{"role": "system", "content": system_prompt}]
+            
+            if history_context:
+                user_msg = f"【历史对话上下文】\n{history_context}\n\n【当前用户输入】\n{user_input}\n\n请结合上下文，明确用户当前输入中代词（如“这个”、“刚才的”）所指代的具体对象，并将其重构为包含明确对象的完整独立指令。如果是独立的全新请求，请忽略上下文直接重构。"
+            else:
+                user_msg = user_input
+                
+            messages.append({"role": "user", "content": user_msg})
 
             # 使用 wait_for 实施强制超时 (20s)
             # Use wait_for for mandatory timeout (20s)
@@ -254,21 +146,24 @@ class Reframer:
             return self._keyword_reframe(user_input)
 
     def _keyword_reframe(self, user_input: str) -> str:
-        """LLM 不可用时的关键词兜底重构，确保下载任务使用 movie_downloader 一步完成。"""  # Keyword fallback reframing when LLM is unavailable
-        _dl_kw = ["下载", "download", "install", "安装"]
+        """LLM 不可用时的关键词兜底重构，确保下载任务使用 resource-downloader 技能一步完成。"""  # Keyword fallback reframing when LLM is unavailable
+        _dl_kw = ["下载", "download", "install", "安装", "获取", "找一下"]
         if not any(k in user_input.lower() for k in _dl_kw):
             return user_input
-        logger.info("🔧 [Reframer] 关键词兜底：注入 movie_downloader 单步模板。")
-        # 提取影片名：去掉动词前缀词（帮我下载/下载电影/etc）
-        # Extract movie name: remove verb prefix (帮我下载/下载电影/etc)
+        logger.info("🔧 [Reframer] 关键词兜底：注入 resource-downloader 单步模板。")
+        # 提取目标名称：去掉动词前缀词（帮我下载/下载电影/etc）
+        # Extract target name: remove verb prefix (帮我下载/下载电影/etc)
         import re as _re
 
         title = _re.sub(
-            r"^(帮我|请|帮|麻烦)?[\s]*(下载|download)[\s]*(电影|视频|movie)?[\s]*", "", user_input, flags=_re.IGNORECASE
+            r"^(帮我|请|帮|麻烦)?[\s]*(下载|download|获取|找一下)[\s]*(电影|视频|movie|软件|安装包)?[\s]*",
+            "",
+            user_input,
+            flags=_re.IGNORECASE,
         ).strip()
         if not title:
             title = user_input
         return (
-            f'调用 movie_downloader 工具，参数 title="{title}"，quality="1080p"。'
-            f"该工具将自动搜索磁力链接并唤起迅雷开始下载，无需其他步骤。"
+            f'调用 resource-downloader 技能，参数 title="{title}"，type="movie"，quality="1080p"。'
+            f"该技能将自动并发检索各大种子站最优资源并唤起迅雷完成自愈下载。"
         )

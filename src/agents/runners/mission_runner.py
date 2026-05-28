@@ -792,6 +792,15 @@ class MissionRunner:
                 error_msg = error_msg.replace("__ABORT__:", "任务已中止:")
 
             await channel.send_message(to=msg.sender_id, text=f"❌ [执行失败] {error_msg}")
+
+            # Emit 'failed' lifecycle event so Dashboard pipeline transitions to error state
+            # instead of staying stuck in "running" forever
+            await self.event_handler.emit_lifecycle(
+                session_key=msg.session_id,
+                client_run_id=current_mission_plan.task_id,
+                status="failed",
+            )
+
             # Keep the checkpoint so the user can resume after fixing the issue
             return
 

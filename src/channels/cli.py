@@ -60,6 +60,7 @@ class CLIChannel(BaseChannel):
         self.router = None
         self._should_stop = False
         self._lang = os.getenv("ROOSTER_LANG", "en").lower()
+        self.supports_streaming = True
 
     def t(self, key: str) -> str:
         """Get message in current language (default English, zh for Chinese)."""
@@ -118,8 +119,9 @@ class CLIChannel(BaseChannel):
                 await self._handle_command("/exit")
             except Exception as e:
                 self.console.print(f"[red]{self.t('sys_error').format(e)}[/red]")
-                # Re-raise so the Guardian watchdog can detect and repair the crash
-                raise e
+                # [Fix] 遇到普通的 LLM 调用失败（如模型冷却或网络异常）不应该导致整个 CLI 和服务崩溃退出。
+                # 仅打印错误，并继续下一轮循环，允许用户重试。
+                # Do not raise exception here, as it will crash the entire application via asyncio.gather.
 
     async def stop(self):
         self._should_stop = True

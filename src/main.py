@@ -11,6 +11,8 @@ import warnings
 
 warnings.filterwarnings("ignore", message=".*pkg_resources.*")
 warnings.filterwarnings("ignore", message=".*UNEXPECTED.*")
+warnings.filterwarnings("ignore", category=SyntaxWarning, module="pywinauto")
+warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources.*")
 from dotenv import load_dotenv
 
 # 确保 src 目录和项目根目录在搜索路径中
@@ -45,6 +47,26 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", stream=sys.stdout
 )
 logger = logging.getLogger("RoosterMain")
+
+# ── 文件日志 Handler（排查 FAILSAFE / Provider 故障专用）──────────────────────
+# 将 WARNING 及以上日志同步写入 rooster.log，不影响 stdout 输出。
+# File log handler for diagnosing FAILSAFE / provider failures.
+_log_dir = os.path.join(project_root, "logs")
+os.makedirs(_log_dir, exist_ok=True)
+_log_file_path = os.path.join(_log_dir, "rooster.log")
+_file_handler = logging.FileHandler(_log_file_path, encoding="utf-8", mode="a")
+_file_handler.setLevel(logging.DEBUG)  # 文件捕获全量 DEBUG
+_file_handler.setFormatter(
+    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+)
+logging.getLogger().addHandler(_file_handler)
+logger.info(f"📋 日志文件: {_log_file_path}")
+
+# 关键诊断模块显式开启 DEBUG，确保 FAILSAFE / Provider 错误不丢失
+# Key diagnostic modules explicitly set to DEBUG so FAILSAFE / provider errors are not lost
+logging.getLogger("agents.strategist").setLevel(logging.DEBUG)
+logging.getLogger("agents.llm_client").setLevel(logging.DEBUG)
+logging.getLogger("agents.runners.mission_runner").setLevel(logging.DEBUG)
 
 # 🤫 静默冗余日志，但保留 Rooster 核心日志
 # Silence verbose subsystem logs, but keep Rooster core logs
@@ -215,7 +237,7 @@ def _preflight_check():
 
 _PROVIDERS = [
     ("Zhipu AI", "ZHIPU_KEY", "GLM5.1", "https://open.bigmodel.cn/api/paas/v4"),
-    ("Xiaomi MiMo", "MIMO_KEY", "mimo-v2.5-pro", ""),
+    ("Xiaomi MiMo", "MIMO_KEY", "mimo-v2.5", ""),
     ("OpenAI-compatible", "CLOUD_KEY", "gpt-4o", "https://api.openai.com/v1"),
     ("Jiutian", "JIUTIAN_KEY", "", ""),
     ("Local model server", "LOCAL_KEY", "local", "http://127.0.0.1:8080/v1"),

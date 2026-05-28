@@ -145,41 +145,77 @@
         </div>
 
         <template x-for="(msg, index) in chatMessages" :key="String(msg.id) + '-' + index">
-          <div
-            class="flex gap-2"
-            :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
-          >
-            <!-- Avatar -->
-            <span
-              x-show="msg.role !== 'user'"
-              class="flex-shrink-0 w-7 h-7 rounded-full bg-green-900 border border-green-700 flex items-center justify-center text-sm self-end mb-1"
-            >🐓</span>
+          <div class="flex flex-col">
 
+            <!-- 🤔 Thinking block — outside the answer bubble, collapses when done -->
             <div
-              class="max-w-[65%] px-4 py-2.5 leading-relaxed text-sm"
-              :class="[
-                msg.role === 'user'  ? 'bubble-user text-blue-100'
-                : msg.role === 'error' ? 'bubble-err  text-red-200'
-                :                        'bubble-ai   text-slate-100',
-                msg.streaming ? 'cursor-blink' : ''
-              ]"
+              x-show="msg.role === 'assistant' && msg.thinkContent"
+              class="flex gap-2 justify-start mb-1"
             >
-              <div x-show="msg.role !== 'user'" class="text-xs text-slate-500 mb-1"
-                   x-text="msg.role === 'error' ? t('exec_error') : '🐓 Rooster'"></div>
-              <div
-                class="break-words"
-                :class="[
-                  msg.streaming && !msg.content ? 'cursor-blink text-slate-500' : '',
-                  msg.role !== 'user' ? 'prose prose-sm prose-invert max-w-none' : 'whitespace-pre-wrap'
-                ]"
-                x-html="msg.role !== 'user' ? renderMarkdown(msg.content || (msg.streaming ? '' : '—')) : (msg.content || '')"
-              ></div>
+              <!-- Invisible spacer to align with avatar -->
+              <span class="flex-shrink-0 w-7 h-7 opacity-0">🐓</span>
+              <details
+                class="group bg-slate-800/40 rounded-lg border border-slate-700/40 px-3 py-2 text-xs max-w-[65%]"
+                :open="msg.isThinking"
+              >
+                <summary class="list-none cursor-pointer font-semibold text-slate-400 hover:text-slate-300 flex items-center gap-1.5 select-none outline-none">
+                  <span class="transform transition-transform duration-200 text-[10px] group-open:rotate-90">▶</span>
+                  <span>🤔 思考过程</span>
+                  <span x-show="msg.isThinking" class="pulse text-yellow-400/80 ml-1 text-[11px]">●</span>
+                  <span x-show="!msg.isThinking" class="text-slate-500/60 ml-1 text-[10px]">（已折叠）</span>
+                </summary>
+                <div
+                  class="mt-2 pl-2 border-l-2 border-slate-600/50 text-slate-400/90 whitespace-pre-wrap break-words max-h-60 overflow-y-auto leading-relaxed"
+                  x-text="msg.thinkContent"
+                ></div>
+              </details>
             </div>
 
-            <span
-              x-show="msg.role === 'user'"
-              class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-900 border border-blue-700 flex items-center justify-center text-sm self-end mb-1"
-            >👤</span>
+            <!-- 💬 Answer bubble -->
+            <div
+              class="flex gap-2"
+              :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
+            >
+              <span
+                x-show="msg.role !== 'user'"
+                class="flex-shrink-0 w-7 h-7 rounded-full bg-green-900 border border-green-700 flex items-center justify-center text-sm self-end mb-1"
+              >🐓</span>
+
+              <div
+                class="max-w-[65%] px-4 py-2.5 leading-relaxed text-sm"
+                :class="[
+                  msg.role === 'user'  ? 'bubble-user text-blue-100'
+                  : msg.role === 'error' ? 'bubble-err  text-red-200'
+                  :                        'bubble-ai   text-slate-100',
+                  msg.streaming && !msg.isThinking ? 'cursor-blink' : ''
+                ]"
+              >
+                <div x-show="msg.role !== 'user'" class="text-xs text-slate-500 mb-1"
+                     x-text="msg.role === 'error' ? t('exec_error') : '🐓 Rooster'"></div>
+
+                <!-- Waiting label while thinking (answer not started yet) -->
+                <div
+                  x-show="msg.isThinking && !msg.content"
+                  class="text-xs text-slate-500 italic"
+                  x-text="t('thinking_label')"
+                ></div>
+
+                <div
+                  class="break-words"
+                  :class="[
+                    msg.streaming && !msg.content && !msg.isThinking ? 'cursor-blink text-slate-500' : '',
+                    msg.role !== 'user' ? 'prose prose-sm prose-invert max-w-none' : 'whitespace-pre-wrap'
+                  ]"
+                  x-html="msg.role !== 'user' ? renderMarkdown(msg.content || (msg.streaming && !msg.isThinking ? '' : (msg.content ? '' : '—'))) : (msg.content || '')"
+                ></div>
+              </div>
+
+              <span
+                x-show="msg.role === 'user'"
+                class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-900 border border-blue-700 flex items-center justify-center text-sm self-end mb-1"
+              >👤</span>
+            </div>
+
           </div>
         </template>
 

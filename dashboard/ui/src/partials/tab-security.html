@@ -1,0 +1,127 @@
+    <!-- ╔══════════════════════════════╗ -->
+    <!-- ║  TAB: SECURITY               ║ -->
+    <!-- ╚══════════════════════════════╝ -->
+    <div x-show="activeTab === 'security'" x-init="if(activeTab === 'security' && !securityConfigLoaded) loadSecurityConfig()" class="flex-1 overflow-y-auto p-4">
+      <div class="max-w-4xl space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-sm font-semibold text-slate-200">🛡️ 安全管理</div>
+            <div class="text-xs text-slate-500 mt-1">按分层模型配置安全能力：先边界、再权限、再沙箱、最后韧性</div>
+          </div>
+          <button
+            @click="saveSecurityConfig()"
+            :disabled="securitySaving"
+            class="px-4 py-1.5 rounded text-xs font-semibold bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors cursor-pointer"
+          >
+            <span x-show="!securitySaving">保存并重启</span>
+            <span x-show="securitySaving">保存中...</span>
+          </button>
+        </div>
+
+        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-2">
+          <div class="flex items-center gap-2 text-xs font-semibold text-slate-200">
+            <span>📌</span>
+            <span>生效方式与操作建议</span>
+          </div>
+          <div class="text-xs text-slate-300 leading-relaxed">
+            <div>1) 当前页默认通过“保存并重启”生效，确保策略在所有 Agent/组件上一致。</div>
+            <div>2) 系统存在配置热加载能力（仅部分项可靠，例如 PathGuard 路径刷新），不建议把热加载当作唯一生效方式。</div>
+            <div>3) 推荐顺序：L0 边界 → L1 权限 → L2 沙箱 → L3 韧性。</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div class="bg-slate-800 border border-slate-700 rounded-lg p-3">
+            <div class="text-xs text-slate-400 mb-1">Gateway 访问保护</div>
+            <div class="text-xs" :class="securityStatus?.is_gateway_key_set ? 'text-green-400' : 'text-red-400'" x-text="securityStatus?.is_gateway_key_set ? '已启用 API Key 保护' : '未设置 API Key，建议立即启用'"></div>
+          </div>
+          <div class="bg-slate-800 border border-slate-700 rounded-lg p-3">
+            <div class="text-xs text-slate-400 mb-1">文件路径沙箱</div>
+            <div class="text-xs" :class="securityStatus?.is_wildcard_paths ? 'text-amber-300' : 'text-green-400'" x-text="securityStatus?.is_wildcard_paths ? '当前为全路径(*)，风险较高' : '已限制 ALLOWED_PATHS 范围'"></div>
+          </div>
+        </div>
+
+        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
+          <div class="text-xs font-semibold text-slate-300">L0 边界层（入口认证）</div>
+          <div class="text-[11px] text-slate-500">目标：先阻止未授权请求进入系统。</div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label class="space-y-1">
+              <span class="text-[11px] text-slate-400">GATEWAY_API_KEY（留空表示不修改）</span>
+              <input type="password" x-model="securityForm.GATEWAY_API_KEY" placeholder="输入新密钥" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+            </label>
+            <label class="space-y-1">
+              <span class="text-[11px] text-slate-400">WEBHOOK_HMAC_SECRET（留空表示不修改）</span>
+              <input type="password" x-model="securityForm.WEBHOOK_HMAC_SECRET" placeholder="输入新签名密钥" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+            </label>
+          </div>
+        </div>
+
+        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
+          <div class="text-xs font-semibold text-slate-300">L1 权限层（能力控制）</div>
+          <div class="text-[11px] text-slate-500">目标：明确“允许做什么/禁止做什么”，避免能力越权。</div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label class="space-y-1">
+              <span class="text-[11px] text-slate-400">PERMISSION_POLICY</span>
+              <input x-model="securityForm.PERMISSION_POLICY" placeholder="balanced" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+            </label>
+            <label class="space-y-1 md:col-span-2">
+              <span class="text-[11px] text-slate-400">BLOCKED_TOOLS（逗号分隔）</span>
+              <input x-model="securityForm.BLOCKED_TOOLS" placeholder="shell_exec,file_delete" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+            </label>
+            <label class="space-y-1 md:col-span-2">
+              <span class="text-[11px] text-slate-400">ALLOWED_TOOLS（逗号分隔，留空表示按策略）</span>
+              <input x-model="securityForm.ALLOWED_TOOLS" placeholder="web_search,read_file" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+            </label>
+          </div>
+        </div>
+
+        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
+          <div class="text-xs font-semibold text-slate-300">L2 沙箱层（作用域限制）</div>
+          <div class="text-[11px] text-slate-500">目标：将文件系统访问限制到业务必要目录，避免“*”全盘权限。</div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label class="space-y-1 md:col-span-2">
+              <span class="text-[11px] text-slate-400">ALLOWED_PATHS</span>
+              <input x-model="securityForm.ALLOWED_PATHS" placeholder="D:\\workspace,D:\\data" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+            </label>
+          </div>
+        </div>
+
+        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
+          <div class="text-xs font-semibold text-slate-300">L3 韧性层（故障与滥用防护）</div>
+          <div class="text-[11px] text-slate-500">目标：提升长任务稳定性，防止卡死循环和无效重试。</div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label class="space-y-1">
+              <span class="text-[11px] text-slate-400">CHECKPOINT_ENABLED</span>
+              <select x-model="securityForm.CHECKPOINT_ENABLED" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+                <option value="true">true</option>
+                <option value="false">false</option>
+                <option value="True">True</option>
+                <option value="False">False</option>
+              </select>
+            </label>
+            <label class="space-y-1">
+              <span class="text-[11px] text-slate-400">AUDIT_MAX_REMAND_RETRY</span>
+              <input x-model="securityForm.AUDIT_MAX_REMAND_RETRY" type="number" min="0" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+            </label>
+            <label class="space-y-1">
+              <span class="text-[11px] text-slate-400">AGENT_STUCK_THRESHOLD</span>
+              <input x-model="securityForm.AGENT_STUCK_THRESHOLD" type="number" min="1" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+            </label>
+            <label class="space-y-1">
+              <span class="text-[11px] text-slate-400">AGENT_MAX_STEPS</span>
+              <input x-model="securityForm.AGENT_MAX_STEPS" type="number" min="1" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+            </label>
+          </div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-700 rounded-lg p-4">
+          <div class="text-xs font-semibold text-slate-300 mb-2">推荐落地路径（给管理员）</div>
+          <div class="text-[11px] text-slate-400 leading-relaxed space-y-1">
+            <div>• 第一步：先配置 L0（GATEWAY_API_KEY + WEBHOOK_HMAC_SECRET）。</div>
+            <div>• 第二步：收敛 L1（PERMISSION_POLICY + BLOCKED_TOOLS）。</div>
+            <div>• 第三步：收敛 L2（把 ALLOWED_PATHS 从 * 改成业务目录白名单）。</div>
+            <div>• 第四步：调优 L3（CHECKPOINT/重试阈值/步数上限），最后保存并重启验证。</div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /security -->

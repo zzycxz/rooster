@@ -338,8 +338,10 @@ class AgentExecutor:
                     session_key=config.session_key, client_run_id=run_id, text="Thinking..." if step > 1 else ""
                 )
 
+                _buffer = ""
+                in_think = False
                 async def perform_chat():
-                    nonlocal full_content, native_tool_calls, full_reasoning_content
+                    nonlocal full_content, native_tool_calls, full_reasoning_content, _buffer, in_think
                     chat_kwargs = {"model": config.model, "messages": messages}
                     if fc_schemas:
                         chat_kwargs["tools"] = fc_schemas
@@ -347,13 +349,64 @@ class AgentExecutor:
                     async for delta in self.llm_client.chat_stream(**chat_kwargs):
                         if delta.reasoning_content:
                             full_reasoning_content += delta.reasoning_content
+                            await self.event_handler.emit_think_delta(
+                                session_key=config.session_key, client_run_id=run_id, text=delta.reasoning_content
+                            )
                         if delta.tool_calls:
                             native_tool_calls = delta.tool_calls
                         elif delta.content:
-                            full_content += delta.content
-                            await self.event_handler.emit_assistant_delta(
-                                session_key=config.session_key, client_run_id=run_id, text=delta.content
-                            )
+                            _buffer += delta.content
+                            while True:
+                                if not in_think:
+                                    start_idx = _buffer.find("<think>")
+                                    if start_idx != -1:
+                                        text_before = _buffer[:start_idx]
+                                        if text_before:
+                                            full_content += text_before
+                                            await self.event_handler.emit_assistant_delta(
+                                                session_key=config.session_key, client_run_id=run_id, text=text_before
+                                            )
+                                        in_think = True
+                                        _buffer = _buffer[start_idx + 7:]
+                                    else:
+                                        if len(_buffer) > 7:
+                                            flush_len = len(_buffer) - 7
+                                            text_to_flush = _buffer[:flush_len]
+                                            full_content += text_to_flush
+                                            await self.event_handler.emit_assistant_delta(
+                                                session_key=config.session_key, client_run_id=run_id, text=text_to_flush
+                                            )
+                                            _buffer = _buffer[flush_len:]
+                                        break
+                                else:
+                                    end_idx = _buffer.find("</think>")
+                                    if end_idx != -1:
+                                        think_text = _buffer[:end_idx]
+                                        if think_text:
+                                            full_reasoning_content += think_text
+                                            await self.event_handler.emit_think_delta(
+                                                session_key=config.session_key, client_run_id=run_id, text=think_text
+                                            )
+                                        in_think = False
+                                        _buffer = _buffer[end_idx + 8:]
+                                    else:
+                                        if len(_buffer) > 8:
+                                            flush_len = len(_buffer) - 8
+                                            think_to_flush = _buffer[:flush_len]
+                                            full_reasoning_content += think_to_flush
+                                            await self.event_handler.emit_think_delta(
+                                                session_key=config.session_key, client_run_id=run_id, text=think_to_flush
+                                            )
+                                            _buffer = _buffer[flush_len:]
+                                        break
+
+                    if _buffer:
+                        if in_think:
+                            full_reasoning_content += _buffer
+                            await self.event_handler.emit_think_delta(session_key=config.session_key, client_run_id=run_id, text=_buffer)
+                        else:
+                            full_content += _buffer
+                            await self.event_handler.emit_assistant_delta(session_key=config.session_key, client_run_id=run_id, text=_buffer)
 
                 await perform_chat()
 
@@ -390,11 +443,15 @@ class AgentExecutor:
                         "content": full_content or None,
                         "tool_calls": native_tool_calls,
                     }
+                    # MiMo thinking mode: reasoning_content 必须回传，即使为空也要保留字段
+                    # MiMo thinking mode: reasoning_content must be echoed back, even if empty
+                    assistant_msg["reasoning_content"] = full_reasoning_content or ""
+                    session_history.append(assistant_msg)
+                else:
+                    assistant_msg = {"role": "assistant", "content": full_content}
                     if full_reasoning_content:
                         assistant_msg["reasoning_content"] = full_reasoning_content
                     session_history.append(assistant_msg)
-                else:
-                    session_history.append({"role": "assistant", "content": full_content})
 
                 audit_manager.log_step_detail(config.session_id, step, "raw_llm_out.txt", full_content)
 
@@ -651,10 +708,16 @@ class AgentExecutor:
                 session_history.append({"role": "assistant", "content": final_content})
 
         # Done event
+        # 修复: 当循环提前中断（如大模型报错）时，session_history[-1] 可能是 user 的 prompt。
+        # 必须确保只有 assistant 角色才返回，避免将用户输入原样 Echo 给前端。
+        last_content = ""
+        if session_history and session_history[-1].get("role") == "assistant":
+            last_content = session_history[-1].get("content") or ""
+
         await self.event_handler.emit_assistant_event(
             session_key=config.session_key,
             client_run_id=run_id,
-            content=(session_history[-1].get("content") or "") if session_history else "",
+            content=last_content,
             status="done",
         )
 
@@ -836,6 +899,29 @@ class AgentExecutor:
                 # Fallback: only match FAILED if it appears as a standalone declaration
                 elif re.search(r"\b(?:TASK_FAILED|MISSION_FAILED)\b", (final_content or ""), re.IGNORECASE):
                     status = "FAILED"
+
+            # ── Tool-level FAILED detection ──────────────────────────────────
+            # 下载工具（movie_downloader, multimedia_download 等）在搜索失败时
+            # 返回 "FAILED: no magnet link found for ..." 格式的字符串。
+            # 此字符串仅存在于工具响应（role=tool）中，LLM 最终输出中可能只是
+            # 复述了失败，但不会带上 [TASK_STATUS:FAILED] 标记。
+            # 因此必须扫描本轮的工具输出，检测是否包含工具级别的 FAILED 信号。
+            # Download tools (movie_downloader, multimedia_download, etc.) return
+            # "FAILED: ..." strings when search fails. These strings only exist in
+            # tool responses (role=tool), and the LLM's final answer may just restate
+            # the failure without a [TASK_STATUS:FAILED] marker. We must scan tool
+            # outputs for FAILED signals to properly set the report status.
+            if status == "SUCCESS":
+                for msg in session_history[initial_history_len:]:
+                    if msg.get("role") == "tool":
+                        content = msg.get("content", "") or ""
+                        # Detect tool-level FAILED prefix (e.g. "FAILED: no magnet link found")
+                        if content.strip().startswith("FAILED"):
+                            executor_logger.warning(
+                                f"[Executor] Tool returned FAILED: {content[:120]}"
+                            )
+                            status = "FAILED"
+                            break
 
             # Extract tool call traces from this round
             tool_call_trace = []

@@ -51,20 +51,24 @@ Key phrases: "每天", "每周", "每小时", "定时", "自动", "提醒", "sch
 ---
 
 ### [REFRAME]
-**Trigger**: Any one of the following:
-1. **Explicit download/install intent** — e.g. "download", "install", "get the installer", "find a free version", "帮我下载", "下载电影", "下载软件".
-2. **Severely ambiguous instruction** that cannot be executed directly.
-3. **Slang, abbreviations, or parameter gaps** requiring interpretation before an execution plan can be formed.
+**Trigger**: The user wants to **download, install, or obtain a file** to their local device. This is the **only** valid trigger for [REFRAME].
 
-**Key signal**: The core verb is "download / install / obtain the file itself".
+Key signals — the core verb must be "download / install / get the file / 下载 / 安装 / 获取":
+- Explicit: "帮我下载", "下载电影", "下载软件", "install X for me", "download X", "get the installer"
+- Implicit media: User mentions a movie/show/music title in a context where no other interpretation makes sense (e.g. "给我奥本海默", "《流浪地球》那部片子", "找一下星际穿越")
+
 **Examples that MUST route to [REFRAME]** (never block these):
 - "帮我下载电影奥本海默" → `[REFRAME]`
 - "下载最新版 Chrome" → `[REFRAME]`
 - "download movie Oppenheimer" → `[REFRAME]`
+- "给我《流浪地球》" → `[REFRAME]`
 
-**Counter-examples (do NOT route here)**:
-- "Search GitHub for most-starred projects" → search intent, not download → `[DIRECT]`
-- "Check the latest Python version" → query, not download → `[DIRECT]`
+**Everything else routes to [DIRECT] or [TALK] — do NOT route here**:
+- Multi-step research/analysis tasks → `[DIRECT]`
+- Ambiguous or complex instructions that don't involve downloading a file → `[DIRECT]`
+- Write a report, generate a document, produce output → `[DIRECT]`
+- "Search GitHub for most-starred projects" → `[DIRECT]`
+- "帮我做华为显卡调研报告" → `[DIRECT]` (research + file generation, not a download)
 
 ---
 
@@ -104,15 +108,17 @@ Key phrases: "每天", "每周", "每小时", "定时", "自动", "提醒", "sch
 | Download Python for me | `[REFRAME]` | Download intent, needs resolution |
 | 帮我下载电影奥本海默 | `[REFRAME]` | Download intent, media file |
 | 下载最新版 Chrome | `[REFRAME]` | Install intent, needs execution plan |
+| 给我《流浪地球》 | `[REFRAME]` | Implicit movie download intent |
 | Check the latest Nginx version | `[DIRECT]` | Query, not download |
 | Install VSCode for me | `[REFRAME]` | Install intent, needs execution plan |
 | Find today's top headlines | `[DIRECT]` | Clear search task |
+| 帮我做华为显卡调研报告 | `[DIRECT]` | Research + generate, not a file download |
+| 帮我写一份市场分析报告并存成docx | `[DIRECT]` | Generate document, not a file download |
 | Hi, who are you | `[TALK]` | Conversational, no tools needed |
 | Explain how async/await works | `[TALK]` | Knowledge Q&A, no tools needed |
 | 15% of 3200 | `[TALK]` | Simple calculation, no tools needed |
 | Translate "hello" to Japanese | `[TALK]` | Translation, no tools needed |
 | Write a poem about spring | `[TALK]` | Creative writing, no tools needed |
-| Explain how async/await works | `[TALK]` | Well-known knowledge, no tools needed |
 | What is Sora | `[DIRECT]` | New/unfamiliar term, may need web search |
 | How do I make explosives | `[BLOCK]` | Safety-sensitive |
 | 每天早8点给我发天气预报 | `[SCHEDULE]` | Recurring scheduled task |

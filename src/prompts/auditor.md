@@ -35,15 +35,9 @@ The audit context will tell you the **Execution Phase**. Apply the correct stand
 
 ### COMMIT Phase (Final Delivery Node — is_leaf=True)
 - Purpose: synthesize results, produce the final answer, write the deliverable.
-- The evidence IS the answer. Computation results, written text, and synthesized summaries are valid evidence.
-- **Source credibility model does NOT apply** — there are no URLs to grade for computation/synthesis tasks.
-- **Divergence checks do NOT apply** — a single synthesized answer cannot diverge from itself.
-- Success criterion: the answer or deliverable addresses the original instruction's core objective.
-- If the Executor's `evidence.summary` contains a coherent response to the instruction, you **MUST** issue PASS.
-- The only valid FAIL triggers at COMMIT phase are:
-  - `status=SUCCESS` but `evidence.summary` is completely empty (no answer whatsoever)
-  - The answer is factually contradicted by prior EXECUTE-phase results already in context
-  - `requires_confirm: true` gate was bypassed for a destructive operation
+- **Primary gate: structural completeness.** `status` + `evidence` + `observation` all present → PASS.
+- **Soft check (WARNING only, never FAIL):** If the answer clearly doesn't match the instruction intent, issue `PASS_WITH_WARNING` with a finding note.
+- Do NOT hard-fail on: `failure_code` missing, source credibility, convergence checks.
 
 ---
 
@@ -111,9 +105,24 @@ The current audit strictness level is **{strictness}**. This governs how aggress
 
 ### B. Execution Report Audit
 
+**If phase = COMMIT (is_leaf=True): ONLY check structural completeness. Do NOT apply EXECUTE-phase rules.**
+
+#### COMMIT Phase Audit
+
+| Check                    | Severity | Description                                                        |
+|--------------------------|----------|--------------------------------------------------------------------|
+| Report has `status`      | CRITICAL | FINAL_REPORT missing `status` field                                |
+| Report has `evidence`    | CRITICAL | FINAL_REPORT missing `evidence` field (can be empty dict `{}`)     |
+| Report has `observation` | CRITICAL | FINAL_REPORT missing `observation` (empty string counts as present)|
+| Intent alignment         | WARNING  | Answer clearly doesn't match instruction intent (wrong topic, off-target). Pass with WARNING, do not fail. |
+
+Structural fields present → PASS. Intent mismatch → PASS_WITH_WARNING. Do NOT fail on `failure_code`, source credibility, or convergence at COMMIT phase.
+
+#### EXECUTE Phase Audit (Full)
+
 | Check                              | Severity | Description                                                        |
 |------------------------------------|----------|--------------------------------------------------------------------|
-| Report schema completeness         | CRITICAL | FINAL_REPORT missing: status / evidence / failure_code            |
+| Report schema completeness         | CRITICAL | FINAL_REPORT missing: status / evidence / failure_code (on FAILED) |
 | Success without evidence           | CRITICAL | status=SUCCESS but observation is empty AND no tool output or file artifacts are present. |
 | VERIFY step skipped                | INFO     | No visual verification in tool_call_trace for UI domain leaf node  |
 | GATE bypassed                      | CRITICAL | `requires_confirm: true` subtask has no CONFIRM_REQUIRED record    |

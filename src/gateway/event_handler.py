@@ -87,6 +87,11 @@ class AgentEventHandler:
             run_id=client_run_id, session_id=session_key, stream="assistant", data={"text": text, "status": "running"}
         )
 
+    async def emit_think_delta(self, session_key: str, client_run_id: str, text: str):
+        await self.emit(
+            run_id=client_run_id, session_id=session_key, stream="think", data={"text": text, "status": "running"}
+        )
+
     async def emit_assistant_event(self, session_key: str, client_run_id: str, content: str, status: str):
         await self.emit(
             run_id=client_run_id, session_id=session_key, stream="assistant", data={"text": content, "status": status}

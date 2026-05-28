@@ -57,25 +57,74 @@ _add("PEM_KEY", r"-----BEGIN (?:RSA |EC |DSA )?PRIVATE KEY-----[\s\S]+?-----END 
 _add("CONN_STRING", r'(?:mysql|postgresql|postgres|mongodb|redis|amqp)://[^:@/]+:[^@/]+@[^\s"\']+')
 
 
+def _load_custom_mask_patterns() -> List[Tuple[str, re.Pattern, str]]:
+    """从 CUSTOM_SECURITY_PATTERNS_JSON 加载 action=mask/both 的自定义规则。"""
+    custom: List[Tuple[str, re.Pattern, str]] = []
+    try:
+        import json
+        from utils.config import settings
+
+        raw = getattr(settings, "CUSTOM_SECURITY_PATTERNS_JSON", "").strip()
+        if not raw:
+            return custom
+        entries = json.loads(raw)
+        for entry in entries:
+            action = entry.get("action", "mask").lower()
+            if action not in ("mask", "both"):
+                continue
+            name = entry.get("name", "CUSTOM").upper().replace(" ", "_")
+            pattern_str = entry.get("regex", "")
+            if not pattern_str:
+                continue
+            try:
+                compiled = re.compile(pattern_str)
+                custom.append((name, compiled, f"[MASKED_{name}]"))
+                logger.info(f"[SecretsMask] 加载自定义规则: name={name}, action={action}")
+            except re.error as e:
+                logger.warning(f"[SecretsMask] 自定义规则 '{name}' 正则无效: {e}")
+    except Exception as e:
+        logger.warning(f"[SecretsMask] 加载 CUSTOM_SECURITY_PATTERNS_JSON 失败: {e}")
+    return custom
+
+
 class SecretsMask:
     """
     敏感信息脱敏器（单例模式，线程安全）。
     仅对字符串类型的内容应用脱敏，二进制内容不处理。
+    内置规则 + 通过 CUSTOM_SECURITY_PATTERNS_JSON 追加的自定义规则均会生效。
     """
 
     _instance: "SecretsMask | None" = None
 
     def __new__(cls) -> "SecretsMask":
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
+            inst = super().__new__(cls)
+            inst._custom_patterns: List[Tuple[str, re.Pattern, str]] = []
+            inst._custom_loaded = False
+            cls._instance = inst
         return cls._instance
+
+    def _ensure_custom_loaded(self) -> None:
+        """懒加载自定义规则（首次调用时执行，避免启动时循环导入）。"""
+        if not self._custom_loaded:
+            self._custom_patterns = _load_custom_mask_patterns()
+            self._custom_loaded = True
+
+    def _all_patterns(self) -> List[Tuple[str, re.Pattern, str]]:
+        self._ensure_custom_loaded()
+        return _PATTERNS + self._custom_patterns
+
+    def reload_custom(self) -> None:
+        """强制重新加载自定义规则（配置热重载时调用）。"""
+        self._custom_loaded = False
+        self._custom_patterns = []
 
     def mask(self, text: str) -> str:
         """将文本中所有匹配的敏感模式替换为 [MASKED_TYPE]。"""
         if not text or not isinstance(text, str):
             return text
         result = text
-        for name, pattern, replacement in _PATTERNS:
+        for name, pattern, replacement in self._all_patterns():
             try:
                 result = pattern.sub(replacement, result)
             except Exception:
@@ -86,7 +135,7 @@ class SecretsMask:
         """快速检查文本中是否含有敏感内容（不替换）。"""
         if not text or not isinstance(text, str):
             return False
-        return any(pattern.search(text) for _, pattern, _ in _PATTERNS)
+        return any(pattern.search(text) for _, pattern, _ in self._all_patterns())
 
     def mask_dict(self, data: dict) -> dict:
         """对字典中的所有字符串值递归应用脱敏（用于日志记录 tool args）。"""

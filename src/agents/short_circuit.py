@@ -58,7 +58,7 @@ class ShortCircuitRouter:
         尝试直通车处理。返回 True 表示已处理（Router 不应继续）。
         """
         # Try shortcut handling. Return True if handled (Router should not continue)
-        if "resource-downloader" not in text:
+        if "resource-downloader" not in text and "movie_downloader" not in text:
             return False
 
         logger.info("⚡ [ShortCircuit] 触发 resource-downloader 直通车")
