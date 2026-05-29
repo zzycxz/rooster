@@ -230,3 +230,28 @@ async def _handle_md_save(
     except OSError as exc:
         logger.error(f"[memory.{label.lower()}.save] Write failed: {exc}")
         return {"ok": False, "error": str(exc)}
+
+
+# ── Distillation endpoint ───────────────────────────────────────────────
+
+
+@router.post("/distill")
+async def api_memory_distill(data: Dict[str, Any] = Body(default={})):
+    """手动触发记忆蒸馏。Body: {"session_id": "xxx"} 或 {} 蒸馏全部。"""
+    try:
+        import launcher as _launcher_mod
+
+        scheduler = getattr(_launcher_mod, "_global_distill_scheduler", None)
+        if scheduler is None:
+            return {"ok": False, "error": "蒸馏调度器未启动。请检查 DISTILLATION_ENABLED=true 且启动日志无异常。"}
+
+        session_id = data.get("session_id", "")
+        if session_id:
+            ok = await scheduler.distill_now(session_id)
+            return {"ok": ok, "session_id": session_id}
+        else:
+            count = await scheduler.distill_all()
+            return {"ok": True, "distilled_count": count}
+    except Exception as exc:
+        logger.exception("Failed to trigger distillation")
+        return {"ok": False, "error": str(exc)}

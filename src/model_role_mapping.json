@@ -1,0 +1,7 @@
+{
+  "router": "mimo",
+  "planner": "zhipu",
+  "executor": "mimo",
+  "auditor": "jiutian",
+  "solo": "zhipu"
+}

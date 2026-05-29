@@ -13,6 +13,9 @@ from gateway.local_node import RoosterLocalNode
 
 logger = logging.getLogger("RoosterLauncher")
 
+# 模块级引用，供 CLI / API 手动触发蒸馏
+_global_distill_scheduler = None
+
 
 class RoosterLauncher:
     """
@@ -40,6 +43,7 @@ class RoosterLauncher:
         self.gateway_port = _s.GATEWAY_PORT
         self.base_url = "http://127.0.0.1"
         self._ready_event = asyncio.Event()  # 预热完成信号  # Warmup complete signal
+        self._distill_scheduler = None
 
     def _find_available_port(self):
         """寻找可用端口（使用实际 bind 检测，避免 connect_ex 对 TIME_WAIT 的误判）"""  # Find available port using actual bind check to avoid connect_ex false positives on TIME_WAIT
@@ -166,6 +170,29 @@ class RoosterLauncher:
         except Exception as e:
             logger.warning(f"⚠️ 记忆系统初始化异常: {e}，系统将继续启动。")
 
+        # 8. 启动记忆蒸馏调度器
+        # 8. Start session distillation scheduler
+        if getattr(self._settings, "DISTILLATION_ENABLED", True):
+            try:
+                from memory.distillation_scheduler import DistillationScheduler
+                from sessions.store import global_session_store
+
+                distill_model = getattr(self._settings, "DISTILLATION_MODEL", "") or getattr(
+                    self._settings, "CLOUD_MODEL", ""
+                )
+                self._distill_scheduler = DistillationScheduler(
+                    memory_manager=router.memory_manager,
+                    session_store=global_session_store,
+                    llm_client=router.llm_client,
+                    model=distill_model,
+                )
+                global _global_distill_scheduler
+                _global_distill_scheduler = self._distill_scheduler
+                asyncio.create_task(self._distill_scheduler.start())
+                logger.info("🧪 记忆蒸馏调度器已注册。")
+            except Exception as e:
+                logger.warning(f"⚠️ 蒸馏调度器启动失败: {e}（Dashboard 蒸馏按钮将不可用）")
+
         # 通知 CLI：预热完成
         # Notify CLI: warmup complete
         self._ready_event.set()
@@ -199,6 +226,9 @@ class RoosterLauncher:
     async def cleanup(self):
         """全局资源回收"""  # Global resource cleanup
         logger.info("👋 正在执行全局资源回收...")
+        # 蒸馏调度器停止
+        if self._distill_scheduler is not None:
+            await self._distill_scheduler.stop()
         # 浏览器清理
         # Browser cleanup
         manager = await BrowserManager.get_instance()

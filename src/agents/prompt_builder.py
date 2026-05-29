@@ -188,9 +188,17 @@ class PromptBuilder:
         if blackboard_context:
             messages.append({"role": "user", "content": blackboard_context, "_internal": True})
 
-        # 添加当前用户输入 (仅当不为空时)
-        # Add current user input (only when non-empty)
+        # 添加当前用户输入，用分隔标记强调优先级
+        # Add current user input with delimiter for priority emphasis
         if user_input:
-            messages.append({"role": "user", "content": user_input})
+            messages.append({
+                "role": "user",
+                "content": (
+                    "═══════════════════════════════════════\n"
+                    "【当前任务】以下是你现在需要完成的任务，优先级高于上方所有历史上下文。\n"
+                    "═══════════════════════════════════════\n\n"
+                    + user_input
+                ),
+            })
 
         return messages

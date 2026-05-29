@@ -11,9 +11,13 @@
                     class="text-xs px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-all cursor-pointer disabled:opacity-40">
               <span :class="memoryLoading ? 'animate-spin' : ''">🔄</span> <span x-text="t('refresh_btn')"></span>
             </button>
-            <button @click="triggerMemoryDecay()"
-                    class="text-xs px-3 py-1 rounded bg-amber-900/40 hover:bg-amber-900/60 text-amber-300 border border-amber-700/30 transition-all cursor-pointer">
-              🧹 <span x-text="t('decay_btn')"></span>
+            <button @click="triggerMemoryDecay()" :disabled="decayRunning"
+                    class="text-xs px-3 py-1 rounded bg-amber-900/40 hover:bg-amber-900/60 text-amber-300 border border-amber-700/30 transition-all cursor-pointer disabled:opacity-40">
+              <span :class="decayRunning ? 'animate-spin' : ''">🧹</span> <span x-text="t('decay_btn')"></span>
+            </button>
+            <button @click="triggerDistill()" :disabled="distillRunning"
+                    class="text-xs px-3 py-1 rounded bg-indigo-900/40 hover:bg-indigo-900/60 text-indigo-300 border border-indigo-700/30 transition-all cursor-pointer disabled:opacity-40">
+              <span :class="distillRunning ? 'animate-spin' : ''">🧪</span> <span x-text="t('distill_btn') ?? 'Distill'"></span>
             </button>
           </div>
         </div>
@@ -91,12 +95,12 @@
               <div>
                 <span class="text-amber-400 font-medium" x-text="t('evolvable_section')"></span>
                 <span class="text-slate-600" x-text="t('evolvable_auto')"></span>
-                <div class="text-slate-500 mt-0.5">Core Behavior, Tone & Style</div>
+                <div class="text-slate-500 mt-0.5" x-text="t('soul_section_behavior')"></div>
               </div>
               <div>
                 <span class="text-blue-400 font-medium" x-text="t('protected_section')"></span>
                 <span class="text-slate-600" x-text="t('protected_manual')"></span>
-                <div class="text-slate-500 mt-0.5">Identity, Hard Limits, Memory Protocol, Evolution</div>
+                <div class="text-slate-500 mt-0.5" x-text="t('soul_section_identity')"></div>
               </div>
             </div>
             <div class="mt-2 text-slate-500 border-t border-slate-700/40 pt-1.5">
@@ -150,12 +154,12 @@
               <div>
                 <span class="text-amber-400 font-medium" x-text="t('evolvable_section')"></span>
                 <span class="text-slate-600" x-text="t('evolvable_auto')"></span>
-                <div class="text-slate-500 mt-0.5">Active Projects, Preferences</div>
+                <div class="text-slate-500 mt-0.5" x-text="t('user_section_projects')"></div>
               </div>
               <div>
                 <span class="text-blue-400 font-medium" x-text="t('protected_section')"></span>
                 <span class="text-slate-600" x-text="t('protected_manual')"></span>
-                <div class="text-slate-500 mt-0.5">Basic Info, Hard Requirements, Evolution Triggers</div>
+                <div class="text-slate-500 mt-0.5" x-text="t('user_section_basic')"></div>
               </div>
             </div>
             <div class="mt-2 text-slate-500 border-t border-slate-700/40 pt-1.5">

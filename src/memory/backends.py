@@ -256,6 +256,10 @@ class MarkdownBackend(MemoryBackend):
             lines.append(f"- **Evidence**: {fact.evidence_path}")
         if fact.expires_at:
             lines.append(f"- **Expires**: {fact.expires_at.isoformat()}")
+        if fact.entity_key:
+            lines.append(f"- **EntityKey**: {fact.entity_key}")
+        if fact.entity_value:
+            lines.append(f"- **EntityValue**: {fact.entity_value}")
         lines.append("")
         lines.append(fact.content)
         lines.append("")
@@ -336,6 +340,8 @@ class MarkdownBackend(MemoryBackend):
             evidence_path=metadata.get("evidence"),
             locked=metadata.get("locked", "").lower() == "true",
             weight=weight,
+            entity_key=metadata.get("entitykey"),
+            entity_value=metadata.get("entityvalue"),
         )
 
     def _save_fact(self, fact: MemoryFact):

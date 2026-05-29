@@ -220,6 +220,7 @@ class CLIChannel(BaseChannel):
                     "  /list   - List recent sessions\n"
                     "  /switch - Switch to a session  (/switch <ID>)\n"
                     "  /model  - Show or switch model  (/model <name>)\n"
+                    "  /distill- Distill memory  (/distill [session_id])\n"
                     "  /proxy  - Proxy control  (/proxy on|off|status)\n"
                     "  /lang   - Switch language  (/lang zh|en)\n"
                     "  /exit   - Quit Rooster"
@@ -231,6 +232,7 @@ class CLIChannel(BaseChannel):
                     "  /list   - 查看最近聊过的会话\n"
                     "  /switch - 切换到指定会话\n"
                     "  /model  - 查看或切换模型 (如 /model deepseek-r1:8b)\n"
+                    "  /distill- 手动蒸馏记忆 (/distill [session_id])\n"
                     "  /proxy  - 查看或切换代理 (如 /proxy on | /proxy off | /proxy status)\n"
                     "  /lang   - 切换语言 (/lang zh|en)\n"
                     "  /exit   - 优雅退出系统"
@@ -246,6 +248,9 @@ class CLIChannel(BaseChannel):
 
         elif cmd == "/proxy":
             await self._handle_proxy_command(parts)
+
+        elif cmd == "/distill":
+            await self._handle_distill_command(parts)
 
         else:
             self.console.print(f"[red]{self.t('cmd_unknown').format(cmd)}[/red]")
@@ -285,3 +290,40 @@ class CLIChannel(BaseChannel):
 
         else:
             self.console.print("[red]Usage: /proxy [status|on|off][/red]")
+
+    async def _handle_distill_command(self, parts: list):
+        """手动触发记忆蒸馏: /distill [session_id]"""
+        from launcher import RoosterLauncher
+
+        # 获取全局 launcher 实例中的调度器
+        # 这里直接通过 import 获取，因为 launcher 是全局单例模式
+        try:
+            from memory.distillation_scheduler import DistillationScheduler
+            from agents.router import Router
+
+            router = Router.get_instance()
+            # 从 router 所在的 launcher 获取 scheduler — 通过模块级变量
+            import launcher as _launcher_mod
+
+            scheduler = getattr(_launcher_mod, "_global_distill_scheduler", None)
+            if scheduler is None:
+                self.console.print("[yellow]蒸馏调度器未启动。请检查 DISTILLATION_ENABLED 配置。[/yellow]")
+                return
+
+            if len(parts) >= 2:
+                session_id = parts[1]
+                self.console.print(f"[cyan]正在蒸馏 session: {session_id} ...[/cyan]")
+                ok = await scheduler.distill_now(session_id)
+                if ok:
+                    self.console.print(f"[green]✅ session {session_id} 蒸馏完成[/green]")
+                else:
+                    self.console.print(f"[red]❌ 蒸馏失败: session {session_id} 不存在[/red]")
+            else:
+                self.console.print("[cyan]正在蒸馏所有待处理的 session ...[/cyan]")
+                count = await scheduler.distill_all()
+                if count > 0:
+                    self.console.print(f"[green]✅ 蒸馏完成，共处理 {count} 个 session[/green]")
+                else:
+                    self.console.print("[dim]没有需要蒸馏的 session[/dim]")
+        except Exception as e:
+            self.console.print(f"[red]蒸馏失败: {e}[/red]")

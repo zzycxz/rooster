@@ -47,7 +47,7 @@ def _get_exa_usage() -> int:
     now_month = time.strftime("%Y-%m")
     if saved_month != now_month:
         return 0
-    return exa.get("usage", 0)
+    return int(exa.get("usage", 0))
 
 
 def _increment_exa_usage():
@@ -60,7 +60,7 @@ def _increment_exa_usage():
         exa["month"] = now_month
         exa["usage"] = 1
     else:
-        exa["usage"] = exa.get("usage", 0) + 1
+        exa["usage"] = int(exa.get("usage", 0)) + 1
     _write_status(data)
     return exa["usage"]
 
@@ -109,6 +109,7 @@ class ExaSearchTool(BaseTool):
 
     name: str = "exa_search"
     kit: str = "Search"
+    fc_hidden: bool = True  # 由 web_search 内部调用，LLM 不可见
     description: str = (
         "Primary search tool — works with or without API keys. "
         "Uses a 4-tier fallback chain: Exa.ai neural search (if EXA_KEY set) → "
@@ -134,7 +135,7 @@ class ExaSearchTool(BaseTool):
             logger.warning("[ExaSearch] Monthly quota exhausted, falling back to GLM/web search.")
             return await self._fallback(query)
 
-        num_results = min(max(kwargs.get("num_results", 5), 1), 10)
+        num_results = min(max(int(kwargs.get("num_results", 5)), 1), 10)
         use_autoprompt = kwargs.get("use_autoprompt", True)
         search_type = kwargs.get("type", "auto")
         category = kwargs.get("category")
@@ -153,8 +154,8 @@ class ExaSearchTool(BaseTool):
             "type": search_type,
             "useAutoprompt": use_autoprompt,
             "contents": {
-                "text": {"maxCharacters": 1000},
-                "summary": {"maxCharacters": 300},
+                "text": {"maxCharacters": 3000},
+                "summary": {"maxCharacters": 500},
             },
         }
 
@@ -204,18 +205,18 @@ class ExaSearchTool(BaseTool):
                     text = r.get("text", "")
                     published = r.get("publishedDate", "")
 
-                    entry = f"[{i}] **[{title}]({url})**"
+                    # 优先用 summary，再用 text 全文（调研报告需要充实内容）
+                    content = summary or text or ""
+                    parts = [f"- {title}\n  {url}"]
                     if published:
-                        entry += f"  _{published[:10]}_"
-                    if summary:
-                        entry += f"\n   {summary}"
-                    elif text:
-                        entry += f"\n   {text[:200]}"
-                    items.append(entry)
+                        parts.append(f"  Date: {published[:10]}")
+                    if content:
+                        parts.append(f"  {content}")
+                    items.append("\n".join(parts))
 
-                header = f"Exa Search Results for: {query}"
+                header = f"Search results for: {query}"
                 if usage > _MONTHLY_QUOTA * 0.8:
-                    header += f"  (Monthly usage: {usage}/{_MONTHLY_QUOTA})"
+                    header += f"  (Exa monthly usage: {usage}/{_MONTHLY_QUOTA})"
                 return header + "\n\n" + "\n\n".join(items)
 
         except httpx.RequestError as e:
@@ -226,8 +227,8 @@ class ExaSearchTool(BaseTool):
             return await self._fallback(query)
 
     async def _fallback(self, query: str) -> str:
-        """Exa → Linkup → GLM Plan Search → web_search 4-tier fallback chain.
-        Exa → Linkup → GLM Plan Search → web_search 四级降级链。"""
+        """Exa → Linkup → GLM Plan Search 3-tier fallback chain.
+        Exa → Linkup → GLM Plan Search 三级降级链。web_search 在外层兜底，不在此处调用。"""
         try:
             from toolset.definitions.linkup_search import LinkupSearchTool
 
@@ -244,11 +245,4 @@ class ExaSearchTool(BaseTool):
             return await glm.run(query=query)
         except Exception as e:
             logger.warning(f"[ExaSearch] GLM fallback failed: {e}")
-        try:
-            from toolset.definitions.browser import WebSearchTool
-
-            logger.info("[ExaSearch] Fallback to web_search.")
-            ws = WebSearchTool()
-            return await ws.run(query=query)
-        except Exception as e:
-            return f"Error: All search providers failed: {e}"
+            return f"Error: AI search chain exhausted: {e}"

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rooster-dashboard"
-version = "0.3.5"
+version = "0.3.6"
 description = "Web dashboard for Rooster multi-agent OS"
 requires-python = ">=3.12"
 license = "MIT"

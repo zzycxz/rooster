@@ -4,7 +4,7 @@ English | [中文](README.cn.md)
 
 [![CI](https://github.com/zzycxz/rooster/actions/workflows/ci.yml/badge.svg)](https://github.com/zzycxz/rooster/actions/workflows/ci.yml)
 
-> Version: 0.3.5 | Python >= 3.12 | License: MIT
+> Version: 0.3.6 | Python >= 3.12 | License: MIT
 
 ---
 
@@ -125,6 +125,115 @@ After Executor completes, an independent Auditor renders the final verdict with 
 | `ESCALATE` | High-risk / permission block | Proactively escalates to human intervention |
 
 **Strong robustness**: `_robust_json_parse()` auto-repairs malformed LLM output — Markdown code-block wrapping, trailing commas, Chinese quotation marks (`\u201c`/`\u201d`), etc. Auditor timeouts degrade safely to `PASS_WITH_WARNING` — the audit system never blocks the user flow.
+
+
+### 6. Memory Anti-Garbage System v2 — Three-Layer Defense Keeps Long-Term Memory Clean
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                  Rooster Memory Anti-Garbage v2                 │
+│                                                                 │
+│  User msg → Router → MissionRunner → Executor(ReAct)           │
+│                        │                                        │
+│                        ▼                                        │
+│  ┌────────────────────────────────────────────────────┐           │
+│  │  Layer 1: Source Interception (mission_runner.py)│           │
+│  │                                                  │           │
+│  │  On subtask completion:                          │           │
+│  │    ✖ Success notification  ───── DROPPED        │           │
+│  │    ✖ Output file           ───── Deferred       │           │
+│  │                                                  │           │
+│  │  On mission close (batch commit):                │           │
+│  │    ✖ Mission complete      ───── DROPPED        │           │
+│  │    ✖ Output file (dup)     ───── DROPPED        │           │
+│  │    ✖ Tool call traces      ───── DROPPED        │           │
+│  │    ✔ Output file path      ───── Written 1x     │           │
+│  │    ✔ Execution summary     ───── Kept + filtered│           │
+│  │       (len > 50 AND no template phrases)         │           │
+│  │                                                  │           │
+│  │  Before: 5-8 facts/task, each triggers rebuild   │           │
+│  │  After:  0-2 facts/task, all trigger 1 rebuild   │           │
+│  └───────────────┬──────────────────────────────────┘           │
+│                 │                                               │
+│                 │ batch_update_facts(_batch)                    │
+│                 │ Collect all → single add_fact → single rebuild│
+│                 ▼                                               │
+│  ┌─────────────────────────────────────────────┐              │
+│  │              LTM Storage                      │              │
+│  │         project_memory.json                   │              │
+│  │         Current: ~9 valid facts               │              │
+│  │    (cleaned from ~50, garbage → zero)         │              │
+│  └───────────────────┬────────────────────────────┘              │
+│                 │                                               │
+│       ┌─────────┴─────────┐                                    │
+│       │                   │                                     │
+│       ▼                   ▼                                     │
+│  ┌──────────────┐  ┌───────────────────────┐                        │
+│  │  Read Path  │  │  Distill Path     │                        │
+│  │             │  │                   │                        │
+│  │ Each ReAct  │  │ Three triggers:   │                        │
+│  │ step calls  │  │                   │                        │
+│  │ once        │  │ · Timer: every    │                        │
+│  │             │  │   10 min, auto    │                        │
+│  │ Semantic    │  │   scan quiet      │                        │
+│  │ recall      │  │   sessions        │                        │
+│  │ query=      │  │                   │                        │
+│  │ current     │  │ · Passive: token  │                        │
+│  │ task        │  │   > 60% capacity  │                        │
+│  │             │  │   memory_compactor│                        │
+│  │ Outputs:    │  │                   │                        │
+│  │ ┌────────┐  │  │ · Manual:         │                        │
+│  │ │Key     │  │  │   /distill or API │                        │
+│  │ │entities│  │  │                   │                        │
+│  │ │≤10     │  │  │ ─────────────────│                        │
+│  │ │500 ch  │  │                   │                        │
+│  │ └────────┘  │  │ Layer 2:          │                        │
+│  │ ┌────────┐  │  │ Distill Negative  │                        │
+│  │ │Key     │  │  │ Rules (manager.py)│                        │
+│  │ │facts   │  │  │                   │                        │
+│  │ │semantic│  │  │ LLM explicitly    │                        │
+│  │ │recall  │  │  │ told NOT to       │                        │
+│  │ │top 15  │  │  │ extract:          │                        │
+│  │ │2000 ch │  │  │ · Template OK msg │                        │
+│  │ └────────┘  │  │ · Tool traces     │                        │
+│  │             │  │ · Truncated output│                        │
+│  │ Relevance-  │  │ · No-context text │                        │
+│  │ based, not  │  └────────────┬─────────────┘                       │
+│  │ fixed top 15│            │                                  │
+│  └───────────────┘             ▼                                  │
+│  ┌─────────────────────────────────────────────────┐             │
+│  │  Layer 3: Decay & Eviction                    │             │
+│  │  periodic_housekeeping runs every 6 hours     │             │
+│  │                                              │             │
+│  │  Facts > 30 → dedup                          │             │
+│  │  Facts > 50 → quality audit + low-score drop │             │
+│  │  Facts > 60 → hard cap eviction (lowest wgt) │             │
+│  │  7-day half-life → unrecalled facts decay     │             │
+│  │                                              │             │
+│  │  Residual low-value facts auto-evict over time│             │
+│  └─────────────────────────────────────────────────┘             │
+│                                                              │
+│  ┌─────────────────────────────────────────────────┐             │
+│  │  Bonus: Conversation Summary Layer             │             │
+│  │  _prune_history → async                       │             │
+│  │                                              │             │
+│  │  On token overflow: compress middle turns     │             │
+│  │  into 300-char summary via local LLM          │             │
+│  │  Keep head + tail + summary → zero info loss  │             │
+│  └─────────────────────────────────────────────────┘             │
+│                                                              │
+└────────────────────────────────────────────────────────────────┘
+```
+
+**How it works — three layers in series, each independent, combined pushing garbage facts to near-zero:**
+
+**Layer 1: Source Interception** — the most critical layer, solving "where garbage comes from." Before the refactor, MissionRunner unconditionally wrote 5 types of status notifications at two moments (subtask completion + mission close), with the same output file written twice causing duplicates. After the refactor: nothing is written on subtask completion; everything is batched to `batch_update_facts` at mission close. Only the output file path (written once) and a template-filtered execution summary are kept. Result: from 5-8 facts/task to 0-2, with index rebuilt only once.
+
+**Layer 2: Distill Filtering** — even if Layer 1 misses some templated content in conversation history, distillation won't extract it. All three distill entry points (10-min timer, passive token threshold, manual `/distill`) are constrained by the same negative rules. This was the smallest change (one string edit) but has the widest coverage.
+
+**Layer 3: Decay & Eviction** — long-term safety net. Unrecalled facts decay via a 7-day half-life. Thresholds at 30/50/60 facts trigger dedup, quality audit, and hard eviction respectively. Residual garbage naturally disappears over time.
+
+**Bonus: Conversation Summary** — when the ReAct loop hits the token limit, `_prune_history` compresses middle turns into a 300-char summary via local LLM instead of discarding them outright. Combined with LTM semantic recall (per-step relevance-based retrieval instead of fixed top-15), the LLM always sees complete context.
 
 
 ---

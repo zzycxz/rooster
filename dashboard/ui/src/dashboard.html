@@ -184,8 +184,8 @@
 <div x-show="securityStatus && securityStatus.is_wildcard_paths" x-cloak class="flex-none bg-orange-950 border-b border-orange-700 px-4 py-2.5 text-orange-200 text-xs flex items-start gap-3 shadow-lg z-10">
   <span class="text-base">⚠️</span>
   <div class="flex-1">
-    <p class="font-bold text-sm mb-0.5">安全警告: 系统级文件访问权限 (Security Risk)</p>
-    <p class="opacity-90 leading-relaxed">当前系统的 ALLOWED_PATHS 被设置为全局无限制 (*)。这意味着连接至此的任何智能体都有权读写本机的所有文件。强烈建议前往 .env.local 限制其工作目录。</p>
+    <p class="font-bold text-sm mb-0.5" x-text="t('sec_warning_title')"></p>
+    <p class="opacity-90 leading-relaxed" x-text="t('sec_warning_body')"></p>
   </div>
 </div>
 
@@ -595,6 +595,7 @@ function app() {
         // Memory tab
         refresh_btn: 'Refresh',
         decay_btn: 'Decay',
+        distill_btn: 'Distill',
         total_facts: 'Total Facts',
         locked_label: 'Locked',
         avg_weight: 'Avg Weight',
@@ -717,6 +718,152 @@ function app() {
         cores: 'cores',
         active: 'Active',
         offline: 'Offline',
+        // ─── Security tab ───
+        sec_title: 'Security Management',
+        sec_subtitle: 'Configure security by layers: perimeter → permissions → sandbox → resilience',
+        sec_save_restart: 'Save & Restart',
+        sec_saving: 'Saving...',
+        sec_effective_hint: 'How changes take effect',
+        sec_hint_1: '1) This page defaults to "Save & Restart" to ensure policies are consistent across all Agents/components.',
+        sec_hint_2: '2) Hot-reload is available for some items (e.g. PathGuard path refresh), but should not be relied on as the only method.',
+        sec_hint_3: '3) Recommended order: L0 Perimeter → L1 Permissions → L2 Sandbox → L3 Resilience.',
+        sec_gateway_protection: 'Gateway Access Protection',
+        sec_gateway_key_set: 'API Key protection enabled',
+        sec_gateway_key_unset: 'No API Key set — recommend enabling immediately',
+        sec_path_sandbox: 'File Path Sandbox',
+        sec_path_wildcard: 'Wildcard (*) in use — high risk',
+        sec_path_restricted: 'ALLOWED_PATHS scope restricted',
+        sec_l0_title: 'L0 Perimeter Layer (Entry Authentication)',
+        sec_l0_goal: 'Goal: Block unauthorized requests before they enter the system.',
+        sec_enter_new_key: 'Enter new key',
+        sec_enter_new_hmac: 'Enter new HMAC secret',
+        sec_l1_title: 'L1 Permission Layer (Capability Control)',
+        sec_l1_goal: 'Goal: Define what is allowed / forbidden to prevent capability overreach.',
+        sec_l2_title: 'L2 Sandbox Layer (Scope Restriction)',
+        sec_l2_goal: 'Goal: Restrict file system access to business-critical directories, avoid wildcard "*".',
+        sec_l3_title: 'L3 Resilience Layer (Fault & Abuse Protection)',
+        sec_l3_goal: 'Goal: Improve long-task stability, prevent stuck loops and ineffective retries.',
+        sec_recommended_path: 'Recommended Deployment Path (for Admins)',
+        sec_step1: '• Step 1: Configure L0 (GATEWAY_API_KEY + WEBHOOK_HMAC_SECRET).',
+        sec_step2: '• Step 2: Tighten L1 (PERMISSION_POLICY + BLOCKED_TOOLS).',
+        sec_step3: '• Step 3: Tighten L2 (change ALLOWED_PATHS from * to business directory whitelist).',
+        sec_step4: '• Step 4: Tune L3 (CHECKPOINT / retry thresholds / step limits), then save & restart to verify.',
+        // ─── Setup tab ───
+        setup_llm_matrix: 'Multi-LLM Channel Matrix',
+        setup_provider_jiutian: 'China Mobile Jiutian Channel',
+        setup_provider_mimo: 'Xiaomi MiMo Channel',
+        setup_provider_zhipu_glm: 'Zhipu GLM (Standard API)',
+        setup_provider_openai: 'OpenAI Channel',
+        setup_provider_claude: 'Anthropic Claude Channel',
+        setup_provider_qwen: 'Tongyi Qwen',
+        setup_provider_zhipu_coding: 'Zhipu CodingPlan (Code Enhanced)',
+        setup_provider_kimi: 'Kimi (Moonshot)',
+        setup_provider_cloud: 'Cloud 3rd-Party Compatible Channel',
+        setup_provider_local: 'Local llama.cpp Channel',
+        setup_direct_no_proxy: 'Native Anthropic Messages API — direct connect, no proxy needed',
+        setup_option_zhipu: 'Zhipu CodingPlan',
+        setup_option_zhipu_glm: 'Zhipu GLM Standard',
+        setup_option_kimi: 'Kimi (Moonshot)',
+        setup_option_qwen: 'Tongyi Qwen',
+        setup_option_cloud: 'Cloud Compatible',
+        setup_option_mimo: 'Xiaomi MiMo',
+        setup_option_jiutian: 'China Mobile Jiutian',
+        setup_option_local: 'Local Llama.cpp',
+        setup_smtp_title: 'Email Configuration (SMTP)',
+        setup_smtp_optional: 'Optional — for the email_send tool',
+        setup_smtp_desc: 'Once configured, the Agent can send emails directly without asking for credentials each time. 139 mailbox uses smtp.139.com:465, QQ mailbox uses smtp.qq.com:465.',
+        setup_smtp_host: 'SMTP_DEFAULT_HOST (Server Address)',
+        setup_smtp_port: 'SMTP_DEFAULT_PORT (Port, use 465 for SSL)',
+        setup_smtp_user: 'SMTP_DEFAULT_USER (Sender Email)',
+        setup_smtp_pass: 'SMTP_DEFAULT_PASS (Authorization Code, not login password)',
+        // ─── Execution tab ───
+        delete_session: 'Delete Session',
+        thinking_process: 'Thinking Process',
+        collapsed: '(collapsed)',
+        // ─── Scheduler tab extras ───
+        sch_test: 'Test',
+        sch_edit: 'Edit',
+        sch_retry_settings: 'Retry Settings',
+        sch_exec_mode: 'Execution Mode',
+        sch_exec_agent: 'Agent Prompt Mode',
+        sch_exec_script: 'Script Mode (Python)',
+        sch_agent_prompt: 'Agent Task Prompt',
+        sch_agent_prompt_ph: 'e.g. Query today\'s weather and summarize...',
+        sch_success: 'Success',
+        sch_failure: 'Failure',
+        // ─── Reset modal ───
+        confirm: 'Confirm',
+        reset_modal_title: 'Dangerous Operation: Confirm System Reset',
+        reset_modal_desc: 'This will permanently erase all local cache (including step logs, tool audit records, and debug history). This operation is irreversible!',
+        reset_modal_hint: 'Type RESET in uppercase to confirm:',
+        reset_modal_confirm: 'Confirm Reset & Refresh',
+        // ─── Confirm dialogs ───
+        confirm_delete_memory: 'Are you sure you want to delete this memory record? (This cannot be undone)',
+        memory_deleted: 'Memory fragment deleted',
+        memory_delete_failed: 'Delete failed: ',
+        confirm_delete_model: 'Delete model "{name}"? This cannot be undone.',
+        confirm_uninstall_mcp: 'Are you sure you want to uninstall MCP server "{name}"? This will stop the process and remove all installed files.',
+        confirm_delete_session: 'Are you sure you want to permanently delete all records of this session? (This cannot be recovered)',
+        // ─── Security warning ───
+        sec_warning_title: 'Security Risk: Unrestricted File Access',
+        sec_warning_body: 'ALLOWED_PATHS is set to unrestricted (*). Any agent connected to this system has read/write access to all files on this machine. It is strongly recommended to restrict the working directory in .env.local.',
+        // ─── Memory descriptions ───
+        soul_section_behavior: 'Core Behavior, Tone & Style',
+        soul_section_identity: 'Identity, Hard Limits, Memory Protocol, Evolution',
+        user_section_projects: 'Active Projects, Preferences',
+        user_section_basic: 'Basic Info, Hard Requirements, Evolution Triggers',
+        // ─── Modals ───
+        modal_cancel: 'Cancel',
+        modal_confirm: 'Confirm',
+        reset_modal_hint_prefix: 'Type uppercase',
+        reset_modal_hint_suffix: 'to confirm this action:',
+        // ─── Setup tab labels ───
+        setup_key_label: 'API Key',
+        setup_advanced_model: 'Advanced model (default gpt-oss-120b)',
+        setup_lightweight_model: 'Lightweight model',
+        setup_model_name_opt: 'Model name (optional)',
+        setup_model_name_label: 'Model name',
+        setup_ollama_hint: 'Please ensure Ollama is installed and running. Start it via terminal:',
+        setup_ollama_placeholder: 'e.g. qwen3:4b, llama3:8b',
+        setup_smtp_pass_placeholder: 'POP3/SMTP authorization code',
+        setup_base_url: 'API Base URL',
+        setup_local_key_optional: 'API Key (optional)',
+        setup_local_model_path: 'Physical GGML path/name',
+        setup_ollama_pull_title: 'Pull model from Ollama library',
+        setup_set_primary: 'Set as active Primary LLM',
+        setup_set_executor: 'Set as active Executor LLM',
+        setup_delete_model: 'Delete this model',
+        // ─── Security tab labels ───
+        sec_gateway_key_label: 'GATEWAY_API_KEY (leave empty to keep current)',
+        sec_hmac_secret_label: 'WEBHOOK_HMAC_SECRET (leave empty to keep current)',
+        sec_blocked_tools_label: 'BLOCKED_TOOLS (comma-separated)',
+        sec_allowed_tools_label: 'ALLOWED_TOOLS (comma-separated, empty = follow policy)',
+        // ─── Skills tab ───
+        uninstall_btn: 'Uninstall',
+        skills_page_info_sep: 'skills · Page',
+        skill_auto_install_title: 'Auto-install missing python packages using pip install',
+        skill_run_diag: 'Run physical diagnostic test',
+        skill_purge: 'Physically purge skill from workspace',
+        // ─── Navbar ───
+        dashboard_brand: 'Dashboard',
+        // ─── Health tab ───
+        status_ok: '✓ OK',
+        // ─── Mobile nav ───
+        more: 'More',
+        // ─── Setup provider-specific labels ───
+        setup_jiutian_model_label: 'JIUTIAN_MODEL (advanced model, default gpt-oss-120b)',
+        setup_jiutian_fast_label: 'JIUTIAN_MODEL_FAST (lightweight model)',
+        setup_mimo_model_label: 'MIMO_MODEL (model name, optional)',
+        setup_zhipu_glm_model_label: 'ZHIPU_GLM_MODEL (default GLM5.1)',
+        setup_zhipu_key_label: 'ZHIPU_KEY (API Key)',
+        setup_zhipu_model_label: 'ZHIPU_MODEL (model name, default GLM5.1)',
+        setup_qwen_key_label: 'QWEN_KEY (API Key)',
+        setup_qwen_model_label: 'QWEN_MODEL (default qwen-plus)',
+        setup_kimi_key_label: 'KIMI_KEY (API Key)',
+        setup_kimi_model_label: 'KIMI_MODEL (default moonshot-v1-32k)',
+        setup_cloud_model_label: 'CLOUD_MODEL (model name, default gpt-4o)',
+        setup_local_key_label: 'LOCAL_KEY (API Key, optional)',
+        setup_local_model_label: 'LOCAL_MODEL (physical GGML path/name)',
       },
       zh: {
         tab_execution: '指令交互',
@@ -1046,6 +1193,7 @@ function app() {
         // Memory tab
         refresh_btn: '刷新',
         decay_btn: '衰减',
+        distill_btn: '蒸馏',
         total_facts: '总记忆数',
         locked_label: '已锁定',
         avg_weight: '平均权重',
@@ -1168,6 +1316,152 @@ function app() {
         cores: '核',
         active: '运行中',
         offline: '离线',
+        // ─── Security tab ───
+        sec_title: '安全管理',
+        sec_subtitle: '按分层模型配置安全能力：先边界、再权限、再沙箱、最后韧性',
+        sec_save_restart: '保存并重启',
+        sec_saving: '保存中...',
+        sec_effective_hint: '生效方式与操作建议',
+        sec_hint_1: '1) 当前页默认通过"保存并重启"生效，确保策略在所有 Agent/组件上一致。',
+        sec_hint_2: '2) 系统存在配置热加载能力（仅部分项可靠，例如 PathGuard 路径刷新），不建议把热加载当作唯一生效方式。',
+        sec_hint_3: '3) 推荐顺序：L0 边界 → L1 权限 → L2 沙箱 → L3 韧性。',
+        sec_gateway_protection: 'Gateway 访问保护',
+        sec_gateway_key_set: '已启用 API Key 保护',
+        sec_gateway_key_unset: '未设置 API Key，建议立即启用',
+        sec_path_sandbox: '文件路径沙箱',
+        sec_path_wildcard: '当前为全路径(*)，风险较高',
+        sec_path_restricted: '已限制 ALLOWED_PATHS 范围',
+        sec_l0_title: 'L0 边界层（入口认证）',
+        sec_l0_goal: '目标：先阻止未授权请求进入系统。',
+        sec_enter_new_key: '输入新密钥',
+        sec_enter_new_hmac: '输入新签名密钥',
+        sec_l1_title: 'L1 权限层（能力控制）',
+        sec_l1_goal: '目标：明确"允许做什么/禁止做什么"，避免能力越权。',
+        sec_l2_title: 'L2 沙箱层（作用域限制）',
+        sec_l2_goal: '目标：将文件系统访问限制到业务必要目录，避免"*"全盘权限。',
+        sec_l3_title: 'L3 韧性层（故障与滥用防护）',
+        sec_l3_goal: '目标：提升长任务稳定性，防止卡死循环和无效重试。',
+        sec_recommended_path: '推荐落地路径（给管理员）',
+        sec_step1: '• 第一步：先配置 L0（GATEWAY_API_KEY + WEBHOOK_HMAC_SECRET）。',
+        sec_step2: '• 第二步：收敛 L1（PERMISSION_POLICY + BLOCKED_TOOLS）。',
+        sec_step3: '• 第三步：收敛 L2（把 ALLOWED_PATHS 从 * 改成业务目录白名单）。',
+        sec_step4: '• 第四步：调优 L3（CHECKPOINT/重试阈值/步数上限），最后保存并重启验证。',
+        // ─── Setup tab ───
+        setup_llm_matrix: '大模型通道配置',
+        setup_provider_jiutian: '中国移动九天通道',
+        setup_provider_mimo: '小米 MiMo 通道',
+        setup_provider_zhipu_glm: '智谱 GLM（标准 API）',
+        setup_provider_openai: 'OpenAI 通道',
+        setup_provider_claude: 'Anthropic Claude 通道',
+        setup_provider_qwen: '通义千问 Qwen',
+        setup_provider_zhipu_coding: '智谱 CodingPlan（编程增强）',
+        setup_provider_kimi: 'Kimi 月之暗面',
+        setup_provider_cloud: '云端三方兼容通道',
+        setup_provider_local: '本地 llama.cpp 自主通道',
+        setup_direct_no_proxy: 'Native Anthropic Messages API — 直连无需代理',
+        setup_option_zhipu: '智谱 CodingPlan',
+        setup_option_zhipu_glm: '智谱 GLM 标准版',
+        setup_option_kimi: 'Kimi 月之暗面',
+        setup_option_qwen: '通义千问',
+        setup_option_cloud: '云端兼容 (Cloud)',
+        setup_option_mimo: '小米 MiMo',
+        setup_option_jiutian: '移动九天 (Jiutian)',
+        setup_option_local: '本地 Llama.cpp',
+        setup_smtp_title: '邮件发送配置 (SMTP)',
+        setup_smtp_optional: '可选 — 用于 email_send 工具',
+        setup_smtp_desc: '配置后 Agent 可直接发送邮件，无需每次询问账号密码。139 邮箱使用 smtp.139.com:465，QQ 邮箱使用 smtp.qq.com:465。',
+        setup_smtp_host: 'SMTP_DEFAULT_HOST（服务器地址）',
+        setup_smtp_port: 'SMTP_DEFAULT_PORT（端口，SSL 填 465）',
+        setup_smtp_user: 'SMTP_DEFAULT_USER（发件人邮箱）',
+        setup_smtp_pass: 'SMTP_DEFAULT_PASS（授权码，非登录密码）',
+        // ─── Execution tab ───
+        delete_session: '删除会话',
+        thinking_process: '思考过程',
+        collapsed: '（已折叠）',
+        // ─── Scheduler tab extras ───
+        sch_test: '测试',
+        sch_edit: '编辑',
+        sch_retry_settings: '重试设置',
+        sch_exec_mode: '执行模式',
+        sch_exec_agent: 'Agent 指令模式',
+        sch_exec_script: '脚本模式 (Python)',
+        sch_agent_prompt: 'Agent 任务指令',
+        sch_agent_prompt_ph: '例如：查询今天的天气并总结...',
+        sch_success: '成功',
+        sch_failure: '失败',
+        // ─── Reset modal ───
+        confirm: '确认',
+        reset_modal_title: '危险操作：确认重置系统',
+        reset_modal_desc: '此操作将彻底抹除所有的本地缓存（包括步骤日志、工具审计与调试历史记录）。此操作不可逆！',
+        reset_modal_hint: '请输入大写 RESET 以确认此操作：',
+        reset_modal_confirm: '确认重置并刷新',
+        // ─── Confirm dialogs ───
+        confirm_delete_memory: '确定要删除这条记忆记录吗？(此操作不可逆)',
+        memory_deleted: '记忆片段已删除',
+        memory_delete_failed: '删除失败: ',
+        confirm_delete_model: '确定要删除模型 "{name}" 吗？此操作不可逆。',
+        confirm_uninstall_mcp: '确定要卸载 MCP 服务器 "{name}" 吗？这将停止进程并删除所有已安装的文件。',
+        confirm_delete_session: '确定要永久删除这个会话的全部记录吗？（删除后不可恢复）',
+        // ─── Security warning ───
+        sec_warning_title: '安全警告: 系统级文件访问权限',
+        sec_warning_body: '当前系统的 ALLOWED_PATHS 被设置为全局无限制 (*)。这意味着连接至此的任何智能体都有权读写本机的所有文件。强烈建议前往 .env.local 限制其工作目录。',
+        // ─── Memory descriptions ───
+        soul_section_behavior: '核心行为、语气与风格',
+        soul_section_identity: '身份、硬性限制、记忆协议、演化规则',
+        user_section_projects: '活跃项目、偏好',
+        user_section_basic: '基本信息、硬性要求、演化触发器',
+        // ─── Modals ───
+        modal_cancel: '取消',
+        modal_confirm: '确认',
+        reset_modal_hint_prefix: '请输入大写',
+        reset_modal_hint_suffix: '以确认此操作：',
+        // ─── Setup tab labels ───
+        setup_key_label: 'API Key',
+        setup_advanced_model: '高级模型（默认 gpt-oss-120b）',
+        setup_lightweight_model: '轻量模型',
+        setup_model_name_opt: '模型名称（可选）',
+        setup_model_name_label: '模型名称',
+        setup_ollama_hint: '请确保 Ollama 已安装并在本地运行。可通过终端运行以下命令启动：',
+        setup_ollama_placeholder: '例如 qwen3:4b, llama3:8b',
+        setup_smtp_pass_placeholder: 'POP3/SMTP 授权码',
+        setup_base_url: 'API Base URL',
+        setup_local_key_optional: 'API Key（可选）',
+        setup_local_model_path: '物理 GGML 路径/名称',
+        setup_ollama_pull_title: '从 Ollama 库拉取模型',
+        setup_set_primary: '设为主模型',
+        setup_set_executor: '设为执行模型',
+        setup_delete_model: '删除此模型',
+        // ─── Security tab labels ───
+        sec_gateway_key_label: 'GATEWAY_API_KEY（留空表示不修改）',
+        sec_hmac_secret_label: 'WEBHOOK_HMAC_SECRET（留空表示不修改）',
+        sec_blocked_tools_label: 'BLOCKED_TOOLS（逗号分隔）',
+        sec_allowed_tools_label: 'ALLOWED_TOOLS（逗号分隔，留空表示按策略）',
+        // ─── Skills tab ───
+        uninstall_btn: '卸载',
+        skills_page_info_sep: '个技能 · 第',
+        skill_auto_install_title: '使用 pip install 自动安装缺失的 Python 包',
+        skill_run_diag: '运行物理诊断测试',
+        skill_purge: '从工作区物理清除技能',
+        // ─── Navbar ───
+        dashboard_brand: '控制台',
+        // ─── Health tab ───
+        status_ok: '✓ 正常',
+        // ─── Mobile nav ───
+        more: '更多',
+        // ─── Setup provider-specific labels ───
+        setup_jiutian_model_label: 'JIUTIAN_MODEL（高级模型，默认 gpt-oss-120b）',
+        setup_jiutian_fast_label: 'JIUTIAN_MODEL_FAST（轻量模型）',
+        setup_mimo_model_label: 'MIMO_MODEL（模型名称，可选）',
+        setup_zhipu_glm_model_label: 'ZHIPU_GLM_MODEL（默认 GLM5.1）',
+        setup_zhipu_key_label: 'ZHIPU_KEY（API 密钥）',
+        setup_zhipu_model_label: 'ZHIPU_MODEL（模型名称，默认 GLM5.1）',
+        setup_qwen_key_label: 'QWEN_KEY（API 密钥）',
+        setup_qwen_model_label: 'QWEN_MODEL（默认 qwen-plus）',
+        setup_kimi_key_label: 'KIMI_KEY（API 密钥）',
+        setup_kimi_model_label: 'KIMI_MODEL（默认 moonshot-v1-32k）',
+        setup_cloud_model_label: 'CLOUD_MODEL（模型名称，默认 gpt-4o）',
+        setup_local_key_label: 'LOCAL_KEY（API 密钥，可选）',
+        setup_local_model_label: 'LOCAL_MODEL（物理 GGML 路径/名称）',
       },
     },
 
@@ -1384,6 +1678,8 @@ function app() {
     memoryStats:        null,
     memoryFacts:        [],
     memoryLoading:      false,
+    distillRunning:     false,
+    decayRunning:       false,
     memorySearchQuery:  '',
     memoryPage:         1,
     memoryLimit:        50,
@@ -2056,17 +2352,17 @@ function app() {
     },
     
     async deleteMemoryFact(factId) {
-      if (!confirm('确定要删除这条记忆记录吗？(此操作不可逆)')) return;
+      if (!confirm(this.t('confirm_delete_memory'))) return;
       try {
         const headers = {};
         if (this._wsToken) headers['X-API-Key'] = this._wsToken;
         const res = await fetch(`/api/memory/facts/${factId}`, { method: 'DELETE', headers });
         const json = await res.json();
         if (json.ok) {
-            this.addToast('Memory', '记忆片段已删除', 'info');
+            this.addToast('Memory', this.t('memory_deleted'), 'info');
             this.fetchMemoryStats();
         } else {
-            this.addToast('Memory', '删除失败: ' + json.error, 'error');
+            this.addToast('Memory', this.t('memory_delete_failed') + json.error, 'error');
         }
       } catch (e) {
         this.addToast('Memory', '删除请求失败: ' + e.message, 'error');
@@ -2074,14 +2370,43 @@ function app() {
     },
 
     async triggerMemoryDecay() {
+      this.decayRunning = true;
       try {
         const headers = {};
         if (this._wsToken) headers['X-API-Key'] = this._wsToken;
-        await fetch('/api/memory/decay', { method: 'POST', headers });
-        this.addToast('Memory', 'Decay applied successfully', 'info');
+        const res = await fetch('/api/memory/decay', { method: 'POST', headers });
+        const json = await res.json();
+        if (json.ok) {
+          this.addToast('Memory', 'Decay applied successfully', 'info');
+        } else {
+          this.addToast('Memory', 'Decay failed: ' + (json.error ?? 'unknown'), 'error');
+        }
         this.fetchMemoryStats();
       } catch (e) {
         this.addToast('Memory', 'Decay failed: ' + e.message, 'error');
+      } finally {
+        this.decayRunning = false;
+      }
+    },
+
+    async triggerDistill() {
+      this.distillRunning = true;
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (this._wsToken) headers['X-API-Key'] = this._wsToken;
+        const res = await fetch('/api/memory/distill', { method: 'POST', headers, body: '{}' });
+        const json = await res.json();
+        if (json.ok) {
+          const count = json.distilled_count ?? 0;
+          this.addToast('Memory', count > 0 ? `Distilled ${count} session(s)` : 'No sessions to distill', 'info');
+        } else {
+          this.addToast('Memory', 'Distill failed: ' + (json.error ?? 'unknown'), 'error');
+        }
+        this.fetchMemoryStats();
+      } catch (e) {
+        this.addToast('Memory', 'Distill failed: ' + e.message, 'error');
+      } finally {
+        this.distillRunning = false;
       }
     },
 
@@ -2287,7 +2612,7 @@ function app() {
     },
 
     async deleteOllamaModel(modelName) {
-      if (!confirm(`Delete model "${modelName}"? This cannot be undone.`)) return;
+      if (!confirm(this.t('confirm_delete_model').replace('{name}', modelName))) return;
       try {
         const headers = { 'Content-Type': 'application/json' };
         if (this._wsToken) headers['X-API-Key'] = this._wsToken;
@@ -2808,7 +3133,7 @@ function app() {
     },
 
     async uninstallMcpServer(name) {
-      if (!confirm(`Are you sure you want to uninstall MCP server "${name}"? This will stop the process and remove all installed files.`)) return;
+      if (!confirm(this.t('confirm_uninstall_mcp').replace('{name}', name))) return;
       try {
         const headers = { 'Content-Type': 'application/json' };
         if (this._wsToken) headers['X-API-Key'] = this._wsToken;
@@ -3538,7 +3863,7 @@ function app() {
 
     deleteChatSession(sid) {
       if (this.isRunning) return;
-      if (confirm('确定要永久删除这个会话的全部记录吗？（删除后不可恢复）')) {
+      if (confirm(this.t('confirm_delete_session'))) {
         this._gatewayWs.send(JSON.stringify({
           method: 'session.delete',
           params: { sessionKey: sid },

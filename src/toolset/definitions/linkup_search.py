@@ -50,6 +50,7 @@ class LinkupSearchTool(BaseTool):
 
     name: str = "linkup_search"
     kit: str = "Search"
+    fc_hidden: bool = True  # 由 web_search 内部调用，LLM 不可见
     description: str = (
         "Agentic web search powered by Linkup.so. Supports three depth modes: fast (<1s), "
         "standard (agentic, 1-3s), and deep (multi-iteration, 5-30s). Can return either "
@@ -99,7 +100,7 @@ class LinkupSearchTool(BaseTool):
             payload["toDate"] = to_date
 
         try:
-            timeout = 35.0 if depth == "deep" else 15.0
+            timeout = 30.0 if depth == "deep" else 15.0
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(
                     "https://api.linkup.so/v1/search",
@@ -156,12 +157,13 @@ class LinkupSearchTool(BaseTool):
                     url = r.get("url", "")
                     content = r.get("content", "")
 
-                    entry = f"[{i}] **[{name}]({url})**"
                     if content:
-                        entry += f"\n   {content[:300]}"
+                        entry = f"- {name}\n  {url}\n  {content}"
+                    else:
+                        entry = f"- {name}\n  {url}"
                     items.append(entry)
 
-                return f"Linkup Search Results for: {query}\n\n" + "\n\n".join(items)
+                return f"Search results for: {query}\n\n" + "\n\n".join(items)
 
         except httpx.RequestError as e:
             logger.error(f"[LinkupSearch] Network error: {e}")
@@ -171,7 +173,7 @@ class LinkupSearchTool(BaseTool):
             return await self._fallback(query)
 
     async def _fallback(self, query: str) -> str:
-        """Linkup → GLM Plan Search → web_search 降级链。"""
+        """Linkup → GLM Plan Search 降级链。web_search 在外层兜底，不在此处调用。"""
         try:
             from toolset.definitions.glm_plan_search import GLMPlanSearchTool
 
@@ -180,11 +182,4 @@ class LinkupSearchTool(BaseTool):
             return await glm.run(query=query)
         except Exception as e:
             logger.warning(f"[LinkupSearch] GLM fallback failed: {e}")
-        try:
-            from toolset.definitions.browser import WebSearchTool
-
-            logger.info("[LinkupSearch] Fallback to web_search.")
-            ws = WebSearchTool()
-            return await ws.run(query=query)
-        except Exception as e:
-            return f"Error: All search providers failed: {e}"
+            return f"Error: AI search chain exhausted: {e}"

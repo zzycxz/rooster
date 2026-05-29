@@ -312,7 +312,7 @@ class GLMPlanSearchTool(BaseTool):
                         link = link.replace('\\"', '"').replace("\\/", "/").replace("\\\\", "\\")
                         content = content.replace('\\"', '"').replace("\\/", "/").replace("\\\\", "\\")
 
-                        markdown_items.append(f"[{idx}] **[{title}]({link})**\n   {content}")
+                        markdown_items.append(f"- {title}\n  {link}\n  {content}")
 
                     if markdown_items:
                         return "\n\n".join(markdown_items)

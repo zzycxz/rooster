@@ -84,6 +84,10 @@ class MemoryFact(BaseModel):
     locked: bool = False  # 锁定后不参与衰减（核心知识保护）
     # When locked, exempt from decay (core knowledge protection)
 
+    # --- 结构化实体字段 ---
+    entity_key: Optional[str] = None  # 如 "project_path", "preferred_language"
+    entity_value: Optional[str] = None  # 如 "C:\workspace\swarm", "Python"
+
     def compute_effective_score(self, now: Optional[datetime] = None) -> float:
         """计算综合有效分 = 类型基准优先级 × 动态权重 × 置信度"""
         if now is None:

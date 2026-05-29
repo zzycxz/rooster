@@ -19,3 +19,9 @@ class MemoryConfig:
     EMBEDDING_KEY: str = _env("EMBEDDING_KEY", "")
     EMBEDDING_MODEL: str = _env("EMBEDDING_MODEL", "text-embedding-3-small")
     EMBEDDING_LOCAL_MODEL: str = _env("EMBEDDING_LOCAL_MODEL", "BAAI/bge-small-zh-v1.5")
+
+    # --- Distillation ---
+    DISTILLATION_ENABLED: bool = _env_bool("DISTILLATION_ENABLED", True)
+    DISTILLATION_INTERVAL: int = _env_int("DISTILLATION_INTERVAL", 600)
+    DISTILLATION_QUIET_MINUTES: int = _env_int("DISTILLATION_QUIET_MINUTES", 5)
+    DISTILLATION_MODEL: str = _env("DISTILLATION_MODEL", "")

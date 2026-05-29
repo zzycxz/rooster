@@ -106,18 +106,20 @@ class MemoryManager:
             index=self._index if use_new_path else None,
         )
 
-        # ─── 5. 去重 + 审计（使用本地模型，记忆数据不出本机）───
-        # ─── 5. Dedup + audit (use local model, memory data stays local) ───
+        # ─── 5. 去重 + 审计（优先本地模型，记忆数据不出本机；不可用时走 LLMClient failover）───
+        # ─── 5. Dedup + audit (prefer local model; fallback via LLMClient failover chain) ───
         _hk_client = llm_client
         _hk_model = model
         try:
-            from models.factory import ModelFactory
+            from agents.llm_client import LLMClient
             from utils.config import settings as _s
 
-            _hk_client = ModelFactory.get_client("local")
+            # 优先本地模型（隐私保护），不可用时 LLMClient 会自动 failover
+            _hk_provider = "local" if _s.LOCAL_MODEL else None
+            _hk_client = LLMClient(provider=_hk_provider)
             _hk_model = _s.LOCAL_MODEL or model
-        except Exception:
-            pass  # 本地模型不可用则用传入的 client / Fallback to passed-in client
+        except Exception as _e:
+            logger.debug(f"[MemoryManager] LLMClient 创建失败，使用传入的 client: {_e}")
         self.deduplicator = MemoryDeduplicator(_hk_client, _hk_model)
         self.auditor = MemoryAuditor(_hk_client, _hk_model)
 
@@ -270,6 +272,9 @@ class MemoryManager:
         mission_id: Optional[str] = None,
         subtask_id: Optional[str] = None,
         evidence_path: Optional[str] = None,
+        entity_key: Optional[str] = None,
+        entity_value: Optional[str] = None,
+        _defer_index: bool = False,
     ):
         """记录一条结构化事实"""
         import uuid
@@ -288,10 +293,19 @@ class MemoryManager:
             tags=tags or [],
             locked=locked,
             weight=1.0,
+            entity_key=entity_key,
+            entity_value=entity_value,
         )
         self.backend.add_fact(fact)
-        self._rebuild_index()
+        if not _defer_index:
+            self._rebuild_index()
         logger.debug(f"记录事实: [{fact_type.value}] {content[:60]}...")
+
+    def batch_update_facts(self, facts_args: list):
+        """批量写入事实，只触发一次索引重建。facts_args: list of kwargs dicts."""
+        for kwargs in facts_args:
+            self.update_fact(_defer_index=True, **kwargs)
+        self._rebuild_index()
 
     def record_artifact(self, path: str, description: str):
         """记录生成的文件成果"""
@@ -344,21 +358,45 @@ class MemoryManager:
 
         lines = ["# 长期记忆 (LTM Context):"]
 
+        # 结构化实体（限制最多 10 个，500 字符预算）
+        entity_budget = 500
+        entities = [f for f in all_facts if f.entity_key and f.entity_value][:10]
+        entity_text = ""
+        if entities:
+            entity_lines = ["## 关键实体:"]
+            for f in entities:
+                entity_lines.append(f"- {f.entity_key}: {f.entity_value}")
+            entity_text = "\n".join(entity_lines)
+            if len(entity_text) > entity_budget:
+                entity_text = entity_text[:entity_budget] + "\n..."
+
         if query:
             relevant = self.search.retrieve(query, top_k=top_k)
         else:
             relevant = self.backend.get_by_priority(limit=top_k)
 
+        fact_lines = []
         if relevant:
-            lines.append("## 关键事实:")
+            fact_lines.append("## 关键事实:")
             for f in relevant:
                 lock_tag = " [锁定]" if f.locked else ""
-                lines.append(f"- [{f.fact_type.value}]{lock_tag} {f.content}")
+                fact_lines.append(f"- [{f.fact_type.value}]{lock_tag} {f.content}")
 
         full_text = "\n".join(lines)
+        if entity_text:
+            full_text += "\n" + entity_text
+        full_text += "\n" + "\n".join(fact_lines)
+
         if len(full_text) > max_chars:
             return full_text[:max_chars] + "\n... (记忆已截断) ..."
         return full_text
+
+    def get_entity(self, key: str) -> Optional[str]:
+        """精确查询结构化实体，如 get_entity("project_path")"""
+        for fact in self.backend.get_all_facts():
+            if fact.entity_key == key and fact.entity_value:
+                return fact.entity_value
+        return None
 
     # ─── 核心 API：衰减维护 ──────────────────────────────
 
@@ -460,7 +498,17 @@ class MemoryManager:
             "要求：\n"
             "1. 每条一行，严禁废话\n"
             "2. 提及文件时使用绝对路径\n"
-            "3. 最多提取 5 条\n\n"
+            "3. 最多提取 5 条事实\n"
+            "4. 额外提取结构化实体（如项目路径、偏好语言、常用API等），格式：\n"
+            "   [ENTITY] 键名 = 值\n"
+            "   例如：[ENTITY] project_path = C:\\workspace\\swarm\n"
+            "   例如：[ENTITY] preferred_language = Python\n"
+            "   最多提取 3 个实体\n\n"
+            "### 不要提取以下内容（这些是状态通知，不是知识）：\n"
+            "- \"子任务执行成功\" / \"任务完成\" 类模板句\n"
+            "- 工具调用轨迹（\"工具调用: xxx, yyy\"）\n"
+            "- 截断的执行输出（\"执行结果: ...\" 后跟省略号）\n"
+            "- 任何不能脱离上下文独立理解的内容\n\n"
             f"### 对话历史:\n{context_str}"
         )
 
@@ -489,10 +537,32 @@ class MemoryManager:
 
             type_map = {t.value.upper(): t for t in MemoryFactType}
             count = 0
+            entity_count = 0
             for line in result.split("\n"):
                 line = line.strip("- *").strip()
                 if len(line) < 5:
                     continue
+
+                # 实体提取：[ENTITY] key = value
+                entity_match = re.match(r"\[ENTITY\]\s*(\S+)\s*=\s*(.+)", line, re.IGNORECASE)
+                if entity_match:
+                    e_key = entity_match.group(1).strip()
+                    e_value = entity_match.group(2).strip()
+                    existing = self.backend.get_all_facts()
+                    already = any(f.entity_key == e_key for f in existing if f.entity_key)
+                    if not already:
+                        self.update_fact(
+                            content=f"{e_key} = {e_value}",
+                            fact_type=MemoryFactType.ENV_OBSERVATION,
+                            source_agent="distillation",
+                            confidence=0.9,
+                            entity_key=e_key,
+                            entity_value=e_value,
+                        )
+                        entity_count += 1
+                    continue
+
+                # 事实提取：[TYPE] content
                 match = re.match(r"\[(\w+)\]\s*(.*)", line)
                 if match:
                     type_str = match.group(1).upper()
@@ -514,7 +584,7 @@ class MemoryManager:
                 )
                 count += 1
 
-            logger.info(f"对话蒸馏完成，提取了 {count} 条新事实")
+            logger.info(f"对话蒸馏完成，提取了 {count} 条新事实, {entity_count} 个实体")
 
             if len(self.backend.get_all_facts()) > 30:
 

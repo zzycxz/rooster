@@ -16,6 +16,7 @@ venv/
 
 # Runtime / State
 .rooster/
+logs/
 *.log
 guardian.log
 
@@ -30,6 +31,7 @@ guardian.log
 .vscode/
 .idea/
 .claude/
+CLAUDE.md
 *.swp
 *.swo
 .DS_Store
@@ -55,3 +57,6 @@ src/debug_glm_payload.json
 
 # Tests
 tests/
+
+# docs
+docs/
