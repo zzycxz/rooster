@@ -189,7 +189,10 @@ class LocalSentenceTransformerEmbedding(EmbeddingProvider):
     @property
     def dimension(self) -> int:
         if self._dim is None:
-            self._load_model()
+            try:
+                self._load_model()
+            except Exception:
+                pass
         return self._dim or 512
 
     @property

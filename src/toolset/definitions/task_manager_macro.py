@@ -155,7 +155,7 @@ class TaskManagerTool(BaseTool):
 
         filter_status = kwargs.get("filter_status")
         filter_tag = kwargs.get("filter_tag")
-        limit = kwargs.get("limit", 20)
+        limit = int(kwargs.get("limit", 20))
 
         if filter_status:
             results = [t for t in results if t["status"] == filter_status.upper()]

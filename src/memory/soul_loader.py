@@ -37,6 +37,9 @@ class SoulLoader:
         self._llm_client = llm_client
         self._model = model
         self._background_tasks: set = set()
+        self._soul_cache: str | None = None
+        self._user_cache: str | None = None
+        self._base_cache: dict[str, str] = {}
 
     def _read_file(self, path: str, label: str) -> str:
         """通用文件读取逻辑，包含错误日志。"""
@@ -87,8 +90,10 @@ class SoulLoader:
         """路由到 SOUL 或 USER 专用精简策略。"""
         if label == "SOUL":
             await self._condense_soul(path, line_target)
+            self._soul_cache = None
         else:
             await self._condense_user(path, line_target)
+            self._user_cache = None
 
     async def _condense_soul(self, path: str, line_target: int) -> None:
         """
@@ -212,22 +217,32 @@ class SoulLoader:
 
     def load_soul(self) -> str:
         """Layer 1: 读取 SOUL.md，超限时后台调度精简（本次仍注入原文）"""
+        if self._soul_cache is not None:
+            return self._soul_cache
         content = self._read_file(self.soul_path, "SOUL")
         if content and os.path.exists(self.soul_path):
             self._check_and_schedule_condense(self.soul_path, "SOUL", _SOUL_LINE_LIMIT, _SOUL_LINE_TARGET)
+        self._soul_cache = content
         return content
 
     def load_user(self) -> str:
         """Layer 2: 读取 USER.md，超限时后台调度精简（本次仍注入原文）"""
+        if self._user_cache is not None:
+            return self._user_cache
         content = self._read_file(self.user_path, "USER")
         if content and os.path.exists(self.user_path):
             self._check_and_schedule_condense(self.user_path, "USER", _USER_LINE_LIMIT, _USER_LINE_TARGET)
+        self._user_cache = content
         return content
 
     def load_base_prompt(self, filename: str = "base.md") -> str:
         """Layer 5: 读取固定的执行原则层"""
+        if filename in self._base_cache:
+            return self._base_cache[filename]
         path = os.path.join(self.prompts_dir, filename)
-        return self._read_file(path, f"Prompt({filename})")
+        content = self._read_file(path, f"Prompt({filename})")
+        self._base_cache[filename] = content
+        return content
 
     def build_system_prompt(
         self, base_prompt_name: str = "base.md", ltm_context: str = "", skills_digest: str = ""

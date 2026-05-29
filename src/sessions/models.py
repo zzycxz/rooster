@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 
@@ -15,6 +15,7 @@ class Session(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict, description="会话元数据，如平台、用户名等")
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
+    distilled_at: Optional[datetime] = Field(default=None, description="上次蒸馏完成时间")
 
     def add_message(self, role: str, content: str):
         """追加一条消息并更新活跃时间"""

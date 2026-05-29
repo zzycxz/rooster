@@ -167,13 +167,17 @@ class AgentExecutor:
         session_history = config.history
 
         # --- FIX: Ensure prompt is in session_history to avoid losing it at step 2 ---
+        # On step 1, separate the current prompt from history so compose_messages
+        # can wrap it with a priority delimiter. On subsequent steps the prompt is
+        # already part of history (as an assistant/tool exchange), so keep it inline.
+        _current_user_input = ""
         _prompt_already_in_history = False
         if session_history and session_history[-1].get("role") == "user":
             if config.prompt and config.prompt.strip() in session_history[-1].get("content", ""):
                 _prompt_already_in_history = True
-                
+
         if not _prompt_already_in_history and config.prompt:
-            session_history.append({"role": "user", "content": config.prompt})
+            _current_user_input = config.prompt
 
         # 2. Inject security guard and LLM capabilities into tool registry
         if config.tool_registry:
@@ -226,7 +230,7 @@ class AgentExecutor:
                 )
 
             # --- Phase 1: Pre-processing ---
-            ltm_block = self.memory_manager.get_summary_for_prompt()
+            ltm_block = self.memory_manager.get_summary_for_prompt(query=config.prompt)
 
             params = SystemPromptParams(
                 agent_id=config.agent_id,
@@ -252,7 +256,7 @@ class AgentExecutor:
                 except Exception as e:
                     executor_logger.warning(f"Compaction flush failed (degraded to pruning): {e}")
 
-            session_history = self._prune_history(session_history, max_total_tokens=context_limit)
+            session_history = await self._prune_history(session_history, max_total_tokens=context_limit)
 
             # --- Blackboard: inject shared context from peer agents ---
             # Inject at step 1 (initial context) and every 3 steps after (mid-execution awareness).
@@ -267,9 +271,15 @@ class AgentExecutor:
             messages = self.prompt_builder.compose_messages(
                 system_prompt=system_prompt,
                 history=session_history,
-                user_input="",  # Prompt is already in session_history
+                user_input=_current_user_input,
                 blackboard_context=blackboard_ctx,
             )
+
+            # Only inject the delimiter on step 1; after that the prompt is
+            # part of the ongoing ReAct exchange inside session_history.
+            if _current_user_input:
+                session_history.append({"role": "user", "content": _current_user_input})
+                _current_user_input = ""
 
             # On the first step, if the request includes images, upgrade the user
             # message to OpenAI vision format: [{type:"text",...},{type:"image_url",...}]
@@ -732,26 +742,6 @@ class AgentExecutor:
             session = global_session_store.get_or_create(config.session_id)
             for msg in session_history[len(session.history) :]:
                 if msg.get("role") == "tool":
-                    # Sanitize tool results before persisting:
-                    # Strip magnet/ED2K URIs so they never pollute future session context.
-                    # Reusing a cached magnet from a previous download is a critical correctness bug:
-                    # the LLM would skip the actual search and re-download the wrong file.
-                    content = msg.get("content", "") or ""
-                    if isinstance(content, str) and content.strip():
-                        # Replace full magnet URIs (including the info_hash) with a safe placeholder
-                        sanitized = re.sub(
-                            r"magnet:\?xt=urn:btih:[a-fA-F0-9]{32,40}[^\s'\"\]]*",
-                            "[magnet_uri_redacted]",
-                            content,
-                        )
-                        # Replace ED2K URIs similarly
-                        sanitized = re.sub(
-                            r"ed2k://[^\s'\"\]]*",
-                            "[ed2k_uri_redacted]",
-                            sanitized,
-                        )
-                        summary = sanitized[:200] + "..." if len(sanitized) > 200 else sanitized
-                        session.add_message("tool", summary)
                     continue
                 if msg.get("_internal"):
                     continue
@@ -1025,7 +1015,37 @@ class AgentExecutor:
 
     # --- History and text utilities ---
 
-    def _prune_history(self, history: List[Dict[str, str]], max_total_tokens: int = 16000) -> List[Dict[str, str]]:
+    async def _summarize_mid_history(self, messages: List[Dict[str, str]]) -> str:
+        """将被裁剪的中间对话压缩为摘要，防止信息丢失。"""
+        if not messages:
+            return ""
+        try:
+            lines = []
+            for m in messages:
+                role = m.get("role", "user")
+                content = (m.get("content") or "")[:300]
+                lines.append(f"{role}: {content}")
+            conversation_text = "\n".join(lines)
+
+            prompt = (
+                "请将以下对话压缩为一段 300 字以内的摘要，保留关键事实、决策和操作结果，省略过程细节：\n\n"
+                + conversation_text
+            )
+
+            from models.factory import ModelFactory
+            client = ModelFactory.get_client("local")
+            if hasattr(client, "chat_non_stream"):
+                resp = await client.chat_non_stream(
+                    messages=[{"role": "user", "content": prompt}],
+                    model=getattr(settings, "LOCAL_MODEL", ""),
+                )
+                return (resp.content or "")[:500]
+            return ""
+        except Exception as e:
+            executor_logger.warning(f"Mid-history summary failed (degraded): {e}")
+            return ""
+
+    async def _prune_history(self, history: List[Dict[str, str]], max_total_tokens: int = 16000) -> List[Dict[str, str]]:
         if not history:
             return []
         if len(history) <= 4:
@@ -1062,14 +1082,16 @@ class AgentExecutor:
 
         total_tokens = count_message_tokens(pruned)
         if total_tokens > max_total_tokens and len(pruned) > 8:
+            mid_messages = pruned[1:-10]
+            summary = await self._summarize_mid_history(mid_messages) if mid_messages else ""
             pruned = [pruned[0]] + pruned[-10:]
-            pruned.insert(
-                1,
-                {
-                    "role": "user",
-                    "content": "[SYSTEM NOTE: Mid-term context pruned to fit context window. Older steps omitted.]",
-                },
-            )
+            if summary:
+                pruned.insert(1, {"role": "user", "content": f"[对话摘要] {summary}", "_internal": True})
+            else:
+                pruned.insert(
+                    1,
+                    {"role": "user", "content": "[SYSTEM NOTE: Mid-term context pruned to fit context window.]", "_internal": True},
+                )
         return pruned
 
     def _clean_thought_chatter(self, text: str) -> str:

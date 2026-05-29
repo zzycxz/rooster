@@ -441,6 +441,7 @@ class MissionRunner:
                     llm_client=LLMClient(
                         provider=subtask_provider,
                         model=subtask_model,
+                        failover_order=settings.LLM_FAILOVER_ORDER,
                     ),
                     tool_registry=subtask_tool_registry,
                     orchestrator=self.orchestrator,
@@ -638,14 +639,7 @@ class MissionRunner:
                         provider_used=report.provider_used or "",
                     )
 
-                    # 只在叶节点蒸馏记忆（减少 LLM 调用）
-                    if is_leaf:
-                        self.memory_manager.update_fact(
-                            f"子任务 [{st.id}] 执行成功。目标: {st.instruction[:50]}",
-                            fact_type=MemoryFactType.DECISION_LOG,
-                        )
-                        for art in report.artifacts:
-                            self.memory_manager.record_artifact(art, f"子任务 {st.id} 产出")
+                    # 产出文件在任务结案时统一 batch 写入，此处不再单独 record
 
                     executed_tasks[st.id] = report
                     # Persist progress so the task can resume if the process crashes
@@ -813,39 +807,29 @@ class MissionRunner:
                 status="all_subtasks_done",
             )
 
-            self.memory_manager.update_fact(
-                f"任务完成: {reframed_text[:80]}",
-                fact_type=MemoryFactType.DECISION_LOG,
-            )
-            # Auto-write key facts to LTM — not dependent on LLM calling memory_add_fact
-            # Automatically persist file paths, execution results, and tool call traces
+            # Auto-write key facts to LTM — batch write, single index rebuild
+            _batch = []
             for tid in completed_task_ids:
                 if tid in executed_tasks:
                     report = executed_tasks[tid]
-                    # Record file paths and artifacts to LTM
                     if report.artifacts:
                         for art in report.artifacts:
-                            self.memory_manager.record_artifact(art, f"任务 {tid} 产出")
-                            # Auto-write artifact paths as LTM facts
-                            self.memory_manager.update_fact(
-                                f"产出文件: {art} (任务 {tid}, 目标: {reframed_text[:50]})",
-                                fact_type=MemoryFactType.ARTIFACT_CREATED,
-                            )
-                    # Record execution result summary to LTM
+                            _batch.append({
+                                "content": f"生成了文件: {art} — 任务 {tid} 产出",
+                                "fact_type": MemoryFactType.ARTIFACT_CREATED,
+                                "evidence_path": art,
+                                "confidence": 1.0,
+                            })
                     if report.observation and report.observation.strip():
                         summary = report.observation[:200]
-                        self.memory_manager.update_fact(
-                            f"[{tid}] 执行结果: {summary}",
-                            fact_type=MemoryFactType.DECISION_LOG,
-                        )
-                    # Record tool call traces to LTM
-                    evidence = getattr(report, "evidence", {}) or {}
-                    tool_trace = evidence.get("tool_call_trace", [])
-                    if tool_trace:
-                        self.memory_manager.update_fact(
-                            f"[{tid}] 工具调用: {', '.join(str(t)[:80] for t in tool_trace[:5])}",
-                            fact_type=MemoryFactType.TOOL_RESULT,
-                        )
+                        _template_words = ["执行成功", "任务完成", "子任务"]
+                        if len(summary) > 50 and not any(w in summary for w in _template_words):
+                            _batch.append({
+                                "content": f"[{tid}] 执行结果: {summary}",
+                                "fact_type": MemoryFactType.DECISION_LOG,
+                            })
+            if _batch:
+                self.memory_manager.batch_update_facts(_batch)
 
             await channel.send_message(to=msg.sender_id, text="✅ **[任务结案]** 所有步骤已通过审计。")
             # Task succeeded — remove the checkpoint so it doesn't get replayed

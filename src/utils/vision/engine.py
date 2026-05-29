@@ -177,19 +177,6 @@ class EliteEngine:
         if tray_hwnd:
             active_root_hwnds.add(tray_hwnd)
 
-        # 2. 抓取遮挡层（所有在 fg_hwnd 之上的可见窗口）
-        # 2. Capture obstruction layer (all visible windows above fg_hwnd)
-        obstruction_boxes = []
-        curr = fg_hwnd
-        while True:
-            curr = win32gui.GetWindow(curr, win32con.GW_HWNDPREV)
-            if not curr:
-                break
-            if win32gui.IsWindowVisible(curr) and not self.is_window_cloaked(curr):
-                rect = get_true_window_rect(curr)
-                if (rect[2] - rect[0]) > 10 and (rect[3] - rect[1]) > 10:
-                    obstruction_boxes.append(rect)
-
         def enum_win(hwnd, _):
             if win32gui.IsWindowVisible(hwnd) and not self.is_window_cloaked(hwnd):
                 _, pid = win32process.GetWindowThreadProcessId(hwnd)
@@ -202,6 +189,21 @@ class EliteEngine:
                     active_root_hwnds.add(hwnd)
 
         win32gui.EnumWindows(enum_win, None)
+
+        # 2. 抓取遮挡层（所有在 fg_hwnd 之上的可见窗口，排除自身）
+        # 2. Capture obstruction layer (all visible windows above fg_hwnd, excluding target roots)
+        obstruction_boxes = []
+        curr = fg_hwnd
+        while True:
+            curr = win32gui.GetWindow(curr, win32con.GW_HWNDPREV)
+            if not curr:
+                break
+            if win32gui.IsWindowVisible(curr) and not self.is_window_cloaked(curr):
+                if curr in active_root_hwnds:
+                    continue
+                rect = get_true_window_rect(curr)
+                if (rect[2] - rect[0]) > 10 and (rect[3] - rect[1]) > 10:
+                    obstruction_boxes.append(rect)
 
         # 3. 深度探测并执行白名单过滤
         # 3. Deep probe and whitelist filtering

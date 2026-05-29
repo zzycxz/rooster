@@ -21,9 +21,10 @@ logger = logging.getLogger(__name__)
 _PATTERNS: List[Tuple[str, re.Pattern, str]] = []
 
 
-def _add(name: str, pattern: str) -> None:
+def _add(name: str, pattern: str, replacement: str = None) -> None:
     try:
-        _PATTERNS.append((name, re.compile(pattern, re.IGNORECASE), f"[MASKED_{name.upper()}]"))
+        repl = replacement if replacement is not None else f"[MASKED_{name.upper()}]"
+        _PATTERNS.append((name, re.compile(pattern, re.IGNORECASE), repl))
     except re.error as e:
         logger.warning(f"[SecretsMask] 无效正则 '{name}': {e}")
 
@@ -35,10 +36,10 @@ _add("GITHUB_PAT", r"gh[pousr]_[A-Za-z0-9_]{36,}")
 _add("GITHUB_PAT2", r"github_pat_[A-Za-z0-9_]{60,}")
 # AWS access key
 _add("AWS_KEY", r"AKIA[0-9A-Z]{16}")
-# AWS secret key (40-char base64-like after =)
-_add("AWS_SECRET", r"(?<=[Aa][Ww][Ss][_\-][Ss][Ee][Cc][Rr][Ee][Tt]\s*[=:]\s*)[A-Za-z0-9/+=]{40}")
+# AWS secret key — capture prefix in group(1), replacement uses \1 backref to preserve it
+_add("AWS_SECRET", r"(aws[_\-]secret\s*[=:]\s*)[A-Za-z0-9/+=]{40}", r"\1[MASKED_AWS_SECRET]")
 # Bearer tokens in headers/code
-_add("BEARER_TOKEN", r"[Bb]earer\s+[A-Za-z0-9\-._~+/]+=*")
+_add("BEARER_TOKEN", r"bearer\s+[A-Za-z0-9\-._~+/]+=*")
 # Generic api_key / apikey / api-key assignments
 _add("API_KEY_ASSIGN", r'(?:api[_\-]?key|apikey)\s*[=:]\s*["\']?[A-Za-z0-9\-_.]{12,}["\']?')
 # Password assignments

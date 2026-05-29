@@ -265,6 +265,20 @@ class WebSearchTool(BaseTool):
         if not query:
             return "Error: No query provided."
 
+        # 串行优先走 Exa 降级链，失败再走 7 路并发
+        try:
+            from toolset.definitions.exa_search import ExaSearchTool
+            exa = ExaSearchTool()
+            exa_result = await exa.run(query=query)
+            if exa_result and not exa_result.startswith("Error:"):
+                return exa_result
+        except Exception as e:
+            logging.debug(f"[web_search] Exa chain failed, falling back to 7-lane: {e}")
+
+        return await self._seven_lane_search(query, en_keywords)
+
+    async def _seven_lane_search(self, query: str, en_keywords: str) -> str:
+        """7 路并发搜索逻辑"""
         try:
             cache_key = query.strip().lower()
             now = time.time()

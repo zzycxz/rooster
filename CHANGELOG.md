@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.3.6] - 2026-05-29
+
+### Fixed
+- **飞书消息碎片化**：非流式通道（飞书）收到 30+ 碎片气泡，改为缓冲合并后单条发送（`router.py`）
+- **Dashboard 保存报错**：`FEISHU_APP_ID/APP_SECRET/USER_OPEN_ID` 缺失白名单导致 400（`security.py`）
+- **ARIA2 配置不生效**：`ARIA2_TOKEN` 与 `ARIA2_RPC_SECRET` 命名不一致，统一为 `ARIA2_TOKEN`（`channels.py` + `multimedia.py`）
+- **Strategist FAILSAFE**：`STRATEGIST_MODEL_MODE` 与 `STRATEGIST_MODEL_NAME` 不匹配（zhipu provider + mimo model），导致规划降级
+- **SOUL 身份漂移**：MiMo 模型用默认身份自我介绍，加 Rooster 身份锚定（`SOUL.md`）
+- **pywinauto / lark_oapi 警告**：过滤 SyntaxWarning 和 pkg_resources UserWarning（`main.py`）
+- **Strategist base_prompt 路径**：使用 `__file__` 构建绝对路径，避免 CWD 依赖导致 src/src 双层路径
+- **Dashboard 脱敏覆盖密钥**：保存配置时脱敏值写回 `.env.local`，覆盖真实 API Key（已知问题，待修复）
+
+### Added
+- **CLAUDE.md**：系统说明书，架构速查、核心原则、已知问题
+- **docs/ 完整文档集**：PRD、SPEC、goal、plan、todo、stability_analysis、interaction_design 等
+- **skills/email-139**：139 邮箱 SMTP 发送技能
+- **tests/test_llm_providers.py**：LLM 提供商连通性测试
+- **tests/test_strategist.py**：Strategist JSON 输出能力测试
+- **tests/test_health.py**：LLM 健康检查（延迟 + 状态）
+- **Strategist 诊断日志**：FAILSAFE 时打印 LLM 原始返回前 500 字符，定位 JSON 解析失败原因
+- **tab-security.html**：Dashboard 安全管理页面
+
+### Changed
+- `.gitignore` 清理乱码行、添加 tests/ 和 debug 文件规则
+- 删除根目录 `test_agent_full.py`、`test_search.py`（移至 tests/）
+- README 版本号更新至 0.3.6
+
 ## [0.3.5] - 2026-05-27
 
 ### Fixed
