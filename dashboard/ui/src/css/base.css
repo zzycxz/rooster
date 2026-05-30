@@ -28,18 +28,25 @@ body {
 /* ── Pipeline nodes ── */
 .pipeline-node { transition: border-color 0.2s, background 0.2s; }
 
-/* ── Premium Chat Bubbles ── */
+/* ── Premium Chat Blocks ── */
 .bubble-user { 
-  background: linear-gradient(135deg, #2563eb, #1d4ed8); 
-  border-radius: 20px 20px 4px 20px; 
-  box-shadow: 0 4px 15px rgba(29, 78, 216, 0.2);
+  background: rgba(37, 99, 235, 0.15); 
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  border-radius: 8px; 
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 .bubble-ai { 
-  background: transparent;
-  border-radius: 0; 
-  border: none; 
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(51, 65, 85, 0.8);
+  border-radius: 8px; 
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
-.bubble-err  { background: rgba(127,29,29,0.4); border: 1px solid #7f1d1d; border-radius: 12px; }
+.bubble-err  { 
+  background: rgba(127, 29, 29, 0.4); 
+  border: 1px solid rgba(153, 27, 27, 0.8); 
+  border-radius: 8px; 
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
 
 /* ── Bubble content overflow fix ── */
 .bubble-ai, .bubble-user, .bubble-err {
@@ -66,12 +73,13 @@ body {
   --tw-prose-td-borders: #334155;
 }
 .prose table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
   border-collapse: collapse;
-  width: 100%;
   margin-top: 1.5em;
   margin-bottom: 1.5em;
   border-radius: 8px;
-  overflow: hidden;
   box-shadow: 0 0 0 1px #334155;
 }
 .prose thead {
@@ -82,10 +90,16 @@ body {
   padding: 0.75rem 1rem;
   font-weight: 600;
   text-align: left;
+  min-width: 100px;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 .prose td {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid #1e293b;
+  min-width: 120px;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 .prose tbody tr:nth-child(even) {
   background-color: rgba(30, 41, 59, 0.3);
@@ -142,6 +156,62 @@ body {
 
 /* ── Error badge new blink ── */
 @keyframes badge-blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+/* ── Collapsible Code Blocks ── */
+.code-collapse-wrapper {
+  position: relative;
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+}
+.code-collapse-wrapper.collapsed pre {
+  max-height: 250px;
+  overflow: hidden;
+  margin-bottom: 0;
+}
+.code-collapse-overlay {
+  display: none;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 80px;
+  background: linear-gradient(to top, rgba(15, 23, 42, 1) 20%, rgba(15, 23, 42, 0) 100%);
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 12px;
+  pointer-events: none;
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+.code-collapse-wrapper.collapsed .code-collapse-overlay {
+  display: flex;
+}
+.code-collapse-btn {
+  pointer-events: auto;
+  background: rgba(30, 41, 59, 0.9);
+  color: #94a3b8;
+  border: 1px solid #334155;
+  padding: 4px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+}
+.code-collapse-btn:hover {
+  background: #334155;
+  color: #e2e8f0;
+}
+.code-collapse-wrapper:not(.collapsed) {
+  padding-bottom: 36px;
+}
+.code-collapse-wrapper:not(.collapsed) .code-collapse-overlay {
+  display: flex;
+  height: 36px;
+  background: transparent;
+  align-items: center;
+  padding-bottom: 0;
+}
 .badge-new { animation: badge-blink 0.8s step-end 4; }
 
 /* ── Toasts ── */

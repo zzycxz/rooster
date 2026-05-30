@@ -3402,6 +3402,15 @@ function app() {
       }
     },
 
+    _readFileAsText(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsText(file);
+      });
+    },
+
     _readFileAsDataURL(file) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -3411,24 +3420,77 @@ function app() {
       });
     },
 
-    async handleImageDrop(event) {
-      const files = Array.from(event.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+    async handleFileInput(event) {
+      const files = Array.from(event.target.files || []);
+      await this._processDroppedFiles(files);
+      event.target.value = '';
+    },
+
+    async _processDroppedFiles(files) {
+      const textExtensions = ['.txt', '.md', '.csv', '.json', '.py', '.js', '.html', '.css', '.log', '.yaml', '.yml'];
       for (const file of files) {
-        const dataUrl = await this._readFileAsDataURL(file);
-        this.pendingImages.push(dataUrl);
+        if (file.type.startsWith('image/')) {
+          const dataUrl = await this._readFileAsDataURL(file);
+          this.pendingImages.push(dataUrl);
+        } else {
+          // Check if it's a known text file type
+          const isText = textExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+          
+          if (isText) {
+            try {
+              const text = await this._readFileAsText(file);
+              const prefix = this.chatInput ? '\n\n' : '';
+              this.chatInput += `${prefix}--- File: ${file.name} ---\n${text}\n--- End of ${file.name} ---\n`;
+            } catch(e) {
+              this.addToast('Error', `Failed to read ${file.name}`, 'error');
+            }
+          } else {
+            // Upload binary file (PDF, DOCX, etc.) to server
+            try {
+              const formData = new FormData();
+              formData.append('file', file);
+              
+              const headers = {};
+              if (this._wsToken) headers['X-API-Key'] = this._wsToken;
+              
+              const res = await fetch('/api/upload', {
+                method: 'POST',
+                headers: headers,
+                body: formData
+              });
+              
+              const data = await res.json();
+              if (data.ok) {
+                const prefix = this.chatInput ? '\n\n' : '';
+                this.chatInput += `${prefix}[用户上传了文件: ${data.filename}，已保存至 ${data.file_path}，请使用代码或工具读取分析]`;
+                this.addToast('Uploaded', `${file.name} uploaded successfully`, 'info');
+              } else {
+                this.addToast('Upload Failed', data.error || 'Unknown error', 'error');
+              }
+            } catch(e) {
+              this.addToast('Upload Error', e.message, 'error');
+            }
+          }
+        }
       }
+    },
+
+    async handleImageDrop(event) {
+      const files = Array.from(event.dataTransfer.files);
+      await this._processDroppedFiles(files);
     },
 
     async handleImagePaste(event) {
       const items = Array.from(event.clipboardData?.items || []);
+      const files = [];
       for (const item of items) {
-        if (item.type.startsWith('image/')) {
+        if (item.kind === 'file') {
           const file = item.getAsFile();
-          if (file) {
-            const dataUrl = await this._readFileAsDataURL(file);
-            this.pendingImages.push(dataUrl);
-          }
+          if (file) files.push(file);
         }
+      }
+      if (files.length > 0) {
+        await this._processDroppedFiles(files);
       }
     },
 
@@ -4188,15 +4250,26 @@ function app() {
       if (!text) return '';
       if (typeof marked !== 'undefined') {
         if (!this._markedInit) {
-          marked.setOptions({
-            breaks: true,
-            highlight: function(code, lang) {
-              if (typeof hljs !== 'undefined') {
-                const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-                return hljs.highlight(code, { language }).value;
-              }
-              return code;
+          const renderer = new marked.Renderer();
+          renderer.code = function(code, language) {
+            let validLang = 'plaintext';
+            if (typeof hljs !== 'undefined') {
+              const langMatch = (language || '').match(/\\S*/);
+              const lang = (langMatch && langMatch[0]) || 'plaintext';
+              validLang = hljs.getLanguage(lang) ? lang : 'plaintext';
             }
+            const highlighted = typeof hljs !== 'undefined' ? hljs.highlight(code, { language: validLang }).value : (code.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+            
+            const lines = code.split('\\n').length;
+            if (lines > 15) {
+              return `<div class="code-collapse-wrapper collapsed"><pre><code class="hljs ${validLang}">${highlighted}</code></pre><div class="code-collapse-overlay"><button type="button" class="code-collapse-btn">展开所有代码 / Show All</button></div></div>`;
+            }
+            return `<pre><code class="hljs ${validLang}">${highlighted}</code></pre>`;
+          };
+          
+          marked.setOptions({
+            renderer,
+            breaks: true
           });
           this._markedInit = true;
         }
@@ -4239,6 +4312,17 @@ function app() {
       return { done:'bg-green-900 text-green-300', error:'bg-red-900 text-red-300',
                running:'bg-yellow-900 text-yellow-300', info:'bg-slate-700 text-slate-400' }[s]
              || 'bg-slate-700 text-slate-400';
+    },
+
+    handleChatClick(e) {
+      const btn = e.target.closest('.code-collapse-btn');
+      if (btn) {
+        const wrapper = btn.closest('.code-collapse-wrapper');
+        if (wrapper) {
+          wrapper.classList.toggle('collapsed');
+          btn.innerText = wrapper.classList.contains('collapsed') ? '展开所有代码 / Show All' : '折叠代码 / Collapse';
+        }
+      }
     },
 
     stepCardBorder(step) {

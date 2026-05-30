@@ -7,10 +7,12 @@ logger = logging.getLogger(__name__)
 
 try:
     import tiktoken
+
     _ENCODER = tiktoken.get_encoding("cl100k_base")
 except ImportError:
     _ENCODER = None
     logger.warning("tiktoken not installed. Falling back to char-based token counting.")
+
 
 def count_tokens(text: str) -> int:
     """Accurately count tokens using cl100k_base (OpenAI) or fallback heuristic."""
@@ -23,6 +25,7 @@ def count_tokens(text: str) -> int:
             pass
     # Fallback: non-ASCII chars usually map to ~2 tokens, ASCII to ~0.3
     return int(sum(2.0 if ord(c) > 127 else 0.33 for c in text))
+
 
 def count_message_tokens(messages: List[Dict[str, Any]]) -> int:
     """Count total tokens in a list of chat messages."""

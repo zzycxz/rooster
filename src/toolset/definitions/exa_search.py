@@ -220,10 +220,10 @@ class ExaSearchTool(BaseTool):
                 return header + "\n\n" + "\n\n".join(items)
 
         except httpx.RequestError as e:
-            logger.error(f"[ExaSearch] Network error: {e}")
+            logger.error(f"[ExaSearch] Network error: {repr(e)}")
             return await self._fallback(query)
         except Exception as e:
-            logger.error(f"[ExaSearch] Error: {e}")
+            logger.error(f"[ExaSearch] Error: {repr(e)}")
             return await self._fallback(query)
 
     async def _fallback(self, query: str) -> str:

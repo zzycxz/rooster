@@ -171,7 +171,7 @@
       </div>
 
       <!-- Chat messages + Input (unified scroll container) -->
-      <div class="flex-1 overflow-y-auto min-h-0 flex flex-col gap-3 pr-1" id="chat-container">
+      <div class="flex-1 overflow-y-auto min-h-0 flex flex-col gap-3 pr-1" id="chat-container" @click="handleChatClick($event)">
         <!-- Empty state -->
         <div
           x-show="chatMessages.length === 0"
@@ -291,6 +291,18 @@
                  @dragover.prevent="$el.classList.add('ring-1','ring-green-500/50')"
                  @dragleave="$el.classList.remove('ring-1','ring-green-500/50')"
                  @drop.prevent="$el.classList.remove('ring-1','ring-green-500/50'); handleImageDrop($event)">
+              <!-- Upload Button -->
+              <button 
+                @click="$refs.fileInput.click()" 
+                class="p-2 mb-0.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-lg transition-colors shadow-sm border border-slate-700 flex-shrink-0"
+                title="上传文件 (支持图片、代码、文本、PDF、Office文档等)"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              </button>
+              <input type="file" x-ref="fileInput" class="hidden" multiple @change="handleFileInput($event)" />
+
             <textarea
               x-model="chatInput"
               x-ref="chatTextarea"

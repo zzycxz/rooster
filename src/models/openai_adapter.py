@@ -52,12 +52,14 @@ class OpenAILikeClient(BaseModelClient):
         # read timeout is long (LLM_API_TIMEOUT) to allow long reasoning and slow generation.
         # It resets on every chunk in stream mode.
         timeout_config = httpx.Timeout(
-            getattr(settings, "LLM_API_TIMEOUT", 300.0), # read
+            getattr(settings, "LLM_API_TIMEOUT", 300.0),  # read
             connect=15.0,
             write=30.0,
-            pool=15.0
+            pool=15.0,
         )
-        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=timeout_config, proxy=proxy_url, trust_env=False)
+        self.client = httpx.AsyncClient(
+            base_url=self.base_url, timeout=timeout_config, proxy=proxy_url, trust_env=False
+        )
 
     async def chat_stream(
         self, model: str, messages: List[Dict[str, Any]], **kwargs
@@ -171,7 +173,9 @@ class OpenAILikeClient(BaseModelClient):
                         logger.warning("⚠️ [OpenAILike] 流结束，但未产生任何有效 content。")
                 break  # 成功则跳出重试  # Exit retry loop on success
             except (httpx.NetworkError, httpx.TimeoutException) as e:
-                logger.error(f"🌐 [OpenAILike] 网络异常 [{type(e).__name__}] (尝试 {attempt+1}/{MAX_RETRIES+1}): 请求 {self.base_url} 失败: {e!r}")
+                logger.error(
+                    f"🌐 [OpenAILike] 网络异常 [{type(e).__name__}] (尝试 {attempt + 1}/{MAX_RETRIES + 1}): 请求 {self.base_url} 失败: {e!r}"
+                )
                 if attempt < MAX_RETRIES and not yielded_any:
                     import asyncio
 
@@ -285,4 +289,3 @@ class OpenAILikeClient(BaseModelClient):
 
     async def close(self):
         await self.client.aclose()
-

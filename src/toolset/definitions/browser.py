@@ -268,6 +268,7 @@ class WebSearchTool(BaseTool):
         # 串行优先走 Exa 降级链，失败再走 7 路并发
         try:
             from toolset.definitions.exa_search import ExaSearchTool
+
             exa = ExaSearchTool()
             exa_result = await exa.run(query=query)
             if exa_result and not exa_result.startswith("Error:"):

@@ -64,7 +64,7 @@ async def _run_provider_test(provider: str):
         if not full_content.strip():
             return "FAIL", elapsed, "Empty response"
 
-        return "PASS", elapsed, f"model={model}, reply: \"{full_content.strip()[:80]}\""
+        return "PASS", elapsed, f'model={model}, reply: "{full_content.strip()[:80]}"'
 
     except asyncio.TimeoutError:
         return "FAIL", TIMEOUT_BUDGET, "Timeout"
@@ -87,7 +87,7 @@ async def main():
     print("=" * 70)
     print("  LLM Provider Integration Test")
     print("=" * 70)
-    print(f"  Prompt: \"{PROMPT}\"")
+    print(f'  Prompt: "{PROMPT}"')
     print(f"  Timeout budget: {TIMEOUT_BUDGET}s per provider")
     print()
 

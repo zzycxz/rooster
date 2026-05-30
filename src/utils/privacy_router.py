@@ -30,7 +30,7 @@ class PrivacyRouter:
         self._local_dirs: list[Path] = []
         self._FILE_CACHE: dict[str, bool] = {}  # file_hash → is_sensitive
         self._SCAN_CACHE: dict[str, bool] = {}  # text_hash → is_sensitive
-        self._custom_pii_patterns: list = []    # [(name, compiled_regex), ...]
+        self._custom_pii_patterns: list = []  # [(name, compiled_regex), ...]
         self._custom_loaded = False
         self._load_config()
         self._init_presidio()
@@ -49,6 +49,7 @@ class PrivacyRouter:
         """从 CUSTOM_SECURITY_PATTERNS_JSON 加载 action=pii/both 的自定义规则。"""
         import json
         import re
+
         try:
             raw = os.getenv("CUSTOM_SECURITY_PATTERNS_JSON", "").strip()
             if not raw:

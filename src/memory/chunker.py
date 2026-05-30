@@ -51,10 +51,7 @@ def estimate_char_limit(max_tokens: int, text_sample: str = "") -> int:
     """
     # Flatten session history dicts if caller passes a list of messages
     if isinstance(text_sample, list):
-        text_sample = " ".join(
-            m.get("content", "") if isinstance(m, dict) else str(m)
-            for m in text_sample
-        )
+        text_sample = " ".join(m.get("content", "") if isinstance(m, dict) else str(m) for m in text_sample)
     return _chars_for_tokens(max_tokens, text_sample)
 
 

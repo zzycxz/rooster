@@ -93,8 +93,6 @@ class Router:
         from evolution.engine import EvolutionEngine
         from agents.reframer import Reframer
 
-
-
         # 隐私：进化引擎使用本地模型 / Privacy: evolution engine uses local model
         try:
             from models.factory import ModelFactory
@@ -215,12 +213,13 @@ class Router:
         _CLARIFICATION_PREFIX = "__CLARIFICATION_NEEDED__:"
         if reframed_text.startswith(_CLARIFICATION_PREFIX):
             import json as _json
+
             try:
-                payload = _json.loads(reframed_text[len(_CLARIFICATION_PREFIX):])
+                payload = _json.loads(reframed_text[len(_CLARIFICATION_PREFIX) :])
                 question = payload.get("question", "请问您想要哪个版本？")
                 options = payload.get("options", [])
             except Exception:
-                question = reframed_text[len(_CLARIFICATION_PREFIX):]
+                question = reframed_text[len(_CLARIFICATION_PREFIX) :]
                 options = []
 
             # 格式化问询消息

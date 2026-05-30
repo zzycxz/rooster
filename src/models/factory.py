@@ -23,6 +23,7 @@ class ModelFactory:
     async def clear_instances(cls):
         """清除并关闭所有缓存的客户端实例。常用于代理或配置变更后。"""
         import logging
+
         logger = logging.getLogger(__name__)
         logger.info("🧹 [ModelFactory] 正在清除并关闭所有已缓存的模型客户端实例...")
         for cache_key, client in cls._instances.items():

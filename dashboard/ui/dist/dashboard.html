@@ -17,7 +17,7 @@
                   }" x-text="a.verdict.toUpperCase()"></span> <span class="text-slate-500 font-mono" x-text="a.subtask_id"></span> <span x-show="a.provider" class="px-1 py-0.5 rounded text-[10px] font-mono" :class="{
                     'bg-violet-900/30 text-violet-300': a.provider === 'local',
                     'bg-cyan-900/30 text-cyan-300': a.provider !== 'local',
-                  }" x-text="a.provider"></span> <span class="text-slate-400 truncate flex-1" x-text="a.reason"></span></div></template></div><div class="flex-1 overflow-y-auto min-h-0 flex flex-col gap-3 pr-1" id="chat-container"><div x-show="chatMessages.length === 0" class="flex-1 flex flex-col items-center justify-center text-slate-600 gap-3 py-8"><span class="text-5xl">🐓</span> <span class="text-base text-slate-500" x-text="t('chat_empty')"></span> <span class="text-xs text-slate-600 text-center max-w-xs" x-text="t('chat_hint')"></span></div><template x-for="(msg, index) in chatMessages" :key="String(msg.id) + '-' + index"><div class="flex flex-col"><div x-show="msg.role === 'assistant' && msg.thinkContent" class="flex gap-2 justify-start mb-1"><span class="flex-shrink-0 w-7 h-7 opacity-0">🐓</span><details class="group bg-slate-800/40 rounded-lg border border-slate-700/40 px-3 py-2 text-xs max-w-[65%]" :open="msg.isThinking"><summary class="list-none cursor-pointer font-semibold text-slate-400 hover:text-slate-300 flex items-center gap-1.5 select-none outline-none"><span class="transform transition-transform duration-200 text-[10px] group-open:rotate-90">▶</span> <span>🤔 <span x-text="t('thinking_process')"></span></span> <span x-show="msg.isThinking" class="pulse text-yellow-400/80 ml-1 text-[11px]">●</span> <span x-show="!msg.isThinking" class="text-slate-500/60 ml-1 text-[10px]" x-text="t('collapsed')"></span></summary><div class="mt-2 pl-2 border-l-2 border-slate-600/50 text-slate-400/90 whitespace-pre-wrap break-words max-h-60 overflow-y-auto leading-relaxed" x-text="msg.thinkContent"></div></details></div><div class="flex gap-2" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"><span x-show="msg.role !== 'user'" class="flex-shrink-0 w-7 h-7 rounded-full bg-green-900 border border-green-700 flex items-center justify-center text-sm self-end mb-1">🐓</span><div class="max-w-[65%] px-4 py-2.5 leading-relaxed text-sm" :class="[
+                  }" x-text="a.provider"></span> <span class="text-slate-400 truncate flex-1" x-text="a.reason"></span></div></template></div><div class="flex-1 overflow-y-auto min-h-0 flex flex-col gap-3 pr-1" id="chat-container" @click="handleChatClick($event)"><div x-show="chatMessages.length === 0" class="flex-1 flex flex-col items-center justify-center text-slate-600 gap-3 py-8"><span class="text-5xl">🐓</span> <span class="text-base text-slate-500" x-text="t('chat_empty')"></span> <span class="text-xs text-slate-600 text-center max-w-xs" x-text="t('chat_hint')"></span></div><template x-for="(msg, index) in chatMessages" :key="String(msg.id) + '-' + index"><div class="flex flex-col"><div x-show="msg.role === 'assistant' && msg.thinkContent" class="flex gap-2 justify-start mb-1"><span class="flex-shrink-0 w-7 h-7 opacity-0">🐓</span><details class="group bg-slate-800/40 rounded-lg border border-slate-700/40 px-3 py-2 text-xs max-w-[65%]" :open="msg.isThinking"><summary class="list-none cursor-pointer font-semibold text-slate-400 hover:text-slate-300 flex items-center gap-1.5 select-none outline-none"><span class="transform transition-transform duration-200 text-[10px] group-open:rotate-90">▶</span> <span>🤔 <span x-text="t('thinking_process')"></span></span> <span x-show="msg.isThinking" class="pulse text-yellow-400/80 ml-1 text-[11px]">●</span> <span x-show="!msg.isThinking" class="text-slate-500/60 ml-1 text-[10px]" x-text="t('collapsed')"></span></summary><div class="mt-2 pl-2 border-l-2 border-slate-600/50 text-slate-400/90 whitespace-pre-wrap break-words max-h-60 overflow-y-auto leading-relaxed" x-text="msg.thinkContent"></div></details></div><div class="flex gap-2" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"><span x-show="msg.role !== 'user'" class="flex-shrink-0 w-7 h-7 rounded-full bg-green-900 border border-green-700 flex items-center justify-center text-sm self-end mb-1">🐓</span><div class="max-w-[65%] px-4 py-2.5 leading-relaxed text-sm" :class="[
                   msg.role === 'user'  ? 'bubble-user text-blue-100'
                   : msg.role === 'error' ? 'bubble-err  text-red-200'
                   :                        'bubble-ai   text-slate-100',
@@ -25,7 +25,7 @@
                 ]"><div x-show="msg.role !== 'user'" class="text-xs text-slate-500 mb-1" x-text="msg.role === 'error' ? t('exec_error') : '🐓 Rooster'"></div><div x-show="msg.isThinking && !msg.content" class="text-xs text-slate-500 italic" x-text="t('thinking_label')"></div><div class="break-words" :class="[
                     msg.streaming && !msg.content && !msg.isThinking ? 'cursor-blink text-slate-500' : '',
                     msg.role !== 'user' ? 'prose prose-sm prose-invert max-w-none' : 'whitespace-pre-wrap'
-                  ]" x-html="msg.role !== 'user' ? renderMarkdown(msg.content || (msg.streaming && !msg.isThinking ? '' : (msg.content ? '' : '—'))) : (msg.content || '')"></div></div><span x-show="msg.role === 'user'" class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-900 border border-blue-700 flex items-center justify-center text-sm self-end mb-1">👤</span></div></div></template><div class="sticky bottom-0 mt-auto pt-2 bg-slate-900"><div class="bg-slate-800 rounded-lg border border-slate-700 flex flex-col gap-1.5 p-2"><div class="flex items-center gap-2 px-1"><span class="text-xs text-slate-500" x-text="t('model_selector_label')"></span> <select x-model="selectedProvider" class="bg-slate-700 text-slate-200 text-xs rounded px-2 py-0.5 border border-slate-600 outline-none" :disabled="isRunning"><option value="" x-text="t('model_auto')"></option><template x-for="p in availableProviders" :key="p.id"><option :value="p.id" x-text="p.label"></option></template></select> <span x-show="selectedProvider" class="text-xs text-green-500/70">●</span></div><div x-show="pendingImages.length > 0" class="flex gap-2 px-1 flex-wrap"><template x-for="(img, idx) in pendingImages" :key="idx"><div class="relative group w-12 h-12 flex-shrink-0 rounded overflow-hidden border border-slate-600"><img :src="img" class="w-full h-full object-cover"/> <button @click="pendingImages.splice(idx, 1)" class="absolute top-0 right-0 bg-red-900/80 text-red-200 text-xs w-4 h-4 flex items-center justify-center rounded-bl opacity-0 group-hover:opacity-100 transition-opacity">✕</button></div></template></div><div class="flex items-end gap-2" @dragover.prevent="$el.classList.add('ring-1','ring-green-500/50')" @dragleave="$el.classList.remove('ring-1','ring-green-500/50')" @drop.prevent="$el.classList.remove('ring-1','ring-green-500/50'); handleImageDrop($event)"><textarea x-model="chatInput" x-ref="chatTextarea" @input="$el.style.height = 'auto'; $el.style.height = Math.min($el.scrollHeight, 200) + 'px'" @keydown.enter.prevent="if(!$event.shiftKey && !$event.isComposing) { sendMessage(); $el.style.height = 'auto'; }" @paste="handleImagePaste($event)" :placeholder="t('chat_placeholder')" rows="1" style="min-height:32px;max-height:200px;overflow-y:auto" class="flex-1 bg-transparent resize-none outline-none text-slate-100 placeholder-slate-600 text-sm px-2 py-1 leading-relaxed" :disabled="isRunning || !gatewayConnected"></textarea><div class="flex flex-col gap-1.5 flex-shrink-0"><button @click="sendMessage()" :disabled="(!chatInput.trim() && pendingImages.length === 0) || isRunning || !gatewayConnected" class="px-4 py-1.5 rounded text-xs font-semibold transition-all" :class="(chatInput.trim() || pendingImages.length > 0) && !isRunning && gatewayConnected
+                  ]" x-html="msg.role !== 'user' ? renderMarkdown(msg.content || (msg.streaming && !msg.isThinking ? '' : (msg.content ? '' : '—'))) : (msg.content || '')"></div></div><span x-show="msg.role === 'user'" class="flex-shrink-0 w-7 h-7 rounded-full bg-blue-900 border border-blue-700 flex items-center justify-center text-sm self-end mb-1">👤</span></div></div></template><div class="sticky bottom-0 mt-auto pt-2 bg-slate-900"><div class="bg-slate-800 rounded-lg border border-slate-700 flex flex-col gap-1.5 p-2"><div class="flex items-center gap-2 px-1"><span class="text-xs text-slate-500" x-text="t('model_selector_label')"></span> <select x-model="selectedProvider" class="bg-slate-700 text-slate-200 text-xs rounded px-2 py-0.5 border border-slate-600 outline-none" :disabled="isRunning"><option value="" x-text="t('model_auto')"></option><template x-for="p in availableProviders" :key="p.id"><option :value="p.id" x-text="p.label"></option></template></select> <span x-show="selectedProvider" class="text-xs text-green-500/70">●</span></div><div x-show="pendingImages.length > 0" class="flex gap-2 px-1 flex-wrap"><template x-for="(img, idx) in pendingImages" :key="idx"><div class="relative group w-12 h-12 flex-shrink-0 rounded overflow-hidden border border-slate-600"><img :src="img" class="w-full h-full object-cover"/> <button @click="pendingImages.splice(idx, 1)" class="absolute top-0 right-0 bg-red-900/80 text-red-200 text-xs w-4 h-4 flex items-center justify-center rounded-bl opacity-0 group-hover:opacity-100 transition-opacity">✕</button></div></template></div><div class="flex items-end gap-2" @dragover.prevent="$el.classList.add('ring-1','ring-green-500/50')" @dragleave="$el.classList.remove('ring-1','ring-green-500/50')" @drop.prevent="$el.classList.remove('ring-1','ring-green-500/50'); handleImageDrop($event)"><button @click="$refs.fileInput.click()" class="p-2 mb-0.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-lg transition-colors shadow-sm border border-slate-700 flex-shrink-0" title="上传文件 (支持图片、代码、文本、PDF、Office文档等)"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg></button> <input type="file" x-ref="fileInput" class="hidden" multiple="multiple" @change="handleFileInput($event)"/> <textarea x-model="chatInput" x-ref="chatTextarea" @input="$el.style.height = 'auto'; $el.style.height = Math.min($el.scrollHeight, 200) + 'px'" @keydown.enter.prevent="if(!$event.shiftKey && !$event.isComposing) { sendMessage(); $el.style.height = 'auto'; }" @paste="handleImagePaste($event)" :placeholder="t('chat_placeholder')" rows="1" style="min-height:32px;max-height:200px;overflow-y:auto" class="flex-1 bg-transparent resize-none outline-none text-slate-100 placeholder-slate-600 text-sm px-2 py-1 leading-relaxed" :disabled="isRunning || !gatewayConnected"></textarea><div class="flex flex-col gap-1.5 flex-shrink-0"><button @click="sendMessage()" :disabled="(!chatInput.trim() && pendingImages.length === 0) || isRunning || !gatewayConnected" class="px-4 py-1.5 rounded text-xs font-semibold transition-all" :class="(chatInput.trim() || pendingImages.length > 0) && !isRunning && gatewayConnected
                         ? 'bg-green-600 hover:bg-green-500 text-white cursor-pointer'
                         : 'bg-slate-700 text-slate-500 cursor-not-allowed'"><span x-text="isRunning ? t('running') : t('send')"></span></button> <button x-show="isRunning" @click="showStopConfirm = true" class="px-4 py-1.5 rounded text-xs font-semibold bg-red-900 hover:bg-red-800 text-red-200 cursor-pointer transition-all" x-text="t('stop')"></button></div></div></div></div></div></div></div><div x-show="activeTab === 'downloader'" class="flex-1 overflow-hidden flex flex-col min-h-0 bg-slate-950"><div class="flex-none border-b border-slate-700/80 px-4 py-2.5 bg-slate-800/90 flex items-center justify-between gap-3 shadow-md"><div class="flex items-center gap-2"><span class="text-base">⬇️</span> <span class="text-xs font-bold text-slate-200" x-text="t('tab_downloader')"></span> <span class="text-[10px] text-slate-500 hidden sm:inline" x-text="'— ' + t('downloader_desc')"></span></div><div class="flex items-center gap-2"><a :href="getAriaNgUrl()" target="_blank" class="text-[11px] text-blue-400 hover:text-blue-300 transition-colors px-2.5 py-1 rounded border border-blue-900/40 hover:border-blue-700 bg-blue-950/20 flex items-center gap-1 cursor-pointer font-medium active:scale-95"><span>🔗</span> <span x-text="t('open_new_window')"></span></a></div></div><div class="flex-1 w-full h-full relative bg-slate-900/40 flex flex-col"><div x-show="aria2Status === null || aria2Status === 'checking'" class="flex flex-col items-center justify-center flex-1 gap-3 text-slate-400 text-sm"><span class="animate-pulse text-2xl">⬇️</span> <span x-text="t('aria2_checking')"></span></div><iframe x-show="aria2Status === 'running'" :src="aria2Status === 'running' ? getAriaNgUrl() : 'about:blank'" class="w-full h-full border-none bg-slate-950 flex-1" allow="clipboard-read; clipboard-write" style="min-height:450px"></iframe><div x-show="aria2Status === 'stopped' || aria2Status === 'not_installed'" class="flex flex-col items-center justify-center flex-1 gap-4 text-center px-8 py-12"><div class="text-5xl">⬇️</div><div class="text-slate-200 font-semibold text-base" x-text="t('aria2_not_running_title')"></div><div class="text-slate-400 text-xs max-w-md leading-relaxed" x-text="t('aria2_not_running_desc')"></div><div x-show="aria2Status === 'not_installed' && aria2Error" class="text-red-300 text-xs bg-red-950/40 border border-red-900/50 rounded px-3 py-2 max-w-md" x-text="aria2Error"></div><div class="flex flex-wrap gap-2 justify-center mt-1"><button @click="startAria2()" x-show="aria2Status !== 'not_installed'" class="text-xs px-4 py-1.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white rounded font-semibold transition-all cursor-pointer" x-text="t('aria2_start')"></button> <button @click="checkAria2Status()" class="text-xs px-4 py-1.5 bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-200 rounded font-semibold transition-all cursor-pointer" x-text="t('aria2_retry')"></button></div><div class="text-slate-500 text-xs mt-2 leading-relaxed"><span x-text="t('aria2_install_hint')"></span> <code class="bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded mx-1">winget install aria2</code> <span x-text="t('aria2_install_or')"></span> <a href="https://aria2.github.io/" target="_blank" class="text-blue-400 hover:underline ml-1">aria2.github.io</a></div></div></div></div><div x-show="activeTab === 'skills'" x-init="if(activeTab === 'skills') { fetchSkills(); fetchMarketSkills(); }" class="flex-1 overflow-hidden flex flex-col min-h-0"><div class="flex-none border-b border-slate-700 px-4 py-2 bg-slate-800 flex items-center justify-between gap-3"><div class="flex items-center gap-3"><span class="text-sm font-semibold text-slate-300">🧩 <span x-text="t('skill_center')"></span></span><div class="flex bg-slate-900 rounded p-0.5 border border-slate-700"><button @click="skillsTab = 'local'" class="text-xs px-2.5 py-1 rounded font-semibold transition-all cursor-pointer" :class="skillsTab === 'local' ? 'bg-slate-700 text-slate-100 shadow' : 'text-slate-400 hover:text-slate-200'"><span x-text="t('local_installed')"></span></button> <button @click="skillsTab = 'market'" class="text-xs px-2.5 py-1 rounded font-semibold transition-all flex items-center gap-1 cursor-pointer" :class="skillsTab === 'market' ? 'bg-slate-700 text-slate-100 shadow' : 'text-slate-400 hover:text-slate-200'">☁️ <span x-text="t('skill_market')"></span></button> <button @click="skillsTab = 'mcp'; fetchMcpMarket()" class="text-xs px-2.5 py-1 rounded font-semibold transition-all flex items-center gap-1 cursor-pointer" :class="skillsTab === 'mcp' ? 'bg-slate-700 text-slate-100 shadow' : 'text-slate-400 hover:text-slate-200'">🔌 <span x-text="t('mcp_market')"></span></button> <button @click="skillsTab = 'config'" class="text-xs px-2.5 py-1 rounded font-semibold transition-all flex items-center gap-1 cursor-pointer" :class="skillsTab === 'config' ? 'bg-slate-700 text-slate-100 shadow' : 'text-slate-400 hover:text-slate-200'">⚙️ <span x-text="t('skill_config_tab')"></span></button></div></div><div class="flex items-center gap-2"><template x-if="skillsTab === 'local'"><div class="flex items-center gap-2"><span class="text-xs text-slate-500" x-text="skillsList.length + ' ' + t('skills_installed')"></span> <button @click="fetchSkills()" class="text-xs text-slate-400 hover:text-slate-200 px-2 py-1 rounded border border-slate-600 hover:border-slate-400 transition-colors cursor-pointer">↻ <span x-text="t('refresh')"></span></button> <button @click="reloadSkills()" class="text-xs text-green-500 hover:text-green-400 px-2 py-1 rounded border border-green-700 hover:border-green-500 transition-colors cursor-pointer"><span x-text="t('hot_reload')"></span></button></div></template><template x-if="skillsTab === 'market'"><div class="flex items-center gap-2"><span class="text-xs text-blue-400 px-2 py-0.5 rounded bg-blue-900/30 border border-blue-800/50" x-text="t('skill_registry')"></span> <button @click="fetchMarketSkills()" class="text-xs text-slate-400 hover:text-slate-200 px-2 py-1 rounded border border-slate-600 hover:border-slate-400 transition-colors cursor-pointer">↻ <span x-text="t('sync_market')"></span></button></div></template><template x-if="skillsTab === 'mcp'"><div class="flex items-center gap-2"><span class="text-xs text-purple-400 px-2 py-0.5 rounded bg-purple-900/30 border border-purple-800/50" x-text="t('mcp_registry')"></span> <button @click="fetchMcpMarket()" class="text-xs text-slate-400 hover:text-slate-200 px-2 py-1 rounded border border-slate-600 hover:border-slate-400 transition-colors cursor-pointer">↻ <span x-text="t('sync_market')"></span></button></div></template><template x-if="skillsTab === 'config'"><div></div></template></div></div><div x-show="skillsTab !== 'config'" class="flex-1 overflow-y-auto p-4"><div x-show="skillsTab === 'local'"><div x-show="skillsLoading" class="flex items-center justify-center h-32 text-slate-500"><span class="animate-pulse" x-text="t('loading_skills')"></span></div><div x-show="!skillsLoading && skillsList.length === 0" class="flex flex-col items-center justify-center h-32 text-slate-600 gap-2"><span class="text-3xl">🧩</span> <span class="text-sm" x-text="t('no_skills_found')"></span></div><div x-show="!skillsLoading && skillsList.length > 0" class="space-y-8"><template x-for="group in [
               { type: 'community', icon: '☁️', titleKey: 'installed_market_skills', descKey: 'installed_market_skills_desc' },
@@ -3236,6 +3236,15 @@
       }
     },
 
+    _readFileAsText(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsText(file);
+      });
+    },
+
     _readFileAsDataURL(file) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -3245,24 +3254,77 @@
       });
     },
 
-    async handleImageDrop(event) {
-      const files = Array.from(event.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+    async handleFileInput(event) {
+      const files = Array.from(event.target.files || []);
+      await this._processDroppedFiles(files);
+      event.target.value = '';
+    },
+
+    async _processDroppedFiles(files) {
+      const textExtensions = ['.txt', '.md', '.csv', '.json', '.py', '.js', '.html', '.css', '.log', '.yaml', '.yml'];
       for (const file of files) {
-        const dataUrl = await this._readFileAsDataURL(file);
-        this.pendingImages.push(dataUrl);
+        if (file.type.startsWith('image/')) {
+          const dataUrl = await this._readFileAsDataURL(file);
+          this.pendingImages.push(dataUrl);
+        } else {
+          // Check if it's a known text file type
+          const isText = textExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+          
+          if (isText) {
+            try {
+              const text = await this._readFileAsText(file);
+              const prefix = this.chatInput ? '\n\n' : '';
+              this.chatInput += `${prefix}--- File: ${file.name} ---\n${text}\n--- End of ${file.name} ---\n`;
+            } catch(e) {
+              this.addToast('Error', `Failed to read ${file.name}`, 'error');
+            }
+          } else {
+            // Upload binary file (PDF, DOCX, etc.) to server
+            try {
+              const formData = new FormData();
+              formData.append('file', file);
+              
+              const headers = {};
+              if (this._wsToken) headers['X-API-Key'] = this._wsToken;
+              
+              const res = await fetch('/api/upload', {
+                method: 'POST',
+                headers: headers,
+                body: formData
+              });
+              
+              const data = await res.json();
+              if (data.ok) {
+                const prefix = this.chatInput ? '\n\n' : '';
+                this.chatInput += `${prefix}[用户上传了文件: ${data.filename}，已保存至 ${data.file_path}，请使用代码或工具读取分析]`;
+                this.addToast('Uploaded', `${file.name} uploaded successfully`, 'info');
+              } else {
+                this.addToast('Upload Failed', data.error || 'Unknown error', 'error');
+              }
+            } catch(e) {
+              this.addToast('Upload Error', e.message, 'error');
+            }
+          }
+        }
       }
+    },
+
+    async handleImageDrop(event) {
+      const files = Array.from(event.dataTransfer.files);
+      await this._processDroppedFiles(files);
     },
 
     async handleImagePaste(event) {
       const items = Array.from(event.clipboardData?.items || []);
+      const files = [];
       for (const item of items) {
-        if (item.type.startsWith('image/')) {
+        if (item.kind === 'file') {
           const file = item.getAsFile();
-          if (file) {
-            const dataUrl = await this._readFileAsDataURL(file);
-            this.pendingImages.push(dataUrl);
-          }
+          if (file) files.push(file);
         }
+      }
+      if (files.length > 0) {
+        await this._processDroppedFiles(files);
       }
     },
 
@@ -4022,15 +4084,26 @@
       if (!text) return '';
       if (typeof marked !== 'undefined') {
         if (!this._markedInit) {
-          marked.setOptions({
-            breaks: true,
-            highlight: function(code, lang) {
-              if (typeof hljs !== 'undefined') {
-                const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-                return hljs.highlight(code, { language }).value;
-              }
-              return code;
+          const renderer = new marked.Renderer();
+          renderer.code = function(code, language) {
+            let validLang = 'plaintext';
+            if (typeof hljs !== 'undefined') {
+              const langMatch = (language || '').match(/\\S*/);
+              const lang = (langMatch && langMatch[0]) || 'plaintext';
+              validLang = hljs.getLanguage(lang) ? lang : 'plaintext';
             }
+            const highlighted = typeof hljs !== 'undefined' ? hljs.highlight(code, { language: validLang }).value : (code.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+            
+            const lines = code.split('\\n').length;
+            if (lines > 15) {
+              return `<div class="code-collapse-wrapper collapsed"><pre><code class="hljs ${validLang}">${highlighted}</code></pre><div class="code-collapse-overlay"><button type="button" class="code-collapse-btn">展开所有代码 / Show All</button></div></div>`;
+            }
+            return `<pre><code class="hljs ${validLang}">${highlighted}</code></pre>`;
+          };
+          
+          marked.setOptions({
+            renderer,
+            breaks: true
           });
           this._markedInit = true;
         }
@@ -4073,6 +4146,17 @@
       return { done:'bg-green-900 text-green-300', error:'bg-red-900 text-red-300',
                running:'bg-yellow-900 text-yellow-300', info:'bg-slate-700 text-slate-400' }[s]
              || 'bg-slate-700 text-slate-400';
+    },
+
+    handleChatClick(e) {
+      const btn = e.target.closest('.code-collapse-btn');
+      if (btn) {
+        const wrapper = btn.closest('.code-collapse-wrapper');
+        if (wrapper) {
+          wrapper.classList.toggle('collapsed');
+          btn.innerText = wrapper.classList.contains('collapsed') ? '展开所有代码 / Show All' : '折叠代码 / Collapse';
+        }
+      }
     },
 
     stepCardBorder(step) {

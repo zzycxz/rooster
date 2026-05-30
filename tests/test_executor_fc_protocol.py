@@ -47,9 +47,7 @@ class TestFCProtocolMessageOrder:
         msg = {
             "role": "assistant",
             "content": "Let me check that.",
-            "tool_calls": [
-                {"id": "call_1", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}
-            ],
+            "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}],
         }
         assert msg["role"] == "assistant"
         assert "tool_calls" in msg
@@ -153,7 +151,9 @@ class TestFCProtocolMessageOrder:
                 while j < len(history) and history[j]["role"] == "tool":
                     found_ids.add(history[j]["tool_call_id"])
                     j += 1
-                assert found_ids == tool_ids, f"Not all parallel tool results found: expected {tool_ids}, got {found_ids}"
+                assert found_ids == tool_ids, (
+                    f"Not all parallel tool results found: expected {tool_ids}, got {found_ids}"
+                )
                 # Next should be assistant
                 assert history[j]["role"] == "assistant"
 
@@ -181,7 +181,11 @@ class TestExecutorComposeMessages:
         # Blackboard before user_input
         assert messages[3]["role"] == "user"
         assert messages[3].get("_internal") is True
-        assert "blackboard" in messages[3]["content"].lower() or "context" in messages[3]["content"].lower() or "Task context" in messages[3]["content"]
+        assert (
+            "blackboard" in messages[3]["content"].lower()
+            or "context" in messages[3]["content"].lower()
+            or "Task context" in messages[3]["content"]
+        )
         # User input last
         assert messages[4]["role"] == "user"
         assert "do something" in messages[4]["content"]

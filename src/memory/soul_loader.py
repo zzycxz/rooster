@@ -22,14 +22,12 @@ class SoulLoader:
     - 精简结果直接写回原文件（原子覆盖），不影响本次注入（仍注入原文）。
     """
 
-    def __init__(
-        self, rooster_dir: str = "", prompts_dir: str = "", llm_client=None, model: str = ""
-    ):
+    def __init__(self, rooster_dir: str = "", prompts_dir: str = "", llm_client=None, model: str = ""):
         # 使用 __file__ 推导绝对路径，避免因启动目录(CWD)不同导致路径错乱 bug
         # __file__ = rooster/src/memory/soul_loader.py
         # 上一级 = rooster/src/memory/ → 上两级 = rooster/src/ → 上三级 = rooster/（项目根）
-        _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # rooster/src/
-        _project_root = os.path.dirname(_src_dir)                                # rooster/
+        _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # rooster/src/
+        _project_root = os.path.dirname(_src_dir)  # rooster/
         self.rooster_dir = os.path.abspath(rooster_dir) if rooster_dir else os.path.join(_project_root, ".rooster")
         self.prompts_dir = os.path.abspath(prompts_dir) if prompts_dir else os.path.join(_src_dir, "prompts")
         self.soul_path = os.path.join(self.rooster_dir, "SOUL.md")

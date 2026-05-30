@@ -81,8 +81,9 @@ class PythonInterpreterTool(BaseTool):
 
     async def _run_local(self, code: str) -> str:
         """Local subprocess execution, no Docker overhead."""
-        from utils.config import RuntimeConfig
-        timeout_sec = RuntimeConfig.INTERPRETER_TIMEOUT_SECONDS
+        from utils.config import settings
+
+        timeout_sec = getattr(settings, "INTERPRETER_TIMEOUT_SECONDS", 120.0)
 
         with tempfile.NamedTemporaryFile(
             suffix=".py", mode="w", encoding="utf-8", delete=False, dir=tempfile.gettempdir()
@@ -126,8 +127,9 @@ class PythonInterpreterTool(BaseTool):
 
     async def _run_e2b(self, code: str) -> str:
         """E2B 云端沙箱执行，带超时保护。"""
-        from utils.config import RuntimeConfig
-        timeout_sec = RuntimeConfig.INTERPRETER_TIMEOUT_SECONDS
+        from utils.config import settings
+
+        timeout_sec = getattr(settings, "INTERPRETER_TIMEOUT_SECONDS", 120.0)
 
         api_key = os.getenv("E2B_API_KEY")
         if not api_key:

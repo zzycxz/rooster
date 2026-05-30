@@ -83,7 +83,11 @@ class ToolRegistry:
         """
         [RSA] 根据职能域 (Domain) 提取工具列表，用于向对应角色按需注入。
         """
-        return [tool.get_schema() for tool in self._tools.values() if getattr(tool, "domain", "general") == domain and not getattr(tool, "fc_hidden", False)]
+        return [
+            tool.get_schema()
+            for tool in self._tools.values()
+            if getattr(tool, "domain", "general") == domain and not getattr(tool, "fc_hidden", False)
+        ]
 
     def get_kit_names(self) -> List[str]:
         """Return deduplicated, sorted list of Kit names from all registered tools.

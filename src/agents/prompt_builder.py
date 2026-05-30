@@ -35,7 +35,7 @@ class PromptBuilder:
         # SkillLoader 同样用 __file__ 推导，避免 CWD 敏感
         # skills/ 目录在项目根（rooster/skills/），需要从 src/ 再往上一级
         _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # rooster/src/
-        _project_root = os.path.dirname(_src_dir)                               # rooster/
+        _project_root = os.path.dirname(_src_dir)  # rooster/
         self.skill_loader = SkillLoader(skills_dir=os.path.join(_project_root, "skills"))
 
     def build_system_prompt(self, params: SystemPromptParams) -> str:
@@ -191,14 +191,15 @@ class PromptBuilder:
         # 添加当前用户输入，用分隔标记强调优先级
         # Add current user input with delimiter for priority emphasis
         if user_input:
-            messages.append({
-                "role": "user",
-                "content": (
-                    "═══════════════════════════════════════\n"
-                    "【当前任务】以下是你现在需要完成的任务，优先级高于上方所有历史上下文。\n"
-                    "═══════════════════════════════════════\n\n"
-                    + user_input
-                ),
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "═══════════════════════════════════════\n"
+                        "【当前任务】以下是你现在需要完成的任务，优先级高于上方所有历史上下文。\n"
+                        "═══════════════════════════════════════\n\n" + user_input
+                    ),
+                }
+            )
 
         return messages

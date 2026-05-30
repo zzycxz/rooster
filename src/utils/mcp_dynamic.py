@@ -197,9 +197,10 @@ async def _fetch_tool_list(client, url: str) -> List[Dict[str, Any]]:
                     for line in resp.text.split("\n"):
                         line = line.strip()
                         if line.startswith("data:"):
-                            payload = line[len("data:"):].strip()
+                            payload = line[len("data:") :].strip()
                             if payload:
                                 import json as _json
+
                                 data = _json.loads(payload)
                                 break
                 else:

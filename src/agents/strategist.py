@@ -67,7 +67,9 @@ class Strategist:
         # Assemble five-layer Prompt
         # 使用 __file__ 构建绝对路径，避免因 CWD 不同导致 src/src/prompts 双层路径 bug
         _prompts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
-        _strategist_prompt = "strategist.md" if os.path.exists(os.path.join(_prompts_dir, "strategist.md")) else "base.md"
+        _strategist_prompt = (
+            "strategist.md" if os.path.exists(os.path.join(_prompts_dir, "strategist.md")) else "base.md"
+        )
         system_prompt = soul_loader.build_system_prompt(
             base_prompt_name=_strategist_prompt,
             ltm_context=ltm_context,
@@ -194,7 +196,9 @@ class Strategist:
         # 组装五层 Prompt
         # 使用 __file__ 构建绝对路径，避免因 CWD 不同导致 src/src/prompts 双层路径 bug
         _prompts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
-        _strategist_prompt = "strategist.md" if os.path.exists(os.path.join(_prompts_dir, "strategist.md")) else "base.md"
+        _strategist_prompt = (
+            "strategist.md" if os.path.exists(os.path.join(_prompts_dir, "strategist.md")) else "base.md"
+        )
         system_prompt = soul_loader.build_system_prompt(
             base_prompt_name=_strategist_prompt,
             ltm_context=ltm_context,
@@ -218,71 +222,71 @@ class Strategist:
 
         try:
             async with asyncio.timeout(settings.STRATEGIST_LLM_TIMEOUT):
-              async for delta in self.llm_client.chat_stream(
-                messages=messages, model=settings.STRATEGIST_MODEL_NAME, temperature=0.1, max_tokens=32768
-            ):
-                if delta.content:
-                    full_content += delta.content
+                async for delta in self.llm_client.chat_stream(
+                    messages=messages, model=settings.STRATEGIST_MODEL_NAME, temperature=0.1, max_tokens=32768
+                ):
+                    if delta.content:
+                        full_content += delta.content
 
-                    # 使用正则灵活匹配 "subtasks" 的键名及后面的冒号（兼容所有空格抖动）
-                    # Flexibly match "subtasks" key name and colon with regex (tolerant of whitespace jitter)
-                    match = re.search(r'"subtasks"\s*:\s*(.*)', full_content, re.DOTALL | re.IGNORECASE)
-                    if match:
-                        try:
-                            # 提取 subtasks 数组之后的部分
-                            # Extract the part after subtasks array
-                            subtasks_part = match.group(1)
+                        # 使用正则灵活匹配 "subtasks" 的键名及后面的冒号（兼容所有空格抖动）
+                        # Flexibly match "subtasks" key name and colon with regex (tolerant of whitespace jitter)
+                        match = re.search(r'"subtasks"\s*:\s*(.*)', full_content, re.DOTALL | re.IGNORECASE)
+                        if match:
+                            try:
+                                # 提取 subtasks 数组之后的部分
+                                # Extract the part after subtasks array
+                                subtasks_part = match.group(1)
 
-                            # 查找完整的 JSON 对象 { ... }
-                            # Find complete JSON object { ... }
-                            depth = 0
-                            start_idx = -1
-                            for i, char in enumerate(subtasks_part):
-                                if char == "{":
-                                    if depth == 0:
-                                        start_idx = i
-                                    depth += 1
-                                elif char == "}":
-                                    depth -= 1
-                                    if depth == 0 and start_idx != -1:
-                                        obj_str = subtasks_part[start_idx : i + 1].strip()
-                                        try:
-                                            task_data = json.loads(obj_str)
-                                            # --- Pydantic 宽容构造 [DAY 5 NEW] ---
-                                            # --- Pydantic tolerant construction [DAY 5 NEW] ---
-                                            t_id = task_data.get("id", f"ST{len(yielded_ids) + 1}")
-                                            instr = task_data.get("instruction", "").strip()
+                                # 查找完整的 JSON 对象 { ... }
+                                # Find complete JSON object { ... }
+                                depth = 0
+                                start_idx = -1
+                                for i, char in enumerate(subtasks_part):
+                                    if char == "{":
+                                        if depth == 0:
+                                            start_idx = i
+                                        depth += 1
+                                    elif char == "}":
+                                        depth -= 1
+                                        if depth == 0 and start_idx != -1:
+                                            obj_str = subtasks_part[start_idx : i + 1].strip()
+                                            try:
+                                                task_data = json.loads(obj_str)
+                                                # --- Pydantic 宽容构造 [DAY 5 NEW] ---
+                                                # --- Pydantic tolerant construction [DAY 5 NEW] ---
+                                                t_id = task_data.get("id", f"ST{len(yielded_ids) + 1}")
+                                                instr = task_data.get("instruction", "").strip()
 
-                                            # 严格校验：ID 存在、未重复、且指令不是占位符
-                                            # Strict validation: ID exists, not duplicate, instruction not a placeholder
-                                            if t_id not in yielded_ids and instr and len(instr) > 5:
-                                                # [V10.0] phase 由 DAG 拓扑推导，忽略 LLM 输出
-                                                task_data.pop("phase", None)
-                                                task_data.update(
-                                                    {
-                                                        "id": t_id,
-                                                        "instruction": instr,
-                                                        "domain": "UI"
-                                                        if task_data.get("domain") == "COMBAT"
-                                                        else task_data.get("domain", "SYSTEM"),
-                                                        "tool": task_data.get("tool", "system_tool"),
-                                                        "depends_on": task_data.get("depends_on", []),
-                                                        "on_failure": task_data.get("on_failure", "RETRY"),
-                                                        "requires_confirm": task_data.get("requires_confirm", False),
-                                                        "timeout": task_data.get("timeout", 120),
-                                                    }
-                                                )
-                                                yield SubTask(**task_data)
-                                                yielded_ids.add(t_id)
-                                        except Exception as te:
-                                            logger.debug(f"⚠️ [Strategist] 解析单个子任务失败: {te}")
-                                            continue
-                        except Exception:
-                            continue
+                                                # 严格校验：ID 存在、未重复、且指令不是占位符
+                                                # Strict validation: ID exists, not duplicate, instruction not a placeholder
+                                                if t_id not in yielded_ids and instr and len(instr) > 5:
+                                                    # [V10.0] phase 由 DAG 拓扑推导，忽略 LLM 输出
+                                                    task_data.pop("phase", None)
+                                                    task_data.update(
+                                                        {
+                                                            "id": t_id,
+                                                            "instruction": instr,
+                                                            "domain": "UI"
+                                                            if task_data.get("domain") == "COMBAT"
+                                                            else task_data.get("domain", "SYSTEM"),
+                                                            "tool": task_data.get("tool", "system_tool"),
+                                                            "depends_on": task_data.get("depends_on", []),
+                                                            "on_failure": task_data.get("on_failure", "RETRY"),
+                                                            "requires_confirm": task_data.get(
+                                                                "requires_confirm", False
+                                                            ),
+                                                            "timeout": task_data.get("timeout", 120),
+                                                        }
+                                                    )
+                                                    yield SubTask(**task_data)
+                                                    yielded_ids.add(t_id)
+                                            except Exception as te:
+                                                logger.debug(f"⚠️ [Strategist] 解析单个子任务失败: {te}")
+                                                continue
+                            except Exception:
+                                continue
         except asyncio.TimeoutError:
-            logger.error(
-                f"❌ [Strategist] plan_stream() 超时 ({settings.STRATEGIST_LLM_TIMEOUT:.0f}s)，降级 FAILSAFE"
-            )
+            logger.error(f"❌ [Strategist] plan_stream() 超时 ({settings.STRATEGIST_LLM_TIMEOUT:.0f}s)，降级 FAILSAFE")
         except Exception as e:
             logger.error(f"❌ [Strategist] 流式规划异常: {e}")
 
@@ -475,7 +479,9 @@ class Strategist:
             raise Exception("重规划超时，维持原计划")
 
         except Exception as e:
-            raw_snippet = response.content[:100] if response is not None and hasattr(response, "content") else "<no response>"
+            raw_snippet = (
+                response.content[:100] if response is not None and hasattr(response, "content") else "<no response>"
+            )
             logger.error(f"❌ [Strategist] 重规划崩盘 (Raw: {raw_snippet}...): {e}")
             # FAILSAFE: 降级为原始目标的单任务方案，而不是直接崩溃
             logger.warning("⚠️ [Strategist] replan FAILSAFE: 降级为单任务执行原始目标")
@@ -488,11 +494,13 @@ class Strategist:
                 replan_count=current_plan.replan_count + 1,
                 max_replan=current_plan.max_replan,
                 replan_history=current_plan.replan_history,
-                subtasks=[SubTask(
-                    id="FAILSAFE",
-                    instruction=target_goal,
-                    domain="SYSTEM",
-                    tool="system_fallback",
-                    on_failure="RETRY",
-                )],
+                subtasks=[
+                    SubTask(
+                        id="FAILSAFE",
+                        instruction=target_goal,
+                        domain="SYSTEM",
+                        tool="system_fallback",
+                        on_failure="RETRY",
+                    )
+                ],
             )
