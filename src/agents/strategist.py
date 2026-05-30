@@ -2,7 +2,7 @@
 import asyncio
 import json
 import logging
-from typing import List
+from typing import List, Optional
 from .llm_client import LLMClient
 from .protocol import MissionPlan, SubTask
 from utils.config import settings
@@ -175,7 +175,7 @@ class Strategist:
                 subtasks=[SubTask(id="FAILSAFE", instruction=user_request, domain="SYSTEM", tool="system_fallback")],
             )
 
-    async def plan_stream(self, user_request: str):
+    async def plan_stream(self, user_request: str, images: Optional[List[str]] = None):
         """
         [V8.0] 流式产生子任务：严格对齐 Domain-Tool 映射。
         """
@@ -202,9 +202,15 @@ class Strategist:
         )
         # --- [End Upgrade] ---
 
+        user_content = [{"type": "text", "text": f"User Request: {user_request}"}]
+        if images:
+            for b64 in images:
+                data_url = b64 if b64.startswith("data:") else f"data:image/png;base64,{b64}"
+                user_content.append({"type": "image_url", "image_url": {"url": data_url}})
+
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"User Request: {user_request}"},
+            {"role": "user", "content": user_content if images else f"User Request: {user_request}"},
         ]
 
         full_content = ""
