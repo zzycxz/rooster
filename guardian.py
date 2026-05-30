@@ -807,7 +807,6 @@ class Guardian:
         if not m:
             return False
         minute_f, hour_f, dom_f, month_f, dow_f = m.groups()
-        from datetime import timedelta as _td
 
         _gpm = Guardian._parse_cron_field
         minutes = _gpm(minute_f, range(0, 60))

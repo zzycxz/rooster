@@ -180,7 +180,7 @@ async def api_guardian_status():
             / ".rooster"
             / "guardian_status.json"
         )
-        if not status_path.exists():
+        if not status_path.exists() or status_path.stat().st_size == 0:
             return {"ok": True, "guardian": None, "message": "Guardian not running"}
         import json
 

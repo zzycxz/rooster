@@ -20,6 +20,20 @@ class ModelFactory:
     _instances = {}
 
     @classmethod
+    async def clear_instances(cls):
+        """清除并关闭所有缓存的客户端实例。常用于代理或配置变更后。"""
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("🧹 [ModelFactory] 正在清除并关闭所有已缓存的模型客户端实例...")
+        for cache_key, client in cls._instances.items():
+            try:
+                await client.close()
+            except Exception as e:
+                logger.warning(f"⚠️ [ModelFactory] 关闭客户端实例失败 ({cache_key}): {e}")
+        cls._instances.clear()
+        logger.info("✅ [ModelFactory] 模型客户端实例缓存已清空。")
+
+    @classmethod
     def _get_registry(cls) -> dict:
         """实时从 settings 构建注册表，不缓存。"""  # Build registry from settings in real-time, no caching
         return {

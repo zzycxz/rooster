@@ -45,9 +45,19 @@ class OpenAILikeClient(BaseModelClient):
         skip_proxy = any(np.strip() in host for np in no_proxy.split(",") if np.strip()) if no_proxy else False
         proxy_url = None if skip_proxy else (http_proxy if http_proxy else None)
 
-        # 设置 trust_env=False 防止 httpx 自动读取可能损坏的系统全局环境变量
         # Disable trust_env to prevent system proxy environment variables from hijacking the explicit proxy routing
-        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=45.0, proxy=proxy_url, trust_env=False)
+
+        # [Refined Timeout]
+        # connect/write/pool timeouts are short to fail fast if network is dead.
+        # read timeout is long (LLM_API_TIMEOUT) to allow long reasoning and slow generation.
+        # It resets on every chunk in stream mode.
+        timeout_config = httpx.Timeout(
+            getattr(settings, "LLM_API_TIMEOUT", 300.0), # read
+            connect=15.0,
+            write=30.0,
+            pool=15.0
+        )
+        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=timeout_config, proxy=proxy_url, trust_env=False)
 
     async def chat_stream(
         self, model: str, messages: List[Dict[str, Any]], **kwargs
@@ -161,7 +171,7 @@ class OpenAILikeClient(BaseModelClient):
                         logger.warning("⚠️ [OpenAILike] 流结束，但未产生任何有效 content。")
                 break  # 成功则跳出重试  # Exit retry loop on success
             except (httpx.NetworkError, httpx.TimeoutException) as e:
-                logger.error(f"🌐 [OpenAILike] 网络异常 (尝试 {attempt+1}/{MAX_RETRIES+1}): 请求 {self.base_url} 失败: {e}")
+                logger.error(f"🌐 [OpenAILike] 网络异常 [{type(e).__name__}] (尝试 {attempt+1}/{MAX_RETRIES+1}): 请求 {self.base_url} 失败: {e!r}")
                 if attempt < MAX_RETRIES and not yielded_any:
                     import asyncio
 
@@ -224,7 +234,7 @@ class OpenAILikeClient(BaseModelClient):
             except (httpx.NetworkError, httpx.TimeoutException) as e:
                 # [Fix] 严禁返回内容负载，必须抛出异常以触发 LLMClient 的 Failover 机制
                 # [Fix] Must raise exception to trigger LLMClient Failover, never return content payload
-                logger.error(f"🌐 [OpenAILike] 网络异常: {e}")
+                logger.error(f"🌐 [OpenAILike] 网络异常 [{type(e).__name__}]: 请求 {self.base_url} 失败: {e!r}")
                 raise e
             except Exception as e:
                 # 尝试打印出原始报文以便调试
@@ -246,7 +256,7 @@ class OpenAILikeClient(BaseModelClient):
                 content = None
             else:
                 content = raw_content or ""
-            
+
             if isinstance(content, str):
                 content = content.encode("utf-8", "ignore").decode("utf-8", "ignore")
             elif isinstance(content, list):
@@ -257,17 +267,17 @@ class OpenAILikeClient(BaseModelClient):
                         part["text"] = part["text"].encode("utf-8", "ignore").decode("utf-8", "ignore")
                     new_content.append(part)
                 content = new_content
-                
+
             new_msg = {**m}
             if content is not None:
                 new_msg["content"] = content
             else:
                 new_msg.pop("content", None)
-            
+
             # 兼容性处理：非 OpenAI 兼容端（如九天、GLM）若遇到 developer 角色可能报 400，自动降级为 system
             if new_msg.get("role") == "developer":
                 new_msg["role"] = "system"
-            
+
             new_msg.pop("reasoning_content", None)
             new_msg.pop("_internal", None)
             safe_msg.append(new_msg)

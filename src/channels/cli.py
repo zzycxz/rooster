@@ -293,16 +293,11 @@ class CLIChannel(BaseChannel):
 
     async def _handle_distill_command(self, parts: list):
         """手动触发记忆蒸馏: /distill [session_id]"""
-        from launcher import RoosterLauncher
 
         # 获取全局 launcher 实例中的调度器
         # 这里直接通过 import 获取，因为 launcher 是全局单例模式
         try:
-            from memory.distillation_scheduler import DistillationScheduler
-            from agents.router import Router
-
-            router = Router.get_instance()
-            # 从 router 所在的 launcher 获取 scheduler — 通过模块级变量
+            # 从 launcher 获取 scheduler — 通过模块级变量
             import launcher as _launcher_mod
 
             scheduler = getattr(_launcher_mod, "_global_distill_scheduler", None)

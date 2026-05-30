@@ -81,6 +81,9 @@ class PythonInterpreterTool(BaseTool):
 
     async def _run_local(self, code: str) -> str:
         """Local subprocess execution, no Docker overhead."""
+        from utils.config import RuntimeConfig
+        timeout_sec = RuntimeConfig.INTERPRETER_TIMEOUT_SECONDS
+
         with tempfile.NamedTemporaryFile(
             suffix=".py", mode="w", encoding="utf-8", delete=False, dir=tempfile.gettempdir()
         ) as tf:
@@ -103,11 +106,11 @@ class PythonInterpreterTool(BaseTool):
                 env=clean_env,
             )
             try:
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=45.0)
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_sec)
             except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()
-                return "Error: Python execution timed out (45s). Code may contain infinite loop."
+                return f"Error: Python execution timed out ({timeout_sec}s). Code may contain infinite loop."
 
             result = stdout.decode(encoding="utf-8", errors="replace")
             if stderr:
@@ -123,6 +126,9 @@ class PythonInterpreterTool(BaseTool):
 
     async def _run_e2b(self, code: str) -> str:
         """E2B 云端沙箱执行，带超时保护。"""
+        from utils.config import RuntimeConfig
+        timeout_sec = RuntimeConfig.INTERPRETER_TIMEOUT_SECONDS
+
         api_key = os.getenv("E2B_API_KEY")
         if not api_key:
             return "E2B error: E2B_API_KEY not set."
@@ -135,8 +141,8 @@ class PythonInterpreterTool(BaseTool):
                 return execution.text_output or "Execution successful (no output)."
 
         try:
-            return await asyncio.wait_for(asyncio.to_thread(execute_sync), timeout=90.0)
+            return await asyncio.wait_for(asyncio.to_thread(execute_sync), timeout=timeout_sec)
         except asyncio.TimeoutError:
-            return "Error: E2B execution timed out (90s)."
+            return f"Error: E2B execution timed out ({timeout_sec}s)."
         except Exception as e:
             return f"E2B execution failed: {e}"

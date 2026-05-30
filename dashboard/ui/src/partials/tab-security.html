@@ -1,6 +1,21 @@
     <!-- ╔══════════════════════════════╗ -->
     <!-- ║  TAB: SECURITY               ║ -->
     <!-- ╚══════════════════════════════╝ -->
+    <style>
+      .sec-tip { position: relative; }
+      .sec-tip .sec-tip-text {
+        visibility: hidden; opacity: 0;
+        position: absolute; z-index: 50; bottom: calc(100% + 6px); left: 50%;
+        transform: translateX(-50%);
+        min-width: 220px; max-width: 320px;
+        background: #1e293b; border: 1px solid #475569; border-radius: 8px;
+        padding: 8px 10px; color: #cbd5e1; font-size: 11px; line-height: 1.5;
+        box-shadow: 0 4px 16px rgba(0,0,0,.4);
+        pointer-events: none; transition: opacity .15s, visibility .15s;
+      }
+      .sec-tip:hover .sec-tip-text { visibility: visible; opacity: 1; }
+    </style>
+
     <div x-show="activeTab === 'security'" x-init="if(activeTab === 'security' && !securityConfigLoaded) loadSecurityConfig()" class="flex-1 overflow-y-auto p-4">
       <div class="max-w-4xl space-y-4">
         <div class="flex items-center justify-between">
@@ -18,18 +33,7 @@
           </button>
         </div>
 
-        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-2">
-          <div class="flex items-center gap-2 text-xs font-semibold text-slate-200">
-            <span>📌</span>
-            <span x-text="t('sec_effective_hint')"></span>
-          </div>
-          <div class="text-xs text-slate-300 leading-relaxed">
-            <div x-text=”t('sec_hint_1')”></div>
-            <div x-text="t('sec_hint_2')"></div>
-            <div x-text="t('sec_hint_3')"></div>
-          </div>
-        </div>
-
+        <!-- Status Cards -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div class="bg-slate-800 border border-slate-700 rounded-lg p-3">
             <div class="text-xs text-slate-400 mb-1" x-text="t('sec_gateway_protection')"></div>
@@ -41,87 +45,171 @@
           </div>
         </div>
 
-        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
-          <div class="text-xs font-semibold text-slate-300" x-text="t('sec_l0_title')"></div>
-          <div class="text-[11px] text-slate-500" x-text="t('sec_l0_goal')"></div>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <!-- Helper: field label with tooltip -->
+        <template id="sec-field-label">
+          <!-- not used as template; labels use inline markup below -->
+        </template>
+
+        <!-- L0: Perimeter -->
+        <div class="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
+          <div class="px-4 py-2.5 border-b border-slate-700">
+            <div class="text-xs font-semibold text-slate-200" x-text="t('sec_l0_title')"></div>
+            <div class="text-[11px] text-slate-500" x-text="t('sec_l0_goal')"></div>
+          </div>
+          <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
             <label class="space-y-1">
-              <span class="text-[11px] text-slate-400" x-text="t('sec_gateway_key_label')"></span>
+              <div class="flex items-center gap-1">
+                <span class="text-xs font-medium text-slate-300" x-text="t('sec_f_gateway_key')"></span>
+                <span class="sec-tip cursor-help">
+                  <span class="text-[10px] text-slate-500 bg-slate-700/60 rounded-full w-3.5 h-3.5 inline-flex items-center justify-center leading-none">i</span>
+                  <span class="sec-tip-text" x-text="t('sec_f_gateway_key_desc')"></span>
+                </span>
+                <span class="text-[10px] text-slate-600 ml-auto font-mono">GATEWAY_API_KEY</span>
+              </div>
               <input type="password" x-model="securityForm.GATEWAY_API_KEY" :placeholder="t('sec_enter_new_key')" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
             </label>
             <label class="space-y-1">
-              <span class="text-[11px] text-slate-400" x-text="t('sec_hmac_secret_label')"></span>
+              <div class="flex items-center gap-1">
+                <span class="text-xs font-medium text-slate-300" x-text="t('sec_f_hmac_secret')"></span>
+                <span class="sec-tip cursor-help">
+                  <span class="text-[10px] text-slate-500 bg-slate-700/60 rounded-full w-3.5 h-3.5 inline-flex items-center justify-center leading-none">i</span>
+                  <span class="sec-tip-text" x-text="t('sec_f_hmac_secret_desc')"></span>
+                </span>
+                <span class="text-[10px] text-slate-600 ml-auto font-mono">WEBHOOK_HMAC_SECRET</span>
+              </div>
               <input type="password" x-model="securityForm.WEBHOOK_HMAC_SECRET" :placeholder="t('sec_enter_new_hmac')" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
             </label>
           </div>
         </div>
 
-        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
-          <div class="text-xs font-semibold text-slate-300" x-text="t('sec_l1_title')"></div>
-          <div class=”text-[11px] text-slate-500” x-text=”t('sec_l1_goal')”></div>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label class="space-y-1">
-              <span class="text-[11px] text-slate-400">PERMISSION_POLICY</span>
-              <input x-model="securityForm.PERMISSION_POLICY" placeholder="balanced" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+        <!-- L1: Permissions -->
+        <div class="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
+          <div class="px-4 py-2.5 border-b border-slate-700">
+            <div class="text-xs font-semibold text-slate-200" x-text="t('sec_l1_title')"></div>
+            <div class="text-[11px] text-slate-500" x-text="t('sec_l1_goal')"></div>
+          </div>
+          <div class="p-4 space-y-4">
+            <label class="block space-y-1">
+              <div class="flex items-center gap-1">
+                <span class="text-xs font-medium text-slate-300" x-text="t('sec_f_policy')"></span>
+                <span class="sec-tip cursor-help">
+                  <span class="text-[10px] text-slate-500 bg-slate-700/60 rounded-full w-3.5 h-3.5 inline-flex items-center justify-center leading-none">i</span>
+                  <span class="sec-tip-text" x-text="t('sec_f_policy_desc')"></span>
+                </span>
+                <span class="text-[10px] text-slate-600 ml-auto font-mono">PERMISSION_POLICY</span>
+              </div>
+              <select x-model="securityForm.PERMISSION_POLICY" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+                <option value="open" x-text="t('sec_policy_open')"></option>
+                <option value="balanced" x-text="t('sec_policy_balanced')"></option>
+                <option value="strict" x-text="t('sec_policy_strict')"></option>
+              </select>
             </label>
-            <label class="space-y-1 md:col-span-2">
-              <span class="text-[11px] text-slate-400" x-text="t('sec_blocked_tools_label')"></span>
-              <input x-model="securityForm.BLOCKED_TOOLS" placeholder="shell_exec,file_delete" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
-            </label>
-            <label class="space-y-1 md:col-span-2">
-              <span class="text-[11px] text-slate-400" x-text="t('sec_allowed_tools_label')"></span>
-              <input x-model="securityForm.ALLOWED_TOOLS" placeholder="web_search,read_file" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
-            </label>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label class="space-y-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs font-medium text-slate-300" x-text="t('sec_f_blocked')"></span>
+                  <span class="sec-tip cursor-help">
+                    <span class="text-[10px] text-slate-500 bg-slate-700/60 rounded-full w-3.5 h-3.5 inline-flex items-center justify-center leading-none">i</span>
+                    <span class="sec-tip-text" x-text="t('sec_f_blocked_desc')"></span>
+                  </span>
+                  <span class="text-[10px] text-slate-600 ml-auto font-mono">BLOCKED_TOOLS</span>
+                </div>
+                <input x-model="securityForm.BLOCKED_TOOLS" placeholder="shell_exec,file_delete" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+              </label>
+              <label class="space-y-1">
+                <div class="flex items-center gap-1">
+                  <span class="text-xs font-medium text-slate-300" x-text="t('sec_f_allowed')"></span>
+                  <span class="sec-tip cursor-help">
+                    <span class="text-[10px] text-slate-500 bg-slate-700/60 rounded-full w-3.5 h-3.5 inline-flex items-center justify-center leading-none">i</span>
+                    <span class="sec-tip-text" x-text="t('sec_f_allowed_desc')"></span>
+                  </span>
+                  <span class="text-[10px] text-slate-600 ml-auto font-mono">ALLOWED_TOOLS</span>
+                </div>
+                <input x-model="securityForm.ALLOWED_TOOLS" placeholder="web_search,read_file" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+              </label>
+            </div>
           </div>
         </div>
 
-        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
-          <div class="text-xs font-semibold text-slate-300" x-text="t('sec_l2_title')"></div>
-          <div class=”text-[11px] text-slate-500” x-text=”t('sec_l2_goal')”></div>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label class="space-y-1 md:col-span-2">
-              <span class="text-[11px] text-slate-400">ALLOWED_PATHS</span>
+        <!-- L2: Sandbox -->
+        <div class="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
+          <div class="px-4 py-2.5 border-b border-slate-700">
+            <div class="text-xs font-semibold text-slate-200" x-text="t('sec_l2_title')"></div>
+            <div class="text-[11px] text-slate-500" x-text="t('sec_l2_goal')"></div>
+          </div>
+          <div class="p-4">
+            <label class="block space-y-1">
+              <div class="flex items-center gap-1">
+                <span class="text-xs font-medium text-slate-300" x-text="t('sec_f_paths')"></span>
+                <span class="sec-tip cursor-help">
+                  <span class="text-[10px] text-slate-500 bg-slate-700/60 rounded-full w-3.5 h-3.5 inline-flex items-center justify-center leading-none">i</span>
+                  <span class="sec-tip-text" x-text="t('sec_f_paths_desc')"></span>
+                </span>
+                <span class="text-[10px] text-slate-600 ml-auto font-mono">ALLOWED_PATHS</span>
+              </div>
               <input x-model="securityForm.ALLOWED_PATHS" placeholder="D:\\workspace,D:\\data" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
             </label>
           </div>
         </div>
 
-        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
-          <div class="text-xs font-semibold text-slate-300" x-text="t('sec_l3_title')"></div>
-          <div class="text-[11px] text-slate-500" x-text="t('sec_l3_goal')"></div>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <!-- L3: Resilience -->
+        <div class="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
+          <div class="px-4 py-2.5 border-b border-slate-700">
+            <div class="text-xs font-semibold text-slate-200" x-text="t('sec_l3_title')"></div>
+            <div class="text-[11px] text-slate-500" x-text="t('sec_l3_goal')"></div>
+          </div>
+          <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
             <label class="space-y-1">
-              <span class="text-[11px] text-slate-400">CHECKPOINT_ENABLED</span>
+              <div class="flex items-center gap-1">
+                <span class="text-xs font-medium text-slate-300" x-text="t('sec_f_checkpoint')"></span>
+                <span class="sec-tip cursor-help">
+                  <span class="text-[10px] text-slate-500 bg-slate-700/60 rounded-full w-3.5 h-3.5 inline-flex items-center justify-center leading-none">i</span>
+                  <span class="sec-tip-text" x-text="t('sec_f_checkpoint_desc')"></span>
+                </span>
+                <span class="text-[10px] text-slate-600 ml-auto font-mono">CHECKPOINT_ENABLED</span>
+              </div>
               <select x-model="securityForm.CHECKPOINT_ENABLED" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
-                <option value="true">true</option>
-                <option value="false">false</option>
-                <option value="True">True</option>
-                <option value="False">False</option>
+                <option value="true" x-text="t('enabled')"></option>
+                <option value="false" x-text="t('disabled_label')"></option>
+                <option value="True" x-text="t('enabled')"></option>
+                <option value="False" x-text="t('disabled_label')"></option>
               </select>
             </label>
             <label class="space-y-1">
-              <span class="text-[11px] text-slate-400">AUDIT_MAX_REMAND_RETRY</span>
+              <div class="flex items-center gap-1">
+                <span class="text-xs font-medium text-slate-300" x-text="t('sec_f_remand')"></span>
+                <span class="sec-tip cursor-help">
+                  <span class="text-[10px] text-slate-500 bg-slate-700/60 rounded-full w-3.5 h-3.5 inline-flex items-center justify-center leading-none">i</span>
+                  <span class="sec-tip-text" x-text="t('sec_f_remand_desc')"></span>
+                </span>
+                <span class="text-[10px] text-slate-600 ml-auto font-mono">AUDIT_MAX_REMAND_RETRY</span>
+              </div>
               <input x-model="securityForm.AUDIT_MAX_REMAND_RETRY" type="number" min="0" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
             </label>
             <label class="space-y-1">
-              <span class="text-[11px] text-slate-400">AGENT_STUCK_THRESHOLD</span>
+              <div class="flex items-center gap-1">
+                <span class="text-xs font-medium text-slate-300" x-text="t('sec_f_stuck')"></span>
+                <span class="sec-tip cursor-help">
+                  <span class="text-[10px] text-slate-500 bg-slate-700/60 rounded-full w-3.5 h-3.5 inline-flex items-center justify-center leading-none">i</span>
+                  <span class="sec-tip-text" x-text="t('sec_f_stuck_desc')"></span>
+                </span>
+                <span class="text-[10px] text-slate-600 ml-auto font-mono">AGENT_STUCK_THRESHOLD</span>
+              </div>
               <input x-model="securityForm.AGENT_STUCK_THRESHOLD" type="number" min="1" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
             </label>
             <label class="space-y-1">
-              <span class="text-[11px] text-slate-400">AGENT_MAX_STEPS</span>
+              <div class="flex items-center gap-1">
+                <span class="text-xs font-medium text-slate-300" x-text="t('sec_f_max_steps')"></span>
+                <span class="sec-tip cursor-help">
+                  <span class="text-[10px] text-slate-500 bg-slate-700/60 rounded-full w-3.5 h-3.5 inline-flex items-center justify-center leading-none">i</span>
+                  <span class="sec-tip-text" x-text="t('sec_f_max_steps_desc')"></span>
+                </span>
+                <span class="text-[10px] text-slate-600 ml-auto font-mono">AGENT_MAX_STEPS</span>
+              </div>
               <input x-model="securityForm.AGENT_MAX_STEPS" type="number" min="1" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
             </label>
           </div>
         </div>
 
-        <div class="bg-slate-900 border border-slate-700 rounded-lg p-4">
-          <div class="text-xs font-semibold text-slate-300 mb-2" x-text="t('sec_recommended_path')"></div>
-          <div class="text-[11px] text-slate-400 leading-relaxed space-y-1">
-            <div x-text="t('sec_step1')"></div>
-            <div x-text="t('sec_step2')"></div>
-            <div x-text="t('sec_step3')"></div>
-            <div x-text="t('sec_step4')"></div>
-          </div>
-        </div>
       </div>
     </div><!-- /security -->

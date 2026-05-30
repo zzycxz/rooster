@@ -60,9 +60,15 @@ def _atomic_write(path: str, content: str) -> None:
 async def api_memory_stats():
     try:
         from memory.manager import MemoryManager
+        import launcher as _launcher_mod
+
+        scheduler = getattr(_launcher_mod, "_global_distill_scheduler", None)
+        is_distilling = False
+        if scheduler:
+            is_distilling = len(scheduler._inflight) > 0
 
         mm = MemoryManager()
-        return {"ok": True, **mm.stats()}
+        return {"ok": True, "is_distilling": is_distilling, **mm.stats()}
     except Exception as exc:
         logger.exception("Failed to get memory stats")
         return {"ok": False, "error": str(exc)}
@@ -240,6 +246,7 @@ async def api_memory_distill(data: Dict[str, Any] = Body(default={})):
     """手动触发记忆蒸馏。Body: {"session_id": "xxx"} 或 {} 蒸馏全部。"""
     try:
         import launcher as _launcher_mod
+        import asyncio
 
         scheduler = getattr(_launcher_mod, "_global_distill_scheduler", None)
         if scheduler is None:
@@ -247,11 +254,11 @@ async def api_memory_distill(data: Dict[str, Any] = Body(default={})):
 
         session_id = data.get("session_id", "")
         if session_id:
-            ok = await scheduler.distill_now(session_id)
-            return {"ok": ok, "session_id": session_id}
+            asyncio.create_task(scheduler.distill_now(session_id))
+            return {"ok": True, "session_id": session_id, "message": "蒸馏任务已提交到后台运行"}
         else:
-            count = await scheduler.distill_all()
-            return {"ok": True, "distilled_count": count}
+            asyncio.create_task(scheduler.distill_all())
+            return {"ok": True, "message": "全局蒸馏任务已提交到后台运行"}
     except Exception as exc:
         logger.exception("Failed to trigger distillation")
         return {"ok": False, "error": str(exc)}

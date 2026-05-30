@@ -155,7 +155,7 @@ class Strategist:
                                 depends_on=t.get("depends_on", []),
                                 on_failure=t.get("on_failure", "RETRY"),
                                 requires_confirm=t.get("requires_confirm", False),
-                                timeout=t.get("timeout", 120),
+                                timeout=t.get("timeout", settings.SUBTASK_MIN_TIMEOUT),
                             )
                         )
                     return MissionPlan(
@@ -286,7 +286,7 @@ class Strategist:
             if full_content:
                 logger.warning(f"🔍 [Strategist 诊断] LLM 原始返回前 500 字符:\n{full_content[:500]}")
             else:
-                logger.warning(f"🔍 [Strategist 诊断] full_content 为空，LLM 可能未返回任何内容")
+                logger.warning("🔍 [Strategist 诊断] full_content 为空，LLM 可能未返回任何内容")
 
         # [DAY 5 Robust] 终极抢救机制：如果流式拆分完全失败，在流结束后使用全量正则进行静态强解析
         # [DAY 5 Robust] Ultimate rescue: if streaming split completely fails, use full regex static parse after stream ends
@@ -448,7 +448,7 @@ class Strategist:
                         tool=t.get("tool", "generic_tool"),
                         on_failure=t.get("on_failure", "RETRY"),
                         requires_confirm=t.get("requires_confirm", False),
-                        timeout=t.get("timeout", 120),
+                        timeout=t.get("timeout", settings.SUBTASK_MIN_TIMEOUT),
                     )
                 )
 

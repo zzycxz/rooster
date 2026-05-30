@@ -64,9 +64,10 @@ class EvolutionEngine:
             try:
                 # 任务超时保护
                 # Task timeout protection
-                await asyncio.wait_for(self._run_task(signal, user_msg, agent_msg, history), timeout=30)
+                from utils.config import settings
+                await asyncio.wait_for(self._run_task(signal, user_msg, agent_msg, history), timeout=getattr(settings, "EVOLUTION_TIMEOUT", 30.0))
             except asyncio.TimeoutError:
-                logger.warning(f"⏳ [Evolution] 任务 {signal} 分析超时，已放弃。")
+                logger.warning(f"⏳ [Evolution] 任务 {signal} 分析超时 ({getattr(settings, 'EVOLUTION_TIMEOUT', 30.0)}s)，已放弃。")
             except Exception as e:
                 logger.error(f"❌ [Evolution] 任务 {signal} 执行失败: {str(e)}")
 

@@ -19,6 +19,10 @@ class ClientRun(BaseModel):
     # not just update the status dict (which previously did nothing to the running task).
     task: Optional[asyncio.Task] = Field(default=None, exclude=True)
 
+    # Mechanism to pause and resume the run while waiting for user input
+    input_event: asyncio.Event = Field(default_factory=asyncio.Event, exclude=True)
+    input_data: Optional[str] = None
+
 
 class RunManager:
     def __init__(self):

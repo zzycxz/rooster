@@ -172,7 +172,6 @@ class MovieDownloaderTool(BaseTool):
             return f"FAILED: movie_downloader timed out after 120s for '{title}'. The BT search sites may be unreachable. Try again or search manually."
 
     async def _run_inner(self, title: str, quality: str) -> str:
-        import asyncio
 
         # Strip book-title marks which are often added by users and break BT search engines
         clean_title = title.replace("《", "").replace("》", "").strip()
@@ -388,7 +387,7 @@ class MovieDownloaderTool(BaseTool):
                 return -1.0
 
             dn_hits = sum(1 for t in terms if t in dn)
-            
+
             # 降低仅靠 context 命中的权重，大幅提升文件名直接命中(dn_hits)的权重
             # 这样即使广告出现在搜索词附近，其得分也远低于真正匹配的资源
             base_score = len(hit_terms) * 1.0 + dn_hits * 10.0

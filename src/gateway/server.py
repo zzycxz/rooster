@@ -80,8 +80,10 @@ async def unhandled_exception_handler(request, exc):
 # Register core routers (gateway WS, node WS, webhook)
 # ---------------------------------------------------------------------------
 from .routes.websockets import router as ws_router, wire as wire_ws
+from .routes.settings_api import router as settings_router
 
 app.include_router(ws_router)
+app.include_router(settings_router)
 
 # Wire shared state into core WebSocket routes
 wire_ws(manager, channel_registry)

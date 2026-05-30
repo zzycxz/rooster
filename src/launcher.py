@@ -174,16 +174,29 @@ class RoosterLauncher:
         # 8. Start session distillation scheduler
         if getattr(self._settings, "DISTILLATION_ENABLED", True):
             try:
+                from agents.llm_client import LLMClient
                 from memory.distillation_scheduler import DistillationScheduler
                 from sessions.store import global_session_store
 
+                distill_provider = getattr(self._settings, "DISTILLATION_PROVIDER", "mimo")
                 distill_model = getattr(self._settings, "DISTILLATION_MODEL", "") or getattr(
                     self._settings, "CLOUD_MODEL", ""
                 )
+                # 蒸馏使用独立 LLMClient，首选 mimo (1.5s) 避免 zhipu (6s) 限速瓶颈
+                # Distillation uses a dedicated LLMClient, preferring mimo (1.5s) over zhipu (6s)
+                # 如果 DISTILLATION_MODEL 与 provider 不兼容（如 glm-5.1 配 mimo），
+                # 不传 model，使用 provider 默认模型
+                # If DISTILLATION_MODEL is incompatible with provider, omit model to use provider default
+                if distill_provider == "zhipu":
+                    distill_llm_client = LLMClient(provider=distill_provider, model=distill_model)
+                else:
+                    distill_llm_client = LLMClient(provider=distill_provider)
+                    distill_model = ""  # 使用 provider 默认模型
+
                 self._distill_scheduler = DistillationScheduler(
                     memory_manager=router.memory_manager,
                     session_store=global_session_store,
-                    llm_client=router.llm_client,
+                    llm_client=distill_llm_client,
                     model=distill_model,
                 )
                 global _global_distill_scheduler

@@ -93,18 +93,7 @@ class Router:
         from evolution.engine import EvolutionEngine
         from agents.reframer import Reframer
 
-        # 0. Confirmation interception — if a mission is waiting for user confirmation,
-        #    route this message to the confirmation handler instead of starting a new mission.
-        from agents.runners.mission_runner import get_pending_confirmation, resolve_confirmation
 
-        pending = get_pending_confirmation(msg.session_id)
-        if pending:
-            confirmed = await resolve_confirmation(msg.session_id, msg.text)
-            if confirmed:
-                logger.info(f"用户确认子任务: {pending['subtask_id']}")
-            else:
-                logger.info(f"用户拒绝子任务: {pending['subtask_id']}")
-            return
 
         # 隐私：进化引擎使用本地模型 / Privacy: evolution engine uses local model
         try:
@@ -244,7 +233,7 @@ class Router:
             clarification_msg = "\n".join(lines)
 
             await channel.send_message(to=msg.sender_id, text=clarification_msg)
-            logger.info(f"[Router] 歧义拦截，已向用户发出问询，等待下一轮澄清回复。")
+            logger.info("[Router] 歧义拦截，已向用户发出问询，等待下一轮澄清回复。")
             return  # 不进入 MissionRunner，等待用户下一条消息
 
         # ⚡ 智能直通车 (Short-Circuit Execution) 拦截器

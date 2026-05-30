@@ -162,7 +162,7 @@ class Auditor:
                 # 低敏模式：REMAND 重试次数为 0 时，降级为 AFFIRM 放行（仅记录审计意见）
                 # Low-sensitivity mode: when REMAND retries are 0, downgrade REMAND to AFFIRM (log only)
                 if getattr(settings, "AUDIT_MAX_REMAND_RETRY", 1) <= 0:
-                    logger.info(f"✅ [Auditor] 低敏模式: REMAND 降级为 AFFIRM 放行")
+                    logger.info("✅ [Auditor] 低敏模式: REMAND 降级为 AFFIRM 放行")
                     internal_verdict = AuditVerdictType.AFFIRM
                 else:
                     internal_verdict = AuditVerdictType.REMAND

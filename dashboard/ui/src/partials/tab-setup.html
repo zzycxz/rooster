@@ -32,8 +32,15 @@
 
         <!-- 🔑 SECTION 1: Model Credentials & API Keys (大模型钥匙扣) -->
         <div class="space-y-4">
-          <h3 class="text-sm font-bold text-slate-300 border-l-2 border-green-500 pl-2" x-text="t('setup_llm_matrix')"></h3>
-          
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-slate-300 border-l-2 border-green-500 pl-2" x-text="t('setup_llm_matrix')"></h3>
+            <button @click="saveSection('providers')"
+                    :disabled="setupSaving"
+                    class="text-[11px] px-3 py-1 rounded font-semibold bg-green-900/40 hover:bg-green-800/60 border border-green-700/50 text-green-300 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95">
+              <span x-text="t('save_section_providers')"></span>
+            </button>
+          </div>
+
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <!-- Jiutian (China Mobile) Card -->
             <div class="bg-slate-850/80 border border-slate-700/60 rounded-xl p-4 space-y-3 shadow-lg hover:border-amber-500/30 transition-all">
@@ -501,15 +508,22 @@
               <span>🧠</span>
               <span class="text-sm font-semibold text-slate-200" x-text="t('smart_broker_title') || '智能 Agent 角色分流矩阵 (Agent Role Matrix)'"></span>
             </div>
-            <button @click="
-              setupForm.ROUTER_MODEL_MODE = '';
-              setupForm.STRATEGIST_MODEL_MODE = '';
-              setupForm.EXECUTOR_MODEL_MODE = '';
-              setupForm.AUDITOR_MODEL_MODE = '';
-              setupForm.SOLO_MODEL_MODE = '';
-            " class="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-650 text-slate-300 font-medium transition-colors">
-              ⚡ <span x-text="t('smart_defaults')"></span>
-            </button>
+            <div class="flex items-center gap-2">
+              <button @click="
+                setupForm.ROUTER_MODEL_MODE = '';
+                setupForm.STRATEGIST_MODEL_MODE = '';
+                setupForm.EXECUTOR_MODEL_MODE = '';
+                setupForm.AUDITOR_MODEL_MODE = '';
+                setupForm.SOLO_MODEL_MODE = '';
+              " class="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-650 text-slate-300 font-medium transition-colors">
+                ⚡ <span x-text="t('smart_defaults')"></span>
+              </button>
+              <button @click="saveSection('roles')"
+                      :disabled="setupSaving"
+                      class="text-[11px] px-3 py-1 rounded font-semibold bg-green-900/40 hover:bg-green-800/60 border border-green-700/50 text-green-300 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95">
+                <span x-text="t('save_section_roles')"></span>
+              </button>
+            </div>
           </div>
           <div class="p-4 space-y-4">
             <p class="text-xs text-slate-400" x-text="t('smart_broker_desc') || '在这里，您可以为 5 个核心角色指派专属的模型通道。选择“自动 (Auto)”或留空将启用智能自动分配（单模型全指派，双模型动静分离黄金分配，多模型自适应）。'"></p>
@@ -616,9 +630,16 @@
 
         <!-- 🛡️ SECTION 4: Failover & Cooldown (并发防拥挤与故障兜底) -->
         <div class="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
-          <div class="px-4 py-2.5 border-b border-slate-700 flex items-center gap-2">
-            <span>🛡️</span>
-            <span class="text-sm font-semibold text-slate-200" x-text="t('failover_title') || '自动故障转移与请求冷却保护 (Auto Failover & Cooldown)'"></span>
+          <div class="px-4 py-2.5 border-b border-slate-700 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span>🛡️</span>
+              <span class="text-sm font-semibold text-slate-200" x-text="t('failover_title') || '自动故障转移与请求冷却保护 (Auto Failover & Cooldown)'"></span>
+            </div>
+            <button @click="saveSection('failover')"
+                    :disabled="setupSaving"
+                    class="text-[11px] px-3 py-1 rounded font-semibold bg-green-900/40 hover:bg-green-800/60 border border-green-700/50 text-green-300 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95">
+              <span x-text="t('save_section_failover')"></span>
+            </button>
           </div>
           <div class="p-4 space-y-3">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -649,68 +670,6 @@
           </div>
         </div>
 
-        <!-- 📧 SECTION 4.5: Email / SMTP (Optional) -->
-        <div class="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
-          <div class="px-4 py-2.5 border-b border-slate-700 flex items-center gap-2">
-            <span>📧</span>
-            <span class="text-sm font-semibold text-slate-200" x-text="t('setup_smtp_title')"></span>
-            <span class="text-[10px] text-slate-500 ml-auto" x-text="t('setup_smtp_optional')"></span>
-          </div>
-          <div class="p-4 space-y-3">
-            <p class="text-[11px] text-slate-500" x-text="t('setup_smtp_desc')"></p>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <label class="space-y-1">
-                <span class="text-xs text-slate-400" x-text="t('setup_smtp_host')"></span>
-                <input type="text" x-model="setupForm.SMTP_DEFAULT_HOST"
-                       placeholder="smtp.139.com"
-                       class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
-              </label>
-              <label class="space-y-1">
-                <span class="text-xs text-slate-400" x-text="t('setup_smtp_port')"></span>
-                <input type="text" x-model="setupForm.SMTP_DEFAULT_PORT"
-                       placeholder="465"
-                       class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
-              </label>
-              <label class="space-y-1">
-                <span class="text-xs text-slate-400" x-text="t('setup_smtp_user')"></span>
-                <input type="text" x-model="setupForm.SMTP_DEFAULT_USER"
-                       placeholder="yourname@139.com"
-                       class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
-              </label>
-              <label class="space-y-1">
-                <span class="text-xs text-slate-400" x-text="t('setup_smtp_pass')"></span>
-                <input type="password" x-model="setupForm.SMTP_DEFAULT_PASS"
-                       placeholder="POP3/SMTP 授权码"
-                       class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <!-- ⬇️ SECTION 5: Aria2 Downloader (Optional) -->
-        <div class="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
-          <div class="px-4 py-2.5 border-b border-slate-700 flex items-center gap-2">
-            <span>⬇️</span>
-            <span class="text-sm font-semibold text-slate-200" x-text="t('aria2_title')"></span>
-          </div>
-          <div class="p-4 space-y-3">
-            <div class="grid grid-cols-1 gap-3">
-              <label class="space-y-1">
-                <span class="text-xs text-slate-400">RPC URL</span>
-                <input type="text" x-model="setupForm.ARIA2_RPC_URL"
-                       placeholder="http://localhost:6800/jsonrpc"
-                       class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
-              </label>
-              <label class="space-y-1">
-                <span class="text-xs text-slate-400" x-text="t('rpc_token')"></span>
-                <input type="password" x-model="setupForm.ARIA2_TOKEN"
-                       placeholder="token:xxxxx"
-                       class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
-              </label>
-            </div>
-          </div>
-        </div>
-
         <!-- ⚠️ SECTION 6: Danger Zone (危险操作区) -->
         <div class="bg-slate-950/40 border border-red-900/40 rounded-lg overflow-hidden p-4 space-y-3">
           <div class="flex items-center gap-2 text-red-400">
@@ -731,12 +690,6 @@
 
         <!-- Action Buttons -->
         <div class="flex items-center gap-3 pt-2">
-          <button @click="saveSetup()"
-                  :disabled="setupSaving"
-                  class="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-semibold text-white transition-colors cursor-pointer shadow">
-            <span x-show="!setupSaving" x-text="t('save_config')"></span>
-            <span x-show="setupSaving" x-text="t('saving')"></span>
-          </button>
           <button @click="testSetupConnection()"
                   :disabled="setupTestLoading"
                   class="px-4 py-2 bg-slate-700 hover:bg-slate-650 disabled:opacity-50 rounded text-sm font-semibold text-slate-200 transition-colors cursor-pointer border border-slate-600">

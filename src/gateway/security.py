@@ -86,6 +86,15 @@ _ALLOWED_CONFIG_KEYS = frozenset(
         # --- Aria2 ---
         "ARIA2_RPC_URL",
         "ARIA2_TOKEN",
+        # --- SMTP ---
+        "SMTP_DEFAULT_HOST",
+        "SMTP_DEFAULT_PORT",
+        "SMTP_DEFAULT_USER",
+        "SMTP_DEFAULT_PASS",
+        # --- Search & Sandbox ---
+        "E2B_API_KEY",
+        "EXA_KEY",
+        "LINKUP_KEY",
     }
 )
 
