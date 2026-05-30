@@ -1,5 +1,6 @@
 /* ── Rooster Dashboard Base Styles ── */
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 [x-cloak] { display: none !important; }
 
@@ -27,9 +28,17 @@ body {
 /* ── Pipeline nodes ── */
 .pipeline-node { transition: border-color 0.2s, background 0.2s; }
 
-/* ── Chat bubbles ── */
-.bubble-user { background: #1e3a8a; border-radius: 16px 16px 4px 16px; }
-.bubble-ai   { background: #1e293b; border-radius: 16px 16px 16px 4px; border: 1px solid #334155; }
+/* ── Premium Chat Bubbles ── */
+.bubble-user { 
+  background: linear-gradient(135deg, #2563eb, #1d4ed8); 
+  border-radius: 20px 20px 4px 20px; 
+  box-shadow: 0 4px 15px rgba(29, 78, 216, 0.2);
+}
+.bubble-ai { 
+  background: transparent;
+  border-radius: 0; 
+  border: none; 
+}
 .bubble-err  { background: rgba(127,29,29,0.4); border: 1px solid #7f1d1d; border-radius: 12px; }
 
 /* ── Bubble content overflow fix ── */
@@ -37,17 +46,65 @@ body {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
-.bubble-ai table, .bubble-user table, .bubble-err table {
-  display: block;
-  overflow-x: auto;
-  max-width: 100%;
+
+/* ── Premium Prose Styling ── */
+.prose {
+  --tw-prose-body: #cbd5e1;
+  --tw-prose-headings: #f8fafc;
+  --tw-prose-links: #60a5fa;
+  --tw-prose-bold: #f1f5f9;
+  --tw-prose-counters: #64748b;
+  --tw-prose-bullets: #475569;
+  --tw-prose-hr: #334155;
+  --tw-prose-quotes: #94a3b8;
+  --tw-prose-quote-borders: #334155;
+  --tw-prose-captions: #64748b;
+  --tw-prose-code: #e2e8f0;
+  --tw-prose-pre-code: #cbd5e1;
+  --tw-prose-pre-bg: #0d1117;
+  --tw-prose-th-borders: #475569;
+  --tw-prose-td-borders: #334155;
 }
-.bubble-ai pre, .bubble-user pre, .bubble-err pre {
-  overflow-x: auto;
-  max-width: 100%;
+.prose table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px #334155;
 }
-.bubble-ai code, .bubble-user code, .bubble-err code {
-  word-break: break-all;
+.prose thead {
+  background-color: #1e293b;
+  border-bottom: 2px solid #334155;
+}
+.prose th {
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  text-align: left;
+}
+.prose td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #1e293b;
+}
+.prose tbody tr:nth-child(even) {
+  background-color: rgba(30, 41, 59, 0.3);
+}
+.prose a {
+  text-decoration-line: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+.prose a:hover {
+  color: #93c5fd;
+  text-decoration-line: underline;
+}
+.prose :where(code):not(:where([class~="not-prose"] *)) {
+  background-color: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-weight: 500;
 }
 
 /* ── Cursor blink for streaming ── */

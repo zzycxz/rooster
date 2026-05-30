@@ -16,7 +16,7 @@ logic, dedup, and backend writes are all shared with the existing pipeline.
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Set
+from typing import Set
 
 from utils.config import settings
 
@@ -91,7 +91,7 @@ class DistillationScheduler:
         now = datetime.now()
         count = 0
 
-        for sid, session in self._session_store.list_sessions().items():
+        for sid, session in list(self._session_store.list_sessions().items()):
             if sid in self._inflight:
                 continue
 

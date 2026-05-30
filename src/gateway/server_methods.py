@@ -104,6 +104,18 @@ class MethodHandler:
         else:
             session.metadata.pop("pending_images", None)
 
+        # Check if the session is currently waiting for input
+        old_run_id = global_run_manager.session_to_run.get(session_id)
+        if old_run_id:
+            old_run = global_run_manager.active_runs.get(old_run_id)
+            if old_run and old_run.status == "waiting_for_input":
+                logger.info(f"Resuming Run {old_run_id} with user input: {message_text}")
+                old_run.input_data = message_text
+                old_run.status = "running"
+                old_run.input_event.set()
+                await respond(True, data={"runId": old_run_id, "status": "resumed"})
+                return
+
         # 2. 创建运行任务 (Run)
         # 2. Create a Run
         run = global_run_manager.create_run(session_id)

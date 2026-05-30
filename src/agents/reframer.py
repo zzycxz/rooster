@@ -1,6 +1,5 @@
 import logging
 import os
-import re
 from .llm_client import LLMClient
 from utils.config import settings
 
@@ -27,7 +26,7 @@ class Reframer:
 
     async def reframe(self, user_input: str, session_id: str = None) -> str:
         """执行重构动作"""  # Execute reframing action
-        
+
         history_context = ""
         if session_id:
             try:
@@ -60,18 +59,18 @@ class Reframer:
             import asyncio
 
             messages = [{"role": "system", "content": system_prompt}]
-            
+
             if history_context:
                 user_msg = f"【历史对话上下文】\n{history_context}\n\n【当前用户输入】\n{user_input}\n\n请结合上下文，明确用户当前输入中代词（如“这个”、“刚才的”）所指代的具体对象，并将其重构为包含明确对象的完整独立指令。如果是独立的全新请求，请忽略上下文直接重构。"
             else:
                 user_msg = user_input
-                
+
             messages.append({"role": "user", "content": user_msg})
 
-            # 使用 wait_for 实施强制超时 (20s)
-            # Use wait_for for mandatory timeout (20s)
+            # 使用 wait_for 实施强制超时
+            # Use wait_for for mandatory timeout
             response = await asyncio.wait_for(
-                self.llm_client.chat_non_stream(messages=messages, temperature=0.3), timeout=20.0
+                self.llm_client.chat_non_stream(messages=messages, temperature=0.3), timeout=getattr(settings, "REFRAMER_TIMEOUT", 20.0)
             )
 
             content = response.content.strip()
@@ -139,7 +138,7 @@ class Reframer:
             logger.info("✅ [Reframer] 重构成功。")
             return reframed_text
         except asyncio.TimeoutError:
-            logger.warning("⏱️ [Reframer] 模型响应超时 (20s)，使用关键词兜底重构。")
+            logger.warning(f"⏱️ [Reframer] 模型响应超时 ({getattr(settings, 'REFRAMER_TIMEOUT', 20.0)}s)，使用关键词兜底重构。")
             return self._keyword_reframe(user_input)
         except Exception as e:
             logger.error(f"❌ [Reframer] 重构失败: {e}，使用关键词兜底重构。")

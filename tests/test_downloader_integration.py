@@ -3,7 +3,6 @@
 Tests for AriaNg Downloader UI integration in Rooster Dashboard.
 """
 import os
-import re
 
 DASHBOARD_PATH = os.path.join(
     os.path.dirname(os.path.dirname(__file__)),
@@ -48,23 +47,24 @@ def test_get_ariang_url_defined():
         content = f.read()
 
     assert "getAriaNgUrl()" in content, "getAriaNgUrl method not defined in dashboard.html"
-    assert "http://ariang.mayswind.net/latest/" in content, "AriaNg base URL not found in getAriaNgUrl"
+    assert "/ui/ariang/" in content, "AriaNg local base URL not found in getAriaNgUrl"
 
 
 def test_iframe_downloader_exists():
-    """Verify that the iframe element for AriaNg is embedded inside activeTab === 'downloader' div."""
-    with open(DASHBOARD_PATH, "r", encoding="utf-8") as f:
+    """Verify that the iframe element for AriaNg is embedded inside tab-downloader partial."""
+    partials_path = os.path.join(os.path.dirname(DASHBOARD_PATH), "partials", "tab-downloader.html")
+    with open(partials_path, "r", encoding="utf-8") as f:
         content = f.read()
 
     assert "activeTab === 'downloader'" in content, "Missing x-show activeTab === 'downloader' container"
-    assert "<iframe" in content, "Missing iframe element inside dashboard.html"
+    assert "<iframe" in content, "Missing iframe element inside tab-downloader.html"
     assert "getAriaNgUrl()" in content, "Iframe is not bound to getAriaNgUrl()"
 
 
 def test_external_i18n_keys():
     """Verify that downloader i18n keys are correctly synchronized in dashboard/ui/src/js/i18n.js."""
     assert os.path.exists(I18N_PATH), f"i18n.js not found at {I18N_PATH}"
-    
+
     with open(I18N_PATH, "r", encoding="utf-8") as f:
         content = f.read()
 

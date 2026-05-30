@@ -2,8 +2,7 @@
 """测试隐私路由器核心逻辑 / Test privacy router core logic."""
 
 import os
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 class TestPrivacyRouterInit:

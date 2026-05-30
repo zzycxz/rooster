@@ -155,19 +155,32 @@ class ProvidersConfig:
         return result
 
     @property
+    def SYSTEM_PROXY_ENABLED(self) -> bool:
+        import os
+        return os.environ.get("SYSTEM_PROXY_ENABLED", "false").lower() == "true"
+
+    @property
+    def SYSTEM_PROXY_URL(self) -> Optional[str]:
+        import os
+        return os.environ.get("SYSTEM_PROXY_URL")
+
+    @property
     def ENABLE_REGIONAL_PROXY(self) -> bool:
         import os
-
+        if "SYSTEM_PROXY_ENABLED" in os.environ:
+            return self.SYSTEM_PROXY_ENABLED
         return os.environ.get("ENABLE_REGIONAL_PROXY", "True").lower() == "true"
 
     @property
     def HTTP_PROXY(self) -> Optional[str]:
         import os
-
-        return os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
+        if self.ENABLE_REGIONAL_PROXY:
+            return self.SYSTEM_PROXY_URL or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
+        return None
 
     @property
     def HTTPS_PROXY(self) -> Optional[str]:
         import os
-
-        return os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+        if self.ENABLE_REGIONAL_PROXY:
+            return self.SYSTEM_PROXY_URL or os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+        return None

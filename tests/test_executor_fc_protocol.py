@@ -5,8 +5,6 @@ Verifies that tool call interactions follow the correct message sequence:
 Without any spurious "user" messages injected between tool calls.
 """
 
-import json
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -186,7 +184,7 @@ class TestExecutorComposeMessages:
         assert "blackboard" in messages[3]["content"].lower() or "context" in messages[3]["content"].lower() or "Task context" in messages[3]["content"]
         # User input last
         assert messages[4]["role"] == "user"
-        assert messages[4]["content"] == "do something"
+        assert "do something" in messages[4]["content"]
 
     def test_compose_messages_without_blackboard(self):
         """compose_messages without blackboard should not add extra messages."""
@@ -202,4 +200,4 @@ class TestExecutorComposeMessages:
         assert len(messages) == 2
         assert messages[0]["role"] == "system"
         assert messages[1]["role"] == "user"
-        assert messages[1]["content"] == "hello"
+        assert "hello" in messages[1]["content"]

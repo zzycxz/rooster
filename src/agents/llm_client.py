@@ -303,7 +303,7 @@ class LLMClient:
                 return await call_fn()
             except Exception as e:
                 last_exc = e
-                _set_provider_cooldown_adaptive(provider, str(e))
+                _set_provider_cooldown_adaptive(provider, repr(e))
                 if retry_count == settings.LLM_FAILOVER_RETRY_MAX - 1:
                     logger.error(f"❌ [Client] {provider} 重试耗尽: {e}")
                 else:
@@ -413,7 +413,7 @@ class LLMClient:
                 if committed:
                     logger.error(f"❌ [Client] {current_p} 在交付内容后失败: {e}")
                     raise
-                err_str = str(e)
+                err_str = repr(e)
                 _set_provider_cooldown_adaptive(current_p, err_str)
                 logger.error(f"❌ [Client] {current_p} 崩溃: {e}")
 
@@ -469,7 +469,7 @@ class LLMClient:
                 return result
             except Exception as e:
                 last_exc = e
-                _set_provider_cooldown_adaptive(current_p, str(e))
+                _set_provider_cooldown_adaptive(current_p, repr(e))
                 logger.error(f"❌ [Client] {current_p} 崩溃: {e}")
 
         logger.error(f"🚫 [Client] 所有 Provider 折损。最后异常: {last_exc}")

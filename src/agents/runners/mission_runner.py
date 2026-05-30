@@ -29,31 +29,6 @@ logger = logging.getLogger(__name__)
 
 _CHECKPOINT_DIR = os.path.join(".rooster", "checkpoints")
 
-# ---------------------------------------------------------------------------
-# User confirmation registry — allows the gateway/router to resolve
-# confirmation requests from incoming user messages mid-mission.
-# ---------------------------------------------------------------------------
-_PENDING_CONFIRMATIONS: Dict[str, Dict[str, Any]] = {}  # session_id → {event, instruction}
-
-
-def get_pending_confirmation(session_id: str) -> Optional[Dict[str, Any]]:
-    """Check if a session has a pending confirmation request."""
-    return _PENDING_CONFIRMATIONS.get(session_id)
-
-
-async def resolve_confirmation(session_id: str, user_text: str) -> bool:
-    """Resolve a pending confirmation with the user's response.
-    Returns True if confirmed, False if declined."""
-    entry = _PENDING_CONFIRMATIONS.get(session_id)
-    if not entry:
-        return False
-    text_lower = user_text.strip().lower()
-    confirmed = text_lower in ("确认", "confirm", "yes", "同意", "ok", "批准", "approve")
-    entry["response"] = user_text
-    entry["confirmed"] = confirmed
-    entry["event"].set()
-    return confirmed
-
 
 class MissionRunner:
     """处理 COMPLEX 模式的多步任务编排。"""
@@ -157,14 +132,13 @@ class MissionRunner:
         sender_id: str,
         channel: Any,
         st: SubTask,
+        event_handler: Any = None,
     ) -> bool:
         """Ask user for confirmation. Returns True if confirmed, False on timeout/decline."""
-        event = asyncio.Event()
-        _PENDING_CONFIRMATIONS[session_id] = {
-            "event": event,
-            "instruction": st.instruction,
-            "subtask_id": st.id,
-        }
+        from gateway.run_manager import global_run_manager
+
+        run_id = global_run_manager.session_to_run.get(session_id)
+        run = global_run_manager.active_runs.get(run_id) if run_id else None
 
         preview = st.instruction[:200]
         await channel.send_message(
@@ -176,25 +150,50 @@ class MissionRunner:
             ),
         )
 
-        CONFIRM_TIMEOUT = 300  # 5 minutes
+        if event_handler:
+            try:
+                await event_handler.emit(
+                    run_id="system_confirm",
+                    session_id=session_id,
+                    stream="lifecycle",
+                    data={"status": "require_user_input", "subtask_id": st.id}
+                )
+            except Exception:
+                pass
+
+        if not run:
+            logger.warning(f"No active run found for session {session_id} to block on confirmation.")
+            return False
+
+        run.status = "waiting_for_input"
+        run.input_event.clear()
+        run.input_data = None
+
+        from utils.config import settings
+        CONFIRM_TIMEOUT = getattr(settings, "WAIT_CONFIRM_TIMEOUT", 300)
         try:
-            await asyncio.wait_for(event.wait(), timeout=CONFIRM_TIMEOUT)
+            await asyncio.wait_for(run.input_event.wait(), timeout=CONFIRM_TIMEOUT)
+            user_input = run.input_data or ""
+            text_lower = user_input.strip().lower()
+            confirmed = text_lower in ("确认", "confirm", "yes", "同意", "ok", "批准", "approve")
+
+            if confirmed:
+                await channel.send_message(to=sender_id, text=f"✅ 已确认，继续执行 `{st.id}`...")
+                return True
+            else:
+                await channel.send_message(to=sender_id, text=f"❌ 子任务 `{st.id}` 已取消。")
+                return False
         except asyncio.TimeoutError:
-            _PENDING_CONFIRMATIONS.pop(session_id, None)
             await channel.send_message(
                 to=sender_id,
                 text=f"⏰ 确认超时（{CONFIRM_TIMEOUT}s），子任务 `{st.id}` 已跳过。",
             )
             return False
         finally:
-            entry = _PENDING_CONFIRMATIONS.pop(session_id, None)
-
-        if entry and entry.get("confirmed"):
-            await channel.send_message(to=sender_id, text=f"✅ 已确认，继续执行 `{st.id}`...")
-            return True
-        else:
-            await channel.send_message(to=sender_id, text=f"❌ 子任务 `{st.id}` 已取消。")
-            return False
+            if run.status == "waiting_for_input":
+                run.status = "running"
+            run.input_event.clear()
+            run.input_data = None
 
     async def run(self, msg: Any, channel: Any, reframed_text: str, dynamic_event_handler: AgentEventHandler) -> None:
         """执行多步任务编排。"""  # Execute multi-step task orchestration
@@ -280,6 +279,8 @@ class MissionRunner:
                 return await _run_subtask_inner(st, current_idx)
 
         async def _run_subtask_inner(st: SubTask, current_idx: int):
+            from utils.config import settings
+
             retry_limit = settings.AUDIT_MAX_REMAND_RETRY
             current_retry = 0
             previous_audit_cmd = ""
@@ -287,7 +288,7 @@ class MissionRunner:
             # 等待依赖完成，最多等待 10 分钟防止永久阻塞
             # Wait for dependencies to complete, max 10 minutes to prevent permanent blocking
             _dep_wait_start = asyncio.get_event_loop().time()
-            _DEP_WAIT_TIMEOUT = 600  # 10 minutes
+            _DEP_WAIT_TIMEOUT = getattr(settings, "DEP_WAIT_TIMEOUT", 600)
             while not all(dep in executed_tasks for dep in st.depends_on):
                 if asyncio.get_event_loop().time() - _dep_wait_start > _DEP_WAIT_TIMEOUT:
                     missing = [d for d in st.depends_on if d not in executed_tasks]
@@ -313,13 +314,7 @@ class MissionRunner:
             # [requires_confirm] 人工确认安全门 — Strategist 标记为高风险的子任务必须经用户确认才能执行
             # [requires_confirm] Human confirmation safety gate — subtasks marked high-risk by Strategist must be confirmed by user
             if st.requires_confirm:
-                confirmed = await self._request_user_confirmation(
-                    msg.session_id,
-                    msg.sender_id,
-                    channel,
-                    st,
-                )
-                if not confirmed:
+                if not await self._request_user_confirmation(msg.session_id, msg.sender_id, channel, st, dynamic_event_handler):
                     executed_tasks[st.id] = Report(
                         subtask_id=st.id,
                         status="CANCELLED",
@@ -862,23 +857,29 @@ class MissionRunner:
         sender_id: str,
         channel: Any,
         subtask_id: str,
-        timeout: int = 300,
+        timeout: int = getattr(settings, "WAIT_CONFIRM_TIMEOUT", 300),
     ) -> Optional[str]:
         """挂起当前子任务，等待用户回复澄清指令。
 
-        复用 _PENDING_CONFIRMATIONS 机制，但返回用户原始文本而非布尔值。
         timeout 内无回复返回 None，调用方应将子任务标记为 FAILED。
         """
-        event = asyncio.Event()
-        _PENDING_CONFIRMATIONS[session_id] = {
-            "event": event,
-            "subtask_id": subtask_id,
-            "clarification_mode": True,  # 区分普通 confirms 与 clarifications
-        }
+        from gateway.run_manager import global_run_manager
+
+        run_id = global_run_manager.session_to_run.get(session_id)
+        run = global_run_manager.active_runs.get(run_id) if run_id else None
+
+        if not run:
+            logger.warning(f"No active run found for session {session_id} to block on clarification.")
+            return None
+
+        run.status = "waiting_for_input"
+        run.input_event.clear()
+        run.input_data = None
+
         try:
-            await asyncio.wait_for(event.wait(), timeout=timeout)
+            await asyncio.wait_for(run.input_event.wait(), timeout=timeout)
+            return str(run.input_data) if run.input_data else None
         except asyncio.TimeoutError:
-            _PENDING_CONFIRMATIONS.pop(session_id, None)
             await channel.send_message(
                 to=sender_id,
                 text=(
@@ -888,8 +889,7 @@ class MissionRunner:
             )
             return None
         finally:
-            entry = _PENDING_CONFIRMATIONS.pop(session_id, None)
-
-        if entry and entry.get("response"):
-            return str(entry["response"])
-        return None
+            if run.status == "waiting_for_input":
+                run.status = "running"
+            run.input_event.clear()
+            run.input_data = None

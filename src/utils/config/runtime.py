@@ -66,10 +66,15 @@ class RuntimeConfig:
     AUDIT_SAVE_SCREENSHOT: bool = _env_bool("AUDIT_SAVE_SCREENSHOT", True)
     AUDIT_SAVE_TELEMETRY: bool = _env_bool("AUDIT_SAVE_TELEMETRY", True)
 
-    # --- Timeouts ---
-    STRATEGIST_LLM_TIMEOUT: float = _env_float("STRATEGIST_LLM_TIMEOUT", 300.0)
-    SUBTASK_MIN_TIMEOUT: int = _env_int("SUBTASK_MIN_TIMEOUT", 300)
-    AUDITOR_TIMEOUT_SECONDS: float = _env_float("AUDITOR_TIMEOUT_SECONDS", 60.0)
+    # --- Timeouts (Seconds) ---
+    LLM_API_TIMEOUT: float = _env_float("LLM_API_TIMEOUT", 300.0)         # 底层 httpx 网络请求超时（原 45s/60s，现统一）
+    STRATEGIST_LLM_TIMEOUT: float = _env_float("STRATEGIST_LLM_TIMEOUT", 300.0) # 顶层规划器超时
+    SUBTASK_MIN_TIMEOUT: int = _env_int("SUBTASK_MIN_TIMEOUT", 1800)      # 子任务执行最小保底超时（原 120s，现提升为半小时防止大任务中断）
+    AUDITOR_TIMEOUT_SECONDS: float = _env_float("AUDITOR_TIMEOUT_SECONDS", 60.0) # 审计官审核超时
+    WAIT_CONFIRM_TIMEOUT: int = _env_int("WAIT_CONFIRM_TIMEOUT", 300)     # 等待用户确认/澄清的超时时间
+    DEP_WAIT_TIMEOUT: int = _env_int("DEP_WAIT_TIMEOUT", 600)             # 子任务依赖等待超时时间
+    REFRAMER_TIMEOUT: float = _env_float("REFRAMER_TIMEOUT", 20.0)        # 意图重构器超时时间
+    EVOLUTION_TIMEOUT: float = _env_float("EVOLUTION_TIMEOUT", 30.0)      # 进化引擎后台分析超时时间
 
     # --- File permissions ---
     _raw_paths = os.getenv("ALLOWED_PATHS")
@@ -83,6 +88,7 @@ class RuntimeConfig:
 
     # --- Code interpreter ---
     INTERPRETER_ALLOW_LOCAL: bool = _env_bool("INTERPRETER_ALLOW_LOCAL", False)
+    INTERPRETER_TIMEOUT_SECONDS: float = _env_float("INTERPRETER_TIMEOUT_SECONDS", 120.0)
 
     # --- Task checkpoint ---
     CHECKPOINT_ENABLED: bool = _env_bool("CHECKPOINT_ENABLED", False)
@@ -149,3 +155,7 @@ class RuntimeConfig:
     # 自定义路由规则 JSON（格式：{"regex_pattern": ["Kit1", "Kit2"]}），空字符串使用内置默认规则
     # Custom routing rules JSON (format: {"regex_pattern": ["Kit1", "Kit2"]}), empty uses built-in defaults
     TOOL_ROUTER_RULES_JSON: str = _env("TOOL_ROUTER_RULES_JSON", "")
+
+    # --- Timeouts ---
+    LLM_API_TIMEOUT: float = _env_float("LLM_API_TIMEOUT", 1800.0)
+    WAIT_CONFIRM_TIMEOUT: float = _env_float("WAIT_CONFIRM_TIMEOUT", 1800.0)

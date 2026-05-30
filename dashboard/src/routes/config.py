@@ -3,6 +3,7 @@
 import os
 import asyncio
 import logging
+import shutil
 from typing import Dict, Any
 
 from fastapi import APIRouter, Body, HTTPException
@@ -62,6 +63,70 @@ def _mask_env_dict(data: Dict[str, Any]) -> Dict[str, Any]:
         else:
             masked[k] = v
     return masked
+
+
+def _parse_env_file(path: str) -> Dict[str, str]:
+    """Parse a .env file into a dict (skip comments and empty lines)."""
+    data: Dict[str, str] = {}
+    if not os.path.exists(path):
+        return data
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and "=" in stripped:
+                k, _, v = stripped.partition("=")
+                val = v.strip()
+                if val:
+                    data[k.strip()] = val
+    return data
+
+
+# Provider → API Key mapping for safety checks
+_PROVIDER_KEY_MAP = {
+    "zhipu": "ZHIPU_KEY",
+    "zhipu_glm": "ZHIPU_GLM_KEY",
+    "openai": "OPENAI_KEY",
+    "anthropic": "ANTHROPIC_KEY",
+    "kimi": "KIMI_KEY",
+    "qwen": "QWEN_KEY",
+    "jiutian": "JIUTIAN_KEY",
+    "mimo": "MIMO_KEY",
+    "cloud": "CLOUD_KEY",
+}
+
+
+def _validate_save_safety(data: Dict[str, Any], existing: Dict[str, str]) -> list:
+    """Check for dangerous config changes. Returns warning messages (empty = safe)."""
+    warnings = []
+
+    # Check if any role assignment targets a provider whose key would be empty after save
+    role_keys = [
+        "ROUTER_MODEL_MODE", "STRATEGIST_MODEL_MODE",
+        "EXECUTOR_MODEL_MODE", "AUDITOR_MODEL_MODE", "SOLO_MODEL_MODE",
+    ]
+    for role in role_keys:
+        if role not in data:
+            continue
+        provider = data[role]
+        if provider in _PROVIDER_KEY_MAP:
+            key_name = _PROVIDER_KEY_MAP[provider]
+            # What will the key be after save?
+            effective_key = data.get(key_name, existing.get(key_name, ""))
+            if not effective_key:
+                warnings.append(
+                    f"{role}={provider} 但 {key_name} 为空，重启后将无法工作"
+                )
+
+    # Check if clearing the key of the currently active provider
+    active_mode = existing.get("SOLO_MODEL_MODE", "")
+    if active_mode in _PROVIDER_KEY_MAP:
+        active_key_name = _PROVIDER_KEY_MAP[active_mode]
+        if active_key_name in data and not data[active_key_name]:
+            warnings.append(
+                f"将清空当前活跃模型 ({active_mode}) 的 {active_key_name}，系统将无法响应"
+            )
+
+    return warnings
 
 
 async def handle_config_save(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -187,6 +252,19 @@ async def handle_config_save(data: Dict[str, Any]) -> Dict[str, Any]:
             if k not in written_keys:
                 new_lines.append(f"{k}={v}\n")
 
+        # Safety check before write
+        warnings = _validate_save_safety(data, existing)
+        if warnings:
+            return {"ok": False, "warnings": warnings, "error": "safety_check"}
+
+        # Backup before overwrite
+        bak_path = env_path + ".bak"
+        if os.path.exists(env_path):
+            try:
+                shutil.copy2(env_path, bak_path)
+            except Exception as exc:
+                logger.warning(f"[config.save] Backup failed (non-fatal): {exc}")
+
         with open(env_path, "w", encoding="utf-8") as f:
             f.writelines(new_lines)
 
@@ -233,6 +311,69 @@ async def api_config_save(data: Dict[str, Any] = Body(...)):
     if oversized:
         raise HTTPException(status_code=400, detail=f"Values too long for keys: {oversized}")
     return await handle_config_save(data)
+
+
+@router.post("/diff")
+async def api_config_diff(data: Dict[str, Any] = Body(...)):
+    """Preview what will change in .env.local without writing anything."""
+    env_path = _get_env_local_path()
+    existing = _parse_env_file(env_path)
+
+    # Also include keys from .env as baseline (so "new" keys show correctly)
+    base_dir = os.path.dirname(env_path)
+    base_env = _parse_env_file(os.path.join(base_dir, ".env"))
+    for k, v in base_env.items():
+        if k not in existing:
+            existing[k] = v
+
+    changes = []
+    for k, new_val in data.items():
+        new_str = str(new_val).strip()
+        old_val = existing.get(k, "")
+        if new_str == old_val:
+            continue
+        # Mask sensitive values
+        display_old = mask_secret(old_val) if k in MASK_KEYS and old_val else (old_val or "(空)")
+        display_new = mask_secret(new_str) if k in MASK_KEYS and new_str else new_str
+        changes.append({"key": k, "old": display_old, "new": display_new})
+
+    # Also run safety check
+    warnings = _validate_save_safety({k: str(v) for k, v in data.items()}, existing)
+
+    return {"ok": True, "changes": changes, "warnings": warnings}
+
+
+@router.post("/rollback")
+async def api_config_rollback():
+    """Restore .env.local from the most recent backup."""
+    env_path = _get_env_local_path()
+    bak_path = env_path + ".bak"
+    if not os.path.exists(bak_path):
+        raise HTTPException(status_code=404, detail="没有找到备份文件")
+
+    shutil.copy2(bak_path, env_path)
+
+    # Hot-reload
+    from dotenv import load_dotenv
+
+    load_dotenv(env_path, override=True)
+    try:
+        from utils.security.path_guard import PathGuard
+
+        PathGuard.refresh()
+    except Exception:
+        pass
+
+    logger.info("[config.rollback] Restored .env.local from backup")
+
+    # Schedule restart
+    async def _delayed_restart():
+        await asyncio.sleep(1.5)
+        logger.info("[config.rollback] Auto-restarting after rollback...")
+        os._exit(0)
+
+    asyncio.create_task(_delayed_restart())
+    return {"ok": True}
 
 
 @router.post("/reload")
@@ -315,20 +456,6 @@ async def api_config_masked():
     so the form always shows what's actually running.
     """
     base_dir = os.path.dirname(_get_env_local_path())
-
-    def _parse_env_file(path: str) -> Dict[str, str]:
-        data: Dict[str, str] = {}
-        if not os.path.exists(path):
-            return data
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                stripped = line.strip()
-                if stripped and not stripped.startswith("#") and "=" in stripped:
-                    k, _, v = stripped.partition("=")
-                    val = v.strip()
-                    if val:  # skip empty values
-                        data[k.strip()] = val
-        return data
 
     # .env as base (skip empties), .env.local overrides
     env_data = _parse_env_file(os.path.join(base_dir, ".env"))

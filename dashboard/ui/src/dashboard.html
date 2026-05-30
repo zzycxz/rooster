@@ -231,7 +231,7 @@
     <%- include('partials/tab-memory.html') %>
 
 
-    <%- include('partials/tab-metrics.html') %>
+    <%- include('partials/tab-monitor.html') %>
 
 
     <%- include('partials/tab-config.html') %>
@@ -241,9 +241,6 @@
 
 
     <%- include('partials/tab-setup.html') %>
-
-
-    <%- include('partials/tab-health.html') %>
 
 
     <%- include('partials/tab-scheduler.html') %>
@@ -286,6 +283,7 @@ function app() {
         aria2_install_or: 'or visit',
         tab_memory: 'Memory',
         tab_metrics: 'Metrics',
+        tab_monitor: 'Monitor',
         tab_config: 'Config',
         tab_security: 'Security',
         tab_setup: 'Setup',
@@ -503,6 +501,14 @@ function app() {
         config_restart_title: 'Save & Restart',
         config_restart_desc: 'Configuration changes require a service restart to take effect. The service will automatically restart after saving, and the page will reload.',
         config_restart_confirm: 'Save & Restart',
+        config_diff_title: 'The following settings will be changed:',
+        config_no_changes: 'No changes detected',
+        config_safety_warning: 'Safety Warning',
+        save_section_providers: 'Save API Keys',
+        save_section_roles: 'Save Role Matrix',
+        save_section_failover: 'Save Failover',
+        save_section_smtp: 'Save Email',
+        save_section_aria2: 'Save Downloader',
         stop_confirm_title: 'Stop Execution',
         stop_confirm_desc: 'This will immediately cancel all running agent tasks and tool calls. Any unsaved progress will be lost.',
         stop_confirm_btn: 'Stop Now',
@@ -537,6 +543,8 @@ function app() {
         hot_reload: 'Hot Reload',
         skill_registry: 'Skill Registry',
         mcp_market: 'MCP Market',
+        skill_config_tab: 'Config',
+        skill_config_note: 'Skill integrations config — saved to .env.local. Each panel saves independently.',
         mcp_registry: 'MCP Registry',
         mcp_loading: 'Loading MCP servers…',
         mcp_no_servers: 'No MCP servers available',
@@ -722,6 +730,22 @@ function app() {
         sec_title: 'Security Management',
         sec_subtitle: 'Configure security by layers: perimeter → permissions → sandbox → resilience',
         sec_save_restart: 'Save & Restart',
+        monitor_health: 'Health',
+        monitor_metrics: 'Metrics',
+        mon_current_task: 'Current Task',
+        mon_running: 'Running',
+        mon_idle: 'Idle',
+        mon_subtasks: 'Subtasks',
+        mon_cumulative: 'Cumulative',
+        mon_total_requests: 'Requests',
+        mon_total_llm: 'LLM Calls',
+        mon_total_tools: 'Tool Calls',
+        mon_calls: 'calls',
+        mon_errors: 'errors',
+        mon_failovers: 'failovers',
+        mon_invocations: 'invocations',
+        metrics_empty_title: 'No activity yet',
+        metrics_empty_desc: 'Start a conversation or run a task to see performance data here.',
         sec_saving: 'Saving...',
         sec_effective_hint: 'How changes take effect',
         sec_hint_1: '1) This page defaults to "Save & Restart" to ensure policies are consistent across all Agents/components.',
@@ -838,6 +862,29 @@ function app() {
         sec_hmac_secret_label: 'WEBHOOK_HMAC_SECRET (leave empty to keep current)',
         sec_blocked_tools_label: 'BLOCKED_TOOLS (comma-separated)',
         sec_allowed_tools_label: 'ALLOWED_TOOLS (comma-separated, empty = follow policy)',
+        sec_f_gateway_key: 'Dashboard Access Key',
+        sec_f_gateway_key_desc: 'Password to access the Dashboard. Anyone without this key is blocked.',
+        sec_f_hmac_secret: 'Webhook Signature Key',
+        sec_f_hmac_secret_desc: 'Used to verify incoming webhook requests are authentic.',
+        sec_f_policy: 'Permission Level',
+        sec_f_policy_desc: 'Controls which tools the Agent is allowed to call.',
+        sec_policy_open: 'Open — all tools enabled',
+        sec_policy_balanced: 'Balanced — block dangerous tools',
+        sec_policy_strict: 'Strict — whitelist only',
+        sec_f_blocked: 'Blocked Tools',
+        sec_f_blocked_desc: 'These tools are always disabled, regardless of the policy above.',
+        sec_f_allowed: 'Allowed Tools Only',
+        sec_f_allowed_desc: 'If set, only these tools can be used. Leave empty to follow the policy.',
+        sec_f_paths: 'Allowed File Directories',
+        sec_f_paths_desc: 'Agent can only read/write files in these folders. Use * for no restriction (not recommended).',
+        sec_f_checkpoint: 'Execution Checkpoint',
+        sec_f_checkpoint_desc: 'Save progress during long tasks so execution can resume after a crash.',
+        sec_f_remand: 'Max Audit Retries',
+        sec_f_remand_desc: 'How many times the Auditor can ask the Agent to redo a task before accepting.',
+        sec_f_stuck: 'Stuck Detection Threshold',
+        sec_f_stuck_desc: 'Number of identical outputs before the system considers the Agent stuck and intervenes.',
+        sec_f_max_steps: 'Max Steps Per Task',
+        sec_f_max_steps_desc: 'Hard limit on how many steps a single task can take. Prevents infinite loops.',
         // ─── Skills tab ───
         uninstall_btn: 'Uninstall',
         skills_page_info_sep: 'skills · Page',
@@ -884,6 +931,7 @@ function app() {
         aria2_install_or: '或访问',
         tab_memory: '长期记忆',
         tab_metrics: '性能监控',
+        tab_monitor: '监控中心',
         tab_config: '系统配置',
         tab_security: '安全管理',
         tab_setup: '初始配置',
@@ -1101,6 +1149,14 @@ function app() {
         config_restart_title: '保存并重启服务',
         config_restart_desc: '配置更改需要重启服务才能生效。保存后服务将自动重启，页面将自动刷新。',
         config_restart_confirm: '确认保存并重启',
+        config_diff_title: '以下配置将被修改：',
+        config_no_changes: '没有检测到变更',
+        config_safety_warning: '安全警告',
+        save_section_providers: '保存模型配置',
+        save_section_roles: '保存角色分配',
+        save_section_failover: '保存故障转移',
+        save_section_smtp: '保存邮箱配置',
+        save_section_aria2: '保存下载器',
         stop_confirm_title: '停止执行',
         stop_confirm_desc: '将立即取消所有正在运行的 Agent 任务和工具调用，未保存的进度将丢失。',
         stop_confirm_btn: '立即停止',
@@ -1135,6 +1191,8 @@ function app() {
         hot_reload: '热重载',
         skill_registry: '技能注册表',
         mcp_market: 'MCP 市场',
+        skill_config_tab: '技能配置',
+        skill_config_note: '技能集成配置 — 保存到 .env.local，每个面板独立保存。',
         mcp_registry: 'MCP 注册表',
         mcp_loading: '正在加载 MCP 服务…',
         mcp_no_servers: '暂无可用的 MCP 服务',
@@ -1320,6 +1378,22 @@ function app() {
         sec_title: '安全管理',
         sec_subtitle: '按分层模型配置安全能力：先边界、再权限、再沙箱、最后韧性',
         sec_save_restart: '保存并重启',
+        monitor_health: '健康诊断',
+        monitor_metrics: '性能监控',
+        mon_current_task: '当前任务',
+        mon_running: '运行中',
+        mon_idle: '空闲',
+        mon_subtasks: '子任务',
+        mon_cumulative: '累计统计',
+        mon_total_requests: '请求数',
+        mon_total_llm: 'LLM 调用',
+        mon_total_tools: '工具调用',
+        mon_calls: '次调用',
+        mon_errors: '次错误',
+        mon_failovers: '次故障转移',
+        mon_invocations: '次调用',
+        metrics_empty_title: '暂无运行数据',
+        metrics_empty_desc: '开始对话或执行任务后，这里会展示 LLM 调用、工具使用等性能指标。',
         sec_saving: '保存中...',
         sec_effective_hint: '生效方式与操作建议',
         sec_hint_1: '1) 当前页默认通过"保存并重启"生效，确保策略在所有 Agent/组件上一致。',
@@ -1348,25 +1422,25 @@ function app() {
         sec_step4: '• 第四步：调优 L3（CHECKPOINT/重试阈值/步数上限），最后保存并重启验证。',
         // ─── Setup tab ───
         setup_llm_matrix: '大模型通道配置',
-        setup_provider_jiutian: '中国移动九天通道',
-        setup_provider_mimo: '小米 MiMo 通道',
-        setup_provider_zhipu_glm: '智谱 GLM（标准 API）',
-        setup_provider_openai: 'OpenAI 通道',
-        setup_provider_claude: 'Anthropic Claude 通道',
-        setup_provider_qwen: '通义千问 Qwen',
-        setup_provider_zhipu_coding: '智谱 CodingPlan（编程增强）',
-        setup_provider_kimi: 'Kimi 月之暗面',
-        setup_provider_cloud: '云端三方兼容通道',
-        setup_provider_local: '本地 llama.cpp 自主通道',
+        setup_provider_jiutian: 'Jiutian',
+        setup_provider_mimo: 'Xiaomi MiMo',
+        setup_provider_zhipu_glm: 'Zhipu GLM',
+        setup_provider_openai: 'OpenAI',
+        setup_provider_claude: 'Anthropic Claude',
+        setup_provider_qwen: 'Qwen',
+        setup_provider_zhipu_coding: 'Zhipu CodingPlan',
+        setup_provider_kimi: 'Kimi',
+        setup_provider_cloud: 'Cloud Compatible',
+        setup_provider_local: 'Local llama.cpp',
         setup_direct_no_proxy: 'Native Anthropic Messages API — 直连无需代理',
-        setup_option_zhipu: '智谱 CodingPlan',
-        setup_option_zhipu_glm: '智谱 GLM 标准版',
-        setup_option_kimi: 'Kimi 月之暗面',
-        setup_option_qwen: '通义千问',
-        setup_option_cloud: '云端兼容 (Cloud)',
-        setup_option_mimo: '小米 MiMo',
-        setup_option_jiutian: '移动九天 (Jiutian)',
-        setup_option_local: '本地 Llama.cpp',
+        setup_option_zhipu: 'Zhipu CodingPlan',
+        setup_option_zhipu_glm: 'Zhipu GLM',
+        setup_option_kimi: 'Kimi',
+        setup_option_qwen: 'Qwen',
+        setup_option_cloud: 'Cloud',
+        setup_option_mimo: 'Xiaomi MiMo',
+        setup_option_jiutian: 'Jiutian',
+        setup_option_local: 'Local Llama.cpp',
         setup_smtp_title: '邮件发送配置 (SMTP)',
         setup_smtp_optional: '可选 — 用于 email_send 工具',
         setup_smtp_desc: '配置后 Agent 可直接发送邮件，无需每次询问账号密码。139 邮箱使用 smtp.139.com:465，QQ 邮箱使用 smtp.qq.com:465。',
@@ -1436,6 +1510,29 @@ function app() {
         sec_hmac_secret_label: 'WEBHOOK_HMAC_SECRET（留空表示不修改）',
         sec_blocked_tools_label: 'BLOCKED_TOOLS（逗号分隔）',
         sec_allowed_tools_label: 'ALLOWED_TOOLS（逗号分隔，留空表示按策略）',
+        sec_f_gateway_key: 'Dashboard 访问密码',
+        sec_f_gateway_key_desc: '打开 Dashboard 需要输入的密码，未设置则任何人都能访问。',
+        sec_f_hmac_secret: 'Webhook 签名密钥',
+        sec_f_hmac_secret_desc: '用于验证外部 Webhook 请求是否合法，防止伪造。',
+        sec_f_policy: '权限等级',
+        sec_f_policy_desc: '控制 Agent 可以调用哪些工具。',
+        sec_policy_open: '开放 — 全部工具可用',
+        sec_policy_balanced: '均衡 — 屏蔽危险工具',
+        sec_policy_strict: '严格 — 仅白名单可用',
+        sec_f_blocked: '禁用工具列表',
+        sec_f_blocked_desc: '无论权限等级如何，这些工具始终不可用。',
+        sec_f_allowed: '仅允许工具列表',
+        sec_f_allowed_desc: '设置后只有列表中的工具可用，留空则按权限等级执行。',
+        sec_f_paths: '允许访问的目录',
+        sec_f_paths_desc: 'Agent 只能读写这些文件夹。设为 * 表示不限制（不推荐）。',
+        sec_f_checkpoint: '执行检查点',
+        sec_f_checkpoint_desc: '长任务中途保存进度，崩溃后可从断点恢复。',
+        sec_f_remand: '审计最大重试次数',
+        sec_f_remand_desc: '审计员可以要求 Agent 重做任务的最大次数，超过则接受。',
+        sec_f_stuck: '卡死检测阈值',
+        sec_f_stuck_desc: 'Agent 连续输出相同时，系统认为卡死并介入的次数。',
+        sec_f_max_steps: '单任务最大步数',
+        sec_f_max_steps_desc: '单个任务最多执行多少步，防止死循环。',
         // ─── Skills tab ───
         uninstall_btn: '卸载',
         skills_page_info_sep: '个技能 · 第',
@@ -1495,11 +1592,10 @@ function app() {
       { id: 'skills',    icon: '🧩', label: 'Skills' },
       { id: 'downloader', icon: '⬇️', label: 'Downloader' },
       { id: 'memory',    icon: '🧠', label: 'Memory' },
-      { id: 'metrics',   icon: '📊', label: 'Metrics' },
+      { id: 'monitor',   icon: '🩺', label: '监控' },
       { id: 'config',    icon: '⚙️',  label: 'Config' },
       { id: 'security',  icon: '🛡️',  label: 'Security' },
       { id: 'setup',     icon: '🔑', label: 'Setup' },
-      { id: 'health',    icon: '🩺', label: 'Health' },
       { id: 'scheduler', icon: '⏰', label: 'Scheduler' },
     ],
 
@@ -1619,6 +1715,11 @@ function app() {
     showConfigRestartModal: false,
     showStopConfirm: false,
     setupSaved:     false,
+    // Config diff preview
+    setupFormOriginal: {},
+    securityFormOriginal: {},
+    configDiff:       [],
+    configWarnings:   [],
 
     // ── Downloader (aria2c) ───────────────────────────────────
     aria2Status: null,   // null=unchecked | 'checking' | 'running' | 'stopped' | 'not_installed'
@@ -1662,6 +1763,14 @@ function app() {
     sessionId:    localStorage.getItem('rooster_session_id') || ('dash_' + Math.random().toString(36).slice(2, 10)),
     sessionsList: [],
     isRunning:    false,
+    confirmCard: {
+      show: false,
+      title: 'User Input Required',
+      message: 'Please confirm the action or provide input.',
+      inputMode: true,
+      options: ['Confirm', 'Cancel'],
+      inputValue: ''
+    },
     _lastRunId:   null,
     availableProviders: [],
     selectedProvider:   '',
@@ -1707,10 +1816,12 @@ function app() {
     confirmModal:       null,
     metricsData:        null,
     metricsLoading:     false,
+    _metricsTimer:      null,
     guardianData:       null,
     auditVerdicts:      [],
     _subtaskProviders:  {},    // subtask_id -> provider routing
-    skillsTab:          'local', // 'local' | 'market' | 'mcp'
+    skillsTab:          'local', // 'local' | 'market' | 'mcp' | 'config'
+    monitorTab:         'health', // 'health' | 'metrics'
     mcpServers:        [],
     mcpLoading:        false,
     mcpHealth:         { uv_available: false, npx_available: false },
@@ -2115,46 +2226,177 @@ function app() {
     },
 
     // ── Setup Wizard ─────────────────────────────────────────
-    async saveSetup() {
-      this.pendingConfigSaveAction = 'setup';
-      this.showConfigRestartModal = true;
+
+    // Section → field mapping for granular saves
+    _SECTION_FIELDS: {
+      providers: [
+        'ZHIPU_KEY','ZHIPU_MODEL','ZHIPU_GLM_KEY','ZHIPU_GLM_MODEL',
+        'OPENAI_KEY','OPENAI_MODEL','ANTHROPIC_KEY','ANTHROPIC_MODEL',
+        'KIMI_KEY','KIMI_MODEL','QWEN_KEY','QWEN_MODEL',
+        'CLOUD_URL','CLOUD_KEY','CLOUD_MODEL',
+        'MIMO_KEY','MIMO_MODEL',
+        'JIUTIAN_KEY','JIUTIAN_MODEL','JIUTIAN_MODEL_FAST',
+        'LOCAL_URL','LOCAL_KEY','LOCAL_MODEL',
+        'FEISHU_APP_ID','FEISHU_APP_SECRET','FEISHU_USER_OPEN_ID',
+      ],
+      roles: [
+        'ROUTER_MODEL_MODE','STRATEGIST_MODEL_MODE',
+        'EXECUTOR_MODEL_MODE','EXECUTOR_MODEL_NAME',
+        'AUDITOR_MODEL_MODE','SOLO_MODEL_MODE',
+      ],
+      failover: [
+        'LLM_FAILOVER_ENABLED','LLM_FAILOVER_ORDER',
+        'LLM_FAILOVER_RETRY_MAX','LLM_MIN_INTERVAL',
+      ],
+      smtp: [
+        'SMTP_DEFAULT_HOST','SMTP_DEFAULT_PORT',
+        'SMTP_DEFAULT_USER','SMTP_DEFAULT_PASS',
+      ],
+      aria2: ['ARIA2_RPC_URL','ARIA2_TOKEN'],
     },
-    async saveSecurityConfig() {
-      this.pendingConfigSaveAction = 'security';
-      this.showConfigRestartModal = true;
-    },
-    async confirmSaveConfig() {
-      if (this.pendingConfigSaveAction === 'security') {
-        return this.confirmSaveSecurity();
+
+    /** Build payload of only changed fields within a section, skipping empty and masked values */
+    _buildSetupPayload(allowedFields) {
+      const payload = {};
+      const maskedRe = /^\*+.{0,4}$/;  // matches "****", "***abc", etc.
+      const fields = allowedFields ? new Set(allowedFields) : null;
+      for (const [k, v] of Object.entries(this.setupForm)) {
+        if (fields && !fields.has(k)) continue;           // skip fields not in this section
+        const val = (v ?? '').trim();
+        if (!val) continue;                                // skip empty
+        if (val === (this.setupFormOriginal[k] || '')) continue;  // skip unchanged
+        if (maskedRe.test(val)) continue;                  // skip masked display values
+        payload[k] = val;
       }
-      return this.confirmSaveSetup();
+      return payload;
     },
-    async confirmSaveSetup() {
-      this.showConfigRestartModal = false;
+
+    _buildSecurityPayload() {
+      const payload = {};
+      const secretKeys = new Set(['GATEWAY_API_KEY', 'WEBHOOK_HMAC_SECRET']);
+      const maskedRe = /^\*+.{0,4}$/;
+      for (const [k, v] of Object.entries(this.securityForm)) {
+        const val = String(v ?? '').trim();
+        if (!val) continue;
+        if (secretKeys.has(k) && (val.includes('*') || maskedRe.test(val))) continue;
+        if (val === (this.securityFormOriginal[k] || '')) continue;
+        payload[k] = val;
+      }
+      return payload;
+    },
+
+    /** Fetch diff preview from backend */
+    async _fetchConfigDiff(payload) {
+      const headers = { 'Content-Type': 'application/json' };
+      if (this._wsToken) headers['X-API-Key'] = this._wsToken;
+      const res = await fetch('/api/config/diff', {
+        method: 'POST', headers, body: JSON.stringify(payload),
+      });
+      return res.json();
+    },
+
+    /** Save a specific section — show diff, then confirm */
+    async saveSection(sectionName) {
+      const fields = this._SECTION_FIELDS[sectionName];
+      if (!fields) { this.setupError = 'Unknown section: ' + sectionName; return; }
+
+      const sectionLabels = {
+        providers: this.t('save_section_providers'),
+        roles:     this.t('save_section_roles'),
+        failover:  this.t('save_section_failover'),
+        smtp:      this.t('save_section_smtp'),
+        aria2:     this.t('save_section_aria2'),
+      };
+      const label = sectionLabels[sectionName] || sectionName;
+
+      const payload = this._buildSetupPayload(fields);
+      if (Object.keys(payload).length === 0) {
+        this.addToast(label, this.t('config_no_changes'), 'info');
+        return;
+      }
       this.setupSaving = true;
-      this.setupSaved  = false;
-      this.setupError  = '';
+      this.setupError = '';
       try {
-        // Only send non-empty values to avoid wiping existing keys
-        const payload = {};
-        for (const [k, v] of Object.entries(this.setupForm)) {
-          if (v && v.trim() !== '') payload[k] = v.trim();
+        const diffRes = await this._fetchConfigDiff(payload);
+        if (!diffRes.ok) {
+          this.setupError = diffRes.error || 'Diff preview failed';
+          return;
         }
+        this.configDiff = diffRes.changes || [];
+        this.configWarnings = diffRes.warnings || [];
+        this._pendingPayload = payload;
+        this._pendingSectionLabel = label;
+        this.pendingConfigSaveAction = 'setup';
+        this.showConfigRestartModal = true;
+      } catch (e) {
+        this.setupError = e.message;
+      } finally {
+        this.setupSaving = false;
+      }
+    },
+
+    /** Legacy: save all changed fields (kept for backwards compat) */
+    async saveSetup() {
+      return this.saveSection('providers');
+    },
+
+    async saveSecurityConfig() {
+      const payload = this._buildSecurityPayload();
+      if (Object.keys(payload).length === 0) {
+        this.addToast('Security', this.t('config_no_changes'), 'info');
+        return;
+      }
+      this.securitySaving = true;
+      try {
+        const diffRes = await this._fetchConfigDiff(payload);
+        if (!diffRes.ok) {
+          this.addToast('Security', diffRes.error || 'Diff preview failed', 'error');
+          return;
+        }
+        this.configDiff = diffRes.changes || [];
+        this.configWarnings = diffRes.warnings || [];
+        this._pendingPayload = payload;
+        this.pendingConfigSaveAction = 'security';
+        this.showConfigRestartModal = true;
+      } catch (e) {
+        this.addToast('Security', e.message, 'error');
+      } finally {
+        this.securitySaving = false;
+      }
+    },
+
+    async confirmSaveConfig() {
+      this.showConfigRestartModal = false;
+      const payload = this._pendingPayload || {};
+      this._pendingPayload = null;
+
+      if (this.pendingConfigSaveAction === 'security') {
+        return this._executeSecuritySave(payload);
+      }
+      return this._executeSetupSave(payload);
+    },
+
+    async _executeSetupSave(payload) {
+      this.setupSaving = true;
+      this.setupSaved = false;
+      this.setupError = '';
+      try {
         const headers = { 'Content-Type': 'application/json' };
         if (this._wsToken) headers['X-API-Key'] = this._wsToken;
         const res = await fetch('/api/config/save', {
-          method:  'POST',
-          headers,
-          body:    JSON.stringify(payload),
+          method: 'POST', headers, body: JSON.stringify(payload),
         });
         const json = await res.json();
         if (json.ok) {
-          this.setupSaved   = true;
+          this.setupSaved = true;
           this.showFirstRun = false;
           this._ilog('INFO', 'Setup', `Saved: ${(json.saved || []).join(', ')}`);
           this.addToast(this.t('toast_config_saved'), this.t('toast_config_restarting'), 'info');
-          // Auto-reload after service restarts (guardian ~2s + startup ~3s)
           setTimeout(() => location.reload(), 5000);
+        } else if (json.warnings) {
+          // Safety check blocked the save
+          this.setupError = json.warnings.join('\n');
+          this.addToast(this.t('config_safety_warning'), json.warnings[0], 'error');
         } else {
           this.setupError = json.error || 'Save failed';
         }
@@ -2165,35 +2407,20 @@ function app() {
       }
     },
 
-    async confirmSaveSecurity() {
-      this.showConfigRestartModal = false;
+    async _executeSecuritySave(payload) {
       this.securitySaving = true;
       try {
-        const payload = {};
-        const secretKeys = new Set(['GATEWAY_API_KEY', 'WEBHOOK_HMAC_SECRET']);
-        for (const [k, v] of Object.entries(this.securityForm)) {
-          const value = String(v ?? '').trim();
-          if (!value) continue;
-          if (secretKeys.has(k) && value.includes('*')) continue;
-          payload[k] = value;
-        }
-
-        if (Object.keys(payload).length === 0) {
-          this.addToast('Security', 'No changes to save', 'info');
-          return;
-        }
-
         const headers = { 'Content-Type': 'application/json' };
         if (this._wsToken) headers['X-API-Key'] = this._wsToken;
         const res = await fetch('/api/config/save', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(payload),
+          method: 'POST', headers, body: JSON.stringify(payload),
         });
         const json = await res.json();
         if (json.ok) {
-          this.addToast('Security', 'Security settings saved. Restarting...', 'info');
+          this.addToast('Security', this.t('toast_config_restarting'), 'info');
           setTimeout(() => location.reload(), 5000);
+        } else if (json.warnings) {
+          this.addToast(this.t('config_safety_warning'), json.warnings[0], 'error');
         } else {
           this.addToast('Security', json.error || 'Save failed', 'error');
         }
@@ -2313,17 +2540,36 @@ function app() {
       }
     },
 
-    async fetchMemoryStats() {
+    async fetchMemoryStats(skipFacts = false) {
       try {
         const headers = {};
         if (this._wsToken) headers['X-API-Key'] = this._wsToken;
         const res = await fetch('/api/memory/stats', { headers });
         const json = await res.json();
-        if (json.ok) this.memoryStats = json;
+        if (json.ok) {
+          this.memoryStats = json;
+          if (json.is_distilling) {
+            this.distillRunning = true;
+            if (!this._distillPoller) {
+              this._distillPoller = setInterval(() => this.fetchMemoryStats(true), 3000);
+            }
+          } else {
+            if (this.distillRunning) {
+              this.distillRunning = false;
+              this.addToast('Memory', 'Background distillation complete', 'info');
+              // Refresh facts one last time when done
+              this.fetchMemoryFacts();
+            }
+            if (this._distillPoller) {
+              clearInterval(this._distillPoller);
+              this._distillPoller = null;
+            }
+          }
+        }
       } catch (e) {
         console.error('Memory stats fetch failed:', e);
       }
-      this.fetchMemoryFacts();
+      if (!skipFacts) this.fetchMemoryFacts();
     },
 
     async fetchMemoryFacts() {
@@ -2397,15 +2643,17 @@ function app() {
         const res = await fetch('/api/memory/distill', { method: 'POST', headers, body: '{}' });
         const json = await res.json();
         if (json.ok) {
-          const count = json.distilled_count ?? 0;
-          this.addToast('Memory', count > 0 ? `Distilled ${count} session(s)` : 'No sessions to distill', 'info');
+          this.addToast('Memory', json.message || 'Distillation started in background', 'info');
+          if (!this._distillPoller) {
+            this._distillPoller = setInterval(() => this.fetchMemoryStats(true), 3000);
+          }
         } else {
           this.addToast('Memory', 'Distill failed: ' + (json.error ?? 'unknown'), 'error');
+          this.distillRunning = false;
         }
         this.fetchMemoryStats();
       } catch (e) {
         this.addToast('Memory', 'Distill failed: ' + e.message, 'error');
-      } finally {
         this.distillRunning = false;
       }
     },
@@ -3235,7 +3483,7 @@ function app() {
       this.fetchSecurityStatus();
       this.fetchConfig();
       // Stagger heavy calls: phase 1 at 1s, phase 2 at 3s
-      setTimeout(() => { this.fetchModels(); this.fetchMetricsSummary(); this.fetchGuardianStatus(); }, 1000);
+      setTimeout(() => { this.fetchModels(); this.fetchMetricsSummary(); this.fetchGuardianStatus(); this.fetchProxySettings(); }, 1000);
       setTimeout(() => { this.runHealthCheck(); this.fetchSystemStats(); this.scanOllama(); this.fetchMemoryStats(); }, 3500);
       // Fetch version
       fetch('/api/version').then(r => r.json()).then(d => { if (d.version) this.appVersion = d.version; }).catch(() => {});
@@ -3756,6 +4004,13 @@ function app() {
             this.subtaskCompleted = 0;
             const last = this.chatMessages[this.chatMessages.length - 1];
             if (last) last.streaming = false;
+          } else if (s === 'require_user_input') {
+             this.confirmCard.show = true;
+             this.confirmCard.title = d.data?.title || '需要人工确认 (Confirmation Required)';
+             this.confirmCard.message = d.data?.message || '执行被挂起，请点击确认继续，或输入自定义回复。';
+             this.confirmCard.inputMode = d.data?.inputMode !== false;
+             this.confirmCard.options = d.data?.options || ['Confirm', 'Cancel'];
+             this.confirmCard.inputValue = '';
           }
         }
         this.$nextTick(() => {
@@ -3763,6 +4018,24 @@ function app() {
           if (el) el.scrollTop = el.scrollHeight;
         });
       }
+    },
+    submitConfirm(value) {
+      if (!this.gatewayConnected) return;
+      this.confirmCard.show = false;
+      const text = String(value).trim();
+      if (!text) return;
+      
+      this.chatMessages.push({ id: Date.now(), role: 'user', content: text });
+      this.chatMessages.push({ id: Date.now() + 1, role: 'assistant', content: '', thinkContent: '', streaming: true, isThinking: false });
+      this.isRunning = true;
+      
+      const payload = {
+        method: 'chat.send',
+        params: { sessionKey: this.sessionId, message: text, modelOverride: this.selectedProvider },
+        id: 'req_' + Date.now(),
+      };
+      this._gatewayWs.send(JSON.stringify(payload));
+      setTimeout(() => this.fetchSessionsList(), 600);
     },
 
     sendMessage() {
@@ -4106,6 +4379,8 @@ function app() {
             }
           }
         }
+        // Snapshot original values for change tracking
+        this.setupFormOriginal = { ...this.setupForm };
       } catch (e) {
         console.error('Failed to load masked env config:', e);
       }
@@ -4126,9 +4401,60 @@ function app() {
           this.securityForm.GATEWAY_API_KEY = '';
           this.securityForm.WEBHOOK_HMAC_SECRET = '';
         }
+        // Snapshot original values for change tracking
+        this.securityFormOriginal = { ...this.securityForm };
         this.securityConfigLoaded = true;
       } catch (e) {
         console.error('Failed to load security config:', e);
+      }
+    },
+
+    // ── Proxy Management ──────────────────────────────────────────
+    proxyEnabled: false,
+    proxyUrl: '',
+
+    async fetchProxySettings() {
+      try {
+        const headers = {};
+        if (this._wsToken) headers['X-API-Key'] = this._wsToken;
+        const res = await fetch('/api/settings/proxy', { headers });
+        const data = await res.json();
+        this.proxyEnabled = data.enabled;
+        this.proxyUrl = data.url;
+      } catch (e) {
+        console.error('Failed to fetch proxy settings:', e);
+      }
+    },
+
+    async toggleProxy() {
+      this.proxyEnabled = !this.proxyEnabled;
+      await this.updateProxySettings();
+    },
+
+    async updateProxyUrl() {
+      if (this.proxyEnabled) {
+        await this.updateProxySettings();
+      }
+    },
+
+    async updateProxySettings() {
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (this._wsToken) headers['X-API-Key'] = this._wsToken;
+        const res = await fetch('/api/settings/proxy', {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify({
+            enabled: this.proxyEnabled,
+            url: this.proxyUrl
+          })
+        });
+        const data = await res.json();
+        this.addToast('Proxy Updated', `Global Proxy is now ${data.enabled ? 'Enabled' : 'Disabled'}`, 'info');
+      } catch (e) {
+        console.error('Failed to update proxy settings:', e);
+        this.addToast('Error', 'Failed to update proxy settings', 'error');
+        this.proxyEnabled = !this.proxyEnabled; // revert
       }
     },
 

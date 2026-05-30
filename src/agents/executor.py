@@ -243,7 +243,7 @@ class AgentExecutor:
 
             context_limit = settings.AGENT_CONTEXT_LIMIT
             from utils.token_counter import count_message_tokens
-            
+
             # Async compaction trigger at 0.6 threshold
             estimated_tokens = count_message_tokens(session_history)
             if estimated_tokens > context_limit * 0.6:
@@ -1051,7 +1051,7 @@ class AgentExecutor:
         if len(history) <= 4:
             return history
 
-        from utils.token_counter import count_message_tokens, count_tokens
+        from utils.token_counter import count_message_tokens
 
         history_allowance = int(max_total_tokens * settings.CONTEXT_RATIO_HISTORY)
         current_tokens = count_message_tokens(history)

@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/zzycxz/rooster/actions/workflows/ci.yml/badge.svg)](https://github.com/zzycxz/rooster/actions/workflows/ci.yml)
 
-> 版本: 0.3.0 | Python >= 3.12 | 许可: MIT
+> 版本: 0.3.7 | Python >= 3.12 | 许可: MIT
 
 ---
 

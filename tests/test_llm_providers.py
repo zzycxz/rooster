@@ -27,9 +27,8 @@ PROMPT = "Say 'hello' in one word."
 TIMEOUT_BUDGET = 30.0  # seconds per provider
 
 
-async def test_provider(provider: str):
+async def _run_provider_test(provider: str):
     from models.factory import ModelFactory
-    from utils.config import settings
 
     # Check key exists
     registry = ModelFactory._get_registry()
@@ -101,7 +100,7 @@ async def main():
     results = {}
     for i, (key, label) in enumerate(providers, 1):
         print(f"[{i}/{len(providers)}] {label} ({key})")
-        status, elapsed, detail = await test_provider(key)
+        status, elapsed, detail = await _run_provider_test(key)
         results[key] = status
         print(fmt(status, elapsed, detail))
 

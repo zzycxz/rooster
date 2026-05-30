@@ -218,10 +218,17 @@ class AnthropicAdapter(BaseModelClient):
         skip_proxy = any(np.strip() in host for np in no_proxy.split(",") if np.strip()) if no_proxy else False
         proxy_url = None if skip_proxy else (http_proxy if http_proxy else None)
 
+        timeout_config = httpx.Timeout(
+            getattr(settings, "LLM_API_TIMEOUT", 300.0), # read
+            connect=15.0,
+            write=30.0,
+            pool=15.0
+        )
+
         # 设置 trust_env=False 防止 httpx 自动读取可能损坏的系统全局环境变量
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
-            timeout=60.0,
+            timeout=timeout_config,
             proxy=proxy_url,
             trust_env=False,
         )
@@ -385,7 +392,7 @@ class AnthropicAdapter(BaseModelClient):
                 break  # success — exit retry loop
 
             except (httpx.NetworkError, httpx.TimeoutException) as e:
-                logger.error(f"🌐 [Anthropic] 网络异常 (尝试 {attempt+1}/{MAX_RETRIES+1}): 请求 {self.base_url} 失败: {e}")
+                logger.error(f"🌐 [Anthropic] 网络异常 [{type(e).__name__}] (尝试 {attempt+1}/{MAX_RETRIES+1}): 请求 {self.base_url} 失败: {e}")
                 if attempt < MAX_RETRIES and not yielded_any:
                     import asyncio
 
@@ -444,7 +451,7 @@ class AnthropicAdapter(BaseModelClient):
                 )
 
             except (httpx.NetworkError, httpx.TimeoutException) as e:
-                logger.error(f"[Anthropic] Network error: {e}")
+                logger.error(f"🌐 [Anthropic] 网络异常 [{type(e).__name__}] (尝试 {attempt+1}/{MAX_RETRIES+1}): 请求 {self.base_url} 失败: {e}")
                 if attempt < MAX_RETRIES:
                     import asyncio
 
