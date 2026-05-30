@@ -20,6 +20,7 @@ classifiers = [
 dependencies = [
     # Web / API
     "fastapi",
+    "python-multipart",
     "starlette>=1.0.1",  # pin to avoid PYSEC-2026-161 in starlette 1.0.0
     "uvicorn[standard]",
     "httpx",
