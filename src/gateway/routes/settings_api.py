@@ -8,9 +8,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"])
 
+
 class ProxyConfig(BaseModel):
     enabled: bool
     url: Optional[str] = None
+
 
 @router.get("/proxy")
 async def get_proxy():
@@ -18,6 +20,7 @@ async def get_proxy():
     enabled = os.environ.get("SYSTEM_PROXY_ENABLED", "false").lower() == "true"
     url = os.environ.get("SYSTEM_PROXY_URL", "http://127.0.0.1:7890")
     return {"enabled": enabled, "url": url}
+
 
 @router.post("/proxy")
 async def set_proxy(config: ProxyConfig):
@@ -31,9 +34,10 @@ async def set_proxy(config: ProxyConfig):
     # 尝试持久化到 .env.local / Attempt to persist to .env.local
     try:
         from dotenv import set_key
+
         env_file = ".env.local"
         if not os.path.exists(env_file):
-            open(env_file, "a").close() # Create if not exists
+            open(env_file, "a").close()  # Create if not exists
 
         set_key(env_file, "SYSTEM_PROXY_ENABLED", os.environ["SYSTEM_PROXY_ENABLED"])
         if config.url is not None:

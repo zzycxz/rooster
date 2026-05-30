@@ -135,7 +135,7 @@ async def main():
     print("=" * 70)
     print("  Search Provider Integration Test")
     print("=" * 70)
-    print(f"  Query: \"{QUERY}\"")
+    print(f'  Query: "{QUERY}"')
     print(f"  Timeout budget: {TIMEOUT_BUDGET}s per provider")
     print()
 

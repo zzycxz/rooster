@@ -3,6 +3,7 @@ from sessions.store import SessionStore
 from gateway.server_methods import MethodHandler
 from dashboard.src.routes.system import api_sessions_list
 
+
 @pytest.fixture
 def tmp_store(tmp_path, monkeypatch):
     """Create a temporary SessionStore and patch it globally."""
@@ -13,6 +14,7 @@ def tmp_store(tmp_path, monkeypatch):
     monkeypatch.setattr("gateway.server_methods.global_session_store", store)
     return store
 
+
 def test_session_write_back_filtering(tmp_store):
     """验证包含 _internal: True 的中间消息在 write-back 逻辑中被成功过滤"""
     session = tmp_store.get_or_create("test-sess")
@@ -21,9 +23,9 @@ def test_session_write_back_filtering(tmp_store):
     session_history = [
         # 注意：首条消息（用户输入）已经被 server_methods 保存了，长度为 1
         {"role": "user", "content": "我的指令"},
-        {"role": "user", "content": "<tool_response name=\"cmd\">执行成功</tool_response>", "_internal": True},
+        {"role": "user", "content": '<tool_response name="cmd">执行成功</tool_response>', "_internal": True},
         {"role": "user", "content": "请根据以上工具执行结果，继续完成任务。", "_internal": True},
-        {"role": "assistant", "content": "这是最终完成结果。"}
+        {"role": "assistant", "content": "这是最终完成结果。"},
     ]
 
     # 模拟在 handle_chat_send 时已经预先将首条用户输入写入 history
@@ -31,7 +33,7 @@ def test_session_write_back_filtering(tmp_store):
     assert len(session.history) == 1
 
     # 模拟 write-back 逻辑
-    for msg in session_history[len(session.history):]:
+    for msg in session_history[len(session.history) :]:
         if msg.get("role") == "tool":
             continue
         if msg.get("_internal"):
@@ -46,6 +48,7 @@ def test_session_write_back_filtering(tmp_store):
     assert session.history[1].role == "assistant"
     assert session.history[1].content == "这是最终完成结果。"
 
+
 @pytest.mark.asyncio
 async def test_handle_chat_send_persistence(tmp_store):
     """验证用户发送消息时，消息文本会立即持久化写入 session.history"""
@@ -55,38 +58,40 @@ async def test_handle_chat_send_persistence(tmp_store):
     async def dummy_respond(success, data=None, error=None):
         pass
 
-    params = {
-        "sessionKey": "sess-persistence-test",
-        "message": "用户的高层真实输入指令",
-        "modelOverride": ""
-    }
+    params = {"sessionKey": "sess-persistence-test", "message": "用户的高层真实输入指令", "modelOverride": ""}
 
     # 模拟创建 Run 相关的 global_run_manager
     class DummyRun:
         def __init__(self):
             self.run_id = "run-123"
+
     class DummyRunManager:
         def __init__(self):
             self.session_to_run = {}
             self.active_runs = {}
+
         def create_run(self, session_id):
             return DummyRun()
+
         def register_task(self, run_id, task):
             pass
 
     import gateway.server_methods as sm
+
     sm.global_run_manager = DummyRunManager()
 
     # 模拟路由调用
     class DummyRouter:
         async def process_run(self, run, session, message_text, event_handler):
             pass
+
     sm.global_router = DummyRouter()
 
     # 模拟 event_handler
     class DummyEventHandler:
         async def emit(self, run_id, session_id, stream, data):
             pass
+
     methods.event_handler = DummyEventHandler()
 
     # 执行发送
@@ -99,24 +104,26 @@ async def test_handle_chat_send_persistence(tmp_store):
     assert sess.history[0].role == "user"
     assert sess.history[0].content == "用户的高层真实输入指令"
 
+
 @pytest.mark.asyncio
 async def test_session_list_title_and_last_msg_filtering(tmp_store):
     """验证会话列表提取标题和最后消息时，过滤了 <tool_response 形式的内容，并且有非工具消息兜底"""
     # 场景 1：只有工具响应和助手回答
     session1 = tmp_store.get_or_create("sess-1")
-    session1.add_message("user", "<tool_response name=\"cmd\">工具输出内容</tool_response>")
+    session1.add_message("user", '<tool_response name="cmd">工具输出内容</tool_response>')
     session1.add_message("assistant", "最终回答消息内容")
 
     # 场景 2：有真实的用户输入、中间工具响应以及助手回答
     session2 = tmp_store.get_or_create("sess-2")
     session2.add_message("user", "真实的原始用户输入")
-    session2.add_message("user", "<tool_response name=\"cmd\">中间工具输出</tool_response>")
+    session2.add_message("user", '<tool_response name="cmd">中间工具输出</tool_response>')
     session2.add_message("assistant", "助手回答")
 
     methods = MethodHandler(broadcast_callback=None, manager=None, connection_id="test_conn")
 
     # 测试 Gateway 的 handle_session_list
     gateway_sessions = []
+
     async def dummy_respond_gateway(success, data=None, error=None):
         nonlocal gateway_sessions
         gateway_sessions = data["sessions"]

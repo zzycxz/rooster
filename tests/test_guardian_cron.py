@@ -9,6 +9,7 @@ from datetime import datetime
 # guardian.py is at repo root, not under src/
 import sys
 import os
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
@@ -73,7 +74,7 @@ class TestCronMatches:
     def test_day_of_week(self):
         # 2026-05-26 is a Monday (weekday=0)
         dt = datetime(2026, 5, 26, 9, 0)
-        assert Guardian._cron_matches("0 9 * * 1", dt) is True   # Monday
+        assert Guardian._cron_matches("0 9 * * 1", dt) is True  # Monday
         assert Guardian._cron_matches("0 9 * * 2", dt) is False  # Tuesday
 
     def test_step_values(self):

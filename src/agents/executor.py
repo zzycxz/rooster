@@ -53,7 +53,17 @@ class AgentRunConfig(BaseModel):
     @classmethod
     def for_solo(cls, msg, session, tool_registry, allowed_paths=None, images=None) -> "AgentRunConfig":
         window = int(getattr(settings, "SESSION_HISTORY_WINDOW", 20))
-        history = [{"role": m.role, "content": m.content} for m in session.history[-window:]]
+        history = []
+        for m in session.history[-window:]:
+            if getattr(m, "images", None):
+                vision_content = [{"type": "text", "text": m.content}]
+                for b64 in m.images:
+                    data_url = b64 if b64.startswith("data:") else f"data:image/png;base64,{b64}"
+                    vision_content.append({"type": "image_url", "image_url": {"url": data_url}})
+                history.append({"role": m.role, "content": vision_content})
+            else:
+                history.append({"role": m.role, "content": m.content})
+
         return cls(
             session_id=msg.session_id,
             session_key=msg.session_id,
@@ -70,7 +80,17 @@ class AgentRunConfig(BaseModel):
     @classmethod
     def for_subtask(cls, msg, session, subtask, tool_registry, group_id: str, allowed_paths=None) -> "AgentRunConfig":
         window = int(getattr(settings, "SESSION_HISTORY_WINDOW", 20))
-        history = [{"role": m.role, "content": m.content} for m in session.history[-window:]]
+        history = []
+        for m in session.history[-window:]:
+            if getattr(m, "images", None):
+                vision_content = [{"type": "text", "text": m.content}]
+                for b64 in m.images:
+                    data_url = b64 if b64.startswith("data:") else f"data:image/png;base64,{b64}"
+                    vision_content.append({"type": "image_url", "image_url": {"url": data_url}})
+                history.append({"role": m.role, "content": vision_content})
+            else:
+                history.append({"role": m.role, "content": m.content})
+
         return cls(
             session_id=msg.session_id,
             session_key=msg.session_id,
@@ -350,6 +370,7 @@ class AgentExecutor:
 
                 _buffer = ""
                 in_think = False
+
                 async def perform_chat():
                     nonlocal full_content, native_tool_calls, full_reasoning_content, _buffer, in_think
                     chat_kwargs = {"model": config.model, "messages": messages}
@@ -377,7 +398,7 @@ class AgentExecutor:
                                                 session_key=config.session_key, client_run_id=run_id, text=text_before
                                             )
                                         in_think = True
-                                        _buffer = _buffer[start_idx + 7:]
+                                        _buffer = _buffer[start_idx + 7 :]
                                     else:
                                         if len(_buffer) > 7:
                                             flush_len = len(_buffer) - 7
@@ -398,14 +419,16 @@ class AgentExecutor:
                                                 session_key=config.session_key, client_run_id=run_id, text=think_text
                                             )
                                         in_think = False
-                                        _buffer = _buffer[end_idx + 8:]
+                                        _buffer = _buffer[end_idx + 8 :]
                                     else:
                                         if len(_buffer) > 8:
                                             flush_len = len(_buffer) - 8
                                             think_to_flush = _buffer[:flush_len]
                                             full_reasoning_content += think_to_flush
                                             await self.event_handler.emit_think_delta(
-                                                session_key=config.session_key, client_run_id=run_id, text=think_to_flush
+                                                session_key=config.session_key,
+                                                client_run_id=run_id,
+                                                text=think_to_flush,
                                             )
                                             _buffer = _buffer[flush_len:]
                                         break
@@ -413,10 +436,14 @@ class AgentExecutor:
                     if _buffer:
                         if in_think:
                             full_reasoning_content += _buffer
-                            await self.event_handler.emit_think_delta(session_key=config.session_key, client_run_id=run_id, text=_buffer)
+                            await self.event_handler.emit_think_delta(
+                                session_key=config.session_key, client_run_id=run_id, text=_buffer
+                            )
                         else:
                             full_content += _buffer
-                            await self.event_handler.emit_assistant_delta(session_key=config.session_key, client_run_id=run_id, text=_buffer)
+                            await self.event_handler.emit_assistant_delta(
+                                session_key=config.session_key, client_run_id=run_id, text=_buffer
+                            )
 
                 await perform_chat()
 
@@ -907,9 +934,7 @@ class AgentExecutor:
                         content = msg.get("content", "") or ""
                         # Detect tool-level FAILED prefix (e.g. "FAILED: no magnet link found")
                         if content.strip().startswith("FAILED"):
-                            executor_logger.warning(
-                                f"[Executor] Tool returned FAILED: {content[:120]}"
-                            )
+                            executor_logger.warning(f"[Executor] Tool returned FAILED: {content[:120]}")
                             status = "FAILED"
                             break
 
@@ -1033,6 +1058,7 @@ class AgentExecutor:
             )
 
             from models.factory import ModelFactory
+
             client = ModelFactory.get_client("local")
             if hasattr(client, "chat_non_stream"):
                 resp = await client.chat_non_stream(
@@ -1045,7 +1071,9 @@ class AgentExecutor:
             executor_logger.warning(f"Mid-history summary failed (degraded): {e}")
             return ""
 
-    async def _prune_history(self, history: List[Dict[str, str]], max_total_tokens: int = 16000) -> List[Dict[str, str]]:
+    async def _prune_history(
+        self, history: List[Dict[str, str]], max_total_tokens: int = 16000
+    ) -> List[Dict[str, str]]:
         if not history:
             return []
         if len(history) <= 4:
@@ -1074,7 +1102,8 @@ class AgentExecutor:
                         )
                 elif len(content) > obs_cap_chars:
                     content = (
-                        content[:obs_cap_chars] + f"\n... [Content auto-truncated, original length {len(content)} chars] ..."
+                        content[:obs_cap_chars]
+                        + f"\n... [Content auto-truncated, original length {len(content)} chars] ..."
                     )
             entry = {k: v for k, v in msg.items()}
             entry["content"] = content
@@ -1090,7 +1119,11 @@ class AgentExecutor:
             else:
                 pruned.insert(
                     1,
-                    {"role": "user", "content": "[SYSTEM NOTE: Mid-term context pruned to fit context window.]", "_internal": True},
+                    {
+                        "role": "user",
+                        "content": "[SYSTEM NOTE: Mid-term context pruned to fit context window.]",
+                        "_internal": True,
+                    },
                 )
         return pruned
 
@@ -1155,7 +1188,5 @@ class AgentExecutor:
             lines.append("\n**请从以下选项中选择：**")
             for i, opt in enumerate(options, 1):
                 lines.append(f"  **{i}.** {opt}")
-            lines.append(
-                "\n请回复选项序号（如 `1`、`2`）或直接输入您想要的具体描述。"
-            )
+            lines.append("\n请回复选项序号（如 `1`、`2`）或直接输入您想要的具体描述。")
         return "\n".join(lines)

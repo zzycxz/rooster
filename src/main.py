@@ -56,9 +56,7 @@ os.makedirs(_log_dir, exist_ok=True)
 _log_file_path = os.path.join(_log_dir, "rooster.log")
 _file_handler = logging.FileHandler(_log_file_path, encoding="utf-8", mode="a")
 _file_handler.setLevel(logging.DEBUG)  # 文件捕获全量 DEBUG
-_file_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)
+_file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
 logging.getLogger().addHandler(_file_handler)
 logger.info(f"📋 日志文件: {_log_file_path}")
 

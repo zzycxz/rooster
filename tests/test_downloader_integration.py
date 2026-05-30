@@ -2,17 +2,12 @@
 """
 Tests for AriaNg Downloader UI integration in Rooster Dashboard.
 """
+
 import os
 
-DASHBOARD_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)),
-    "dashboard", "ui", "src", "dashboard.html"
-)
+DASHBOARD_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "dashboard", "ui", "src", "dashboard.html")
 
-I18N_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)),
-    "dashboard", "ui", "src", "js", "i18n.js"
-)
+I18N_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "dashboard", "ui", "src", "js", "i18n.js")
 
 
 def test_dashboard_file_exists():
@@ -26,8 +21,9 @@ def test_downloader_tab_registered():
         content = f.read()
 
     # Search for tabs registration of downloader
-    assert "{ id: 'downloader', icon: '⬇️', label: 'Downloader' }" in content or \
-           "id: 'downloader'" in content, "Downloader tab is not registered in the tabs array."
+    assert "{ id: 'downloader', icon: '⬇️', label: 'Downloader' }" in content or "id: 'downloader'" in content, (
+        "Downloader tab is not registered in the tabs array."
+    )
 
 
 def test_i18n_keys_in_dashboard():

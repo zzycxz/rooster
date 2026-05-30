@@ -31,9 +31,7 @@ class DistillationScheduler:
         self._model = model or getattr(settings, "CLOUD_MODEL", "")
 
         self._interval = max(30, getattr(settings, "DISTILLATION_INTERVAL", 600))
-        self._quiet_delta = timedelta(
-            minutes=max(1, getattr(settings, "DISTILLATION_QUIET_MINUTES", 5))
-        )
+        self._quiet_delta = timedelta(minutes=max(1, getattr(settings, "DISTILLATION_QUIET_MINUTES", 5)))
 
         self._inflight: Set[str] = set()
         self._wake = asyncio.Event()
@@ -46,9 +44,7 @@ class DistillationScheduler:
             logger.info("[DistillScheduler] 蒸馏调度器已禁用。")
             return
 
-        logger.info(
-            f"[DistillScheduler] 蒸馏调度器已启动 (间隔 {self._interval}s, 安静阈值 {self._quiet_delta})"
-        )
+        logger.info(f"[DistillScheduler] 蒸馏调度器已启动 (间隔 {self._interval}s, 安静阈值 {self._quiet_delta})")
         self._running = True
         await self._run_loop()
 
@@ -104,9 +100,7 @@ class DistillationScheduler:
                 if quiet < self._quiet_delta:
                     continue
                 distilled = session.distilled_at
-                needs = distilled is None or distilled.replace(tzinfo=None) < session.updated_at.replace(
-                    tzinfo=None
-                )
+                needs = distilled is None or distilled.replace(tzinfo=None) < session.updated_at.replace(tzinfo=None)
 
             if needs:
                 await self._distill_session(session)

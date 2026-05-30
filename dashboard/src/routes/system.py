@@ -62,6 +62,26 @@ async def api_cancel():
     return {"ok": True, "aborted": aborted}
 
 
+@router.post("/api/upload")
+async def api_upload(file: Any = __import__("fastapi").File(...)):
+    """Upload a file to the workspace directory."""
+    import shutil
+    from fastapi import UploadFile
+    
+    workspace_dir = os.path.abspath(".")
+    upload_dir = os.path.join(workspace_dir, "uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    file_path = os.path.join(upload_dir, file.filename)
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        return {"ok": True, "file_path": file_path, "filename": file.filename}
+    except Exception as e:
+        logger.error(f"Failed to save uploaded file: {e}")
+        return {"ok": False, "error": str(e)}
+
+
 @router.get("/api/version")
 async def api_version():
     import importlib.metadata

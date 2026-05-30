@@ -456,7 +456,12 @@ class LLMClient:
                 if current_p == "mimo" and getattr(settings, "MIMO_THINKING_ENABLED", False):
                     mimo_kwargs.setdefault("thinking", {"type": "enabled"})
 
-                async def _do_non_stream(_m=model, _msgs=send_messages, _kw=mimo_kwargs if current_p == "mimo" else kwargs, _provider=current_p):
+                async def _do_non_stream(
+                    _m=model,
+                    _msgs=send_messages,
+                    _kw=mimo_kwargs if current_p == "mimo" else kwargs,
+                    _provider=current_p,
+                ):
                     await self._wait_provider_rate_limit(_provider)
                     async with llm_traffic_controller.slot(_provider, purpose="llm_non_stream"):
                         return await self._internal_client.chat_non_stream(_m, _msgs, **_kw)

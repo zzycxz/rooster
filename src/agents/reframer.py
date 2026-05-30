@@ -6,7 +6,6 @@ from utils.config import settings
 logger = logging.getLogger(__name__)
 
 
-
 class Reframer:
     """
     [Intent Reframer Agent]
@@ -31,6 +30,7 @@ class Reframer:
         if session_id:
             try:
                 from sessions.store import global_session_store
+
                 session = global_session_store.get_or_create(session_id)
                 if session.history:
                     lines = []
@@ -70,7 +70,8 @@ class Reframer:
             # 使用 wait_for 实施强制超时
             # Use wait_for for mandatory timeout
             response = await asyncio.wait_for(
-                self.llm_client.chat_non_stream(messages=messages, temperature=0.3), timeout=getattr(settings, "REFRAMER_TIMEOUT", 20.0)
+                self.llm_client.chat_non_stream(messages=messages, temperature=0.3),
+                timeout=getattr(settings, "REFRAMER_TIMEOUT", 20.0),
             )
 
             content = response.content.strip()
@@ -103,6 +104,7 @@ class Reframer:
                         logger.info(f"🤔 [Reframer] 检测到歧义实体，需要用户确认：{question}")
                         # 用 JSON 序列化保留结构，Router 可完整解析并格式化展示
                         import json as _json
+
                         payload = _json.dumps({"question": question, "options": options}, ensure_ascii=False)
                         return f"__CLARIFICATION_NEEDED__:{payload}"
 
@@ -138,7 +140,9 @@ class Reframer:
             logger.info("✅ [Reframer] 重构成功。")
             return reframed_text
         except asyncio.TimeoutError:
-            logger.warning(f"⏱️ [Reframer] 模型响应超时 ({getattr(settings, 'REFRAMER_TIMEOUT', 20.0)}s)，使用关键词兜底重构。")
+            logger.warning(
+                f"⏱️ [Reframer] 模型响应超时 ({getattr(settings, 'REFRAMER_TIMEOUT', 20.0)}s)，使用关键词兜底重构。"
+            )
             return self._keyword_reframe(user_input)
         except Exception as e:
             logger.error(f"❌ [Reframer] 重构失败: {e}，使用关键词兜底重构。")

@@ -13,6 +13,7 @@ from utils.vision.interaction import DesktopInteraction
 if platform.system().lower() == "windows":
     try:
         import importlib.util
+
         if not importlib.util.find_spec("pywinauto"):
             raise ImportError
         import pywinauto  # noqa: F401 — availability check

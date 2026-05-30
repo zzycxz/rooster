@@ -376,6 +376,7 @@ class MovieDownloaderTool(BaseTool):
                 if len(t) > 1 and t not in _QUALITY_WORDS and (any("\u4e00" <= c <= "\u9fff" for c in t) or len(t) > 4)
             ]
             import logging
+
             logging.info(f"DEBUG _score_magnet: q={q!r}, terms={terms}, joined[:50]={joined[:50]!r}, dn={dn!r}")
             if not terms:
                 return 1.0
@@ -585,7 +586,9 @@ class MovieDownloaderTool(BaseTool):
                         # Returning the list directly would cause a TypeError in the caller (_run_inner).
                         candidates.sort(key=lambda x: x["score"], reverse=True)
                         best_magnet: str = candidates[0]["magnet"]
-                        logging.info(f"✅ Playwright btdig 成功，最优种子得分 {candidates[0]['score']}: {best_magnet[:60]}")
+                        logging.info(
+                            f"✅ Playwright btdig 成功，最优种子得分 {candidates[0]['score']}: {best_magnet[:60]}"
+                        )
                         return best_magnet
                 except Exception as e:
                     logging.warning(f"⚠️ Playwright btdig 失败: {e}")

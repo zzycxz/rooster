@@ -156,7 +156,7 @@ class MissionRunner:
                     run_id="system_confirm",
                     session_id=session_id,
                     stream="lifecycle",
-                    data={"status": "require_user_input", "subtask_id": st.id}
+                    data={"status": "require_user_input", "subtask_id": st.id},
                 )
             except Exception:
                 pass
@@ -170,6 +170,7 @@ class MissionRunner:
         run.input_data = None
 
         from utils.config import settings
+
         CONFIRM_TIMEOUT = getattr(settings, "WAIT_CONFIRM_TIMEOUT", 300)
         try:
             await asyncio.wait_for(run.input_event.wait(), timeout=CONFIRM_TIMEOUT)
@@ -242,7 +243,11 @@ class MissionRunner:
                 status="strategist_start",
             )
 
-            async for subtask in self.strategist.plan_stream(reframed_text):
+            images = []
+            if session.history and getattr(session.history[-1], "images", None):
+                images = session.history[-1].images
+
+            async for subtask in self.strategist.plan_stream(reframed_text, images=images):
                 await channel.send_message(
                     to=msg.sender_id,
                     text=f"🧠 [规划中] {subtask.id}: {subtask.instruction}",
@@ -314,7 +319,9 @@ class MissionRunner:
             # [requires_confirm] 人工确认安全门 — Strategist 标记为高风险的子任务必须经用户确认才能执行
             # [requires_confirm] Human confirmation safety gate — subtasks marked high-risk by Strategist must be confirmed by user
             if st.requires_confirm:
-                if not await self._request_user_confirmation(msg.session_id, msg.sender_id, channel, st, dynamic_event_handler):
+                if not await self._request_user_confirmation(
+                    msg.session_id, msg.sender_id, channel, st, dynamic_event_handler
+                ):
                     executed_tasks[st.id] = Report(
                         subtask_id=st.id,
                         status="CANCELLED",
@@ -809,20 +816,24 @@ class MissionRunner:
                     report = executed_tasks[tid]
                     if report.artifacts:
                         for art in report.artifacts:
-                            _batch.append({
-                                "content": f"生成了文件: {art} — 任务 {tid} 产出",
-                                "fact_type": MemoryFactType.ARTIFACT_CREATED,
-                                "evidence_path": art,
-                                "confidence": 1.0,
-                            })
+                            _batch.append(
+                                {
+                                    "content": f"生成了文件: {art} — 任务 {tid} 产出",
+                                    "fact_type": MemoryFactType.ARTIFACT_CREATED,
+                                    "evidence_path": art,
+                                    "confidence": 1.0,
+                                }
+                            )
                     if report.observation and report.observation.strip():
                         summary = report.observation[:200]
                         _template_words = ["执行成功", "任务完成", "子任务"]
                         if len(summary) > 50 and not any(w in summary for w in _template_words):
-                            _batch.append({
-                                "content": f"[{tid}] 执行结果: {summary}",
-                                "fact_type": MemoryFactType.DECISION_LOG,
-                            })
+                            _batch.append(
+                                {
+                                    "content": f"[{tid}] 执行结果: {summary}",
+                                    "fact_type": MemoryFactType.DECISION_LOG,
+                                }
+                            )
             if _batch:
                 self.memory_manager.batch_update_facts(_batch)
 
@@ -839,16 +850,12 @@ class MissionRunner:
 
     def _format_subtask_clarification(self, subtask_id: str, question: str, options: list) -> str:
         """将 CONFIRM_REQUIRED 信号格式化为任务级的用户问询消息。"""
-        lines = [
-            f"\u2753 **[子任务 `{subtask_id}` 需要您确认：]**\n\n{question}"
-        ]
+        lines = [f"\u2753 **[子任务 `{subtask_id}` 需要您确认：]**\n\n{question}"]
         if options:
             lines.append("\n**请从以下选项中选择：**")
             for i, opt in enumerate(options, 1):
                 lines.append(f"  **{i}.** {opt}")
-            lines.append(
-                "\n请回复选项序号（如 `1`、`2`）或直接输入您想要的具体描述。"
-            )
+            lines.append("\n请回复选项序号（如 `1`、`2`）或直接输入您想要的具体描述。")
         return "\n".join(lines)
 
     async def _wait_for_clarification(
@@ -882,10 +889,7 @@ class MissionRunner:
         except asyncio.TimeoutError:
             await channel.send_message(
                 to=sender_id,
-                text=(
-                    f"⏰ 等待用户输入超时（{timeout}s），"
-                    f"子任务 `{subtask_id}` 已标记为失败。"
-                ),
+                text=(f"⏰ 等待用户输入超时（{timeout}s），子任务 `{subtask_id}` 已标记为失败。"),
             )
             return None
         finally:

@@ -86,8 +86,10 @@ class MethodHandler:
 
         # 1. 获取会话与路由适配
         session = global_session_store.get_or_create(session_id)
-        if message_text:
-            session.add_message(role="user", content=message_text)
+
+        images = params.get("images", [])
+        if message_text or images:
+            session.add_message(role="user", content=message_text, images=images)
             global_session_store.save_session(session_id)
 
         # 存储 model override（session 级别，前端选择的 provider）
@@ -95,14 +97,6 @@ class MethodHandler:
         model_override = params.get("modelOverride", "").strip()
         if model_override:
             session.metadata["model_override"] = model_override
-
-        # 存储用户附加的图片（base64 列表）；下一次 run 消费后清除
-        # Store user-attached images (base64 list); cleared after the next run consumes them
-        images = params.get("images", [])
-        if images:
-            session.metadata["pending_images"] = images
-        else:
-            session.metadata.pop("pending_images", None)
 
         # Check if the session is currently waiting for input
         old_run_id = global_run_manager.session_to_run.get(session_id)

@@ -15,7 +15,9 @@ class FeishuPushFileArgs(BaseModel):
 class FeishuPushFileTool(Tool):
     name = "feishu_push_file"
     kit = "Network"
-    description = "仅限飞书渠道：将本地文件推送至飞书对话框。非飞书渠道（网页/命令行）不可使用此工具，文件直接在本地查看即可。"
+    description = (
+        "仅限飞书渠道：将本地文件推送至飞书对话框。非飞书渠道（网页/命令行）不可使用此工具，文件直接在本地查看即可。"
+    )
     args_schema: Type[BaseModel] = FeishuPushFileArgs
     workspace_dir: str = "."
 
@@ -27,8 +29,7 @@ class FeishuPushFileTool(Tool):
         session_id = self.context.get("session_id", "")
         if not session_id.startswith("feishu_"):
             return ToolResult.error(
-                "❌ feishu_push_file 仅限飞书渠道使用。"
-                "当前渠道不是飞书，请直接在本地查看生成的文件。"
+                "❌ feishu_push_file 仅限飞书渠道使用。当前渠道不是飞书，请直接在本地查看生成的文件。"
             )
 
         # Safely get the injected workspace_dir

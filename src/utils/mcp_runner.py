@@ -268,8 +268,7 @@ class MCPRunner:
         npx_cmd = await self._find_npx()
         if not npx_cmd:
             raise RuntimeError(
-                "npx not found. Install Node.js (>=18) to use Node-based MCP servers. "
-                "Download: https://nodejs.org/"
+                "npx not found. Install Node.js (>=18) to use Node-based MCP servers. Download: https://nodejs.org/"
             )
         # npx -y 在首次 run 时自动安装，无需预先安装
         logger.info(f"[MCP Runner] npx found at {npx_cmd}, Node MCP server ready for lazy install")
@@ -450,7 +449,9 @@ class MCPRunner:
                     logger.warning(f"[MCP Runner] Health check failed for '{inst.defn.name}'")
                     # 如果连续失败且未超过重启上限，自动重启
                     if inst.restart_count < self.MAX_RESTARTS:
-                        logger.info(f"[MCP Runner] Auto-restarting '{inst.defn.name}' (attempt {inst.restart_count + 1})")
+                        logger.info(
+                            f"[MCP Runner] Auto-restarting '{inst.defn.name}' (attempt {inst.restart_count + 1})"
+                        )
                         await self._stop_process(inst)
                         await asyncio.sleep(self.RESTART_DELAY)
                         await self._start_process(inst)

@@ -38,6 +38,7 @@ class OcrExtractTool(BaseTool):
 
         try:
             import importlib.util
+
             if not importlib.util.find_spec("paddleocr"):
                 raise ImportError
         except ImportError:
