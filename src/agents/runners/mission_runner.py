@@ -110,8 +110,13 @@ class MissionRunner:
                 "subtask_metrics": subtask_metrics or {},
                 "saved_at": time.time(),
             }
-            with open(path, "w", encoding="utf-8") as f:
+            # 原子写入：write-to-tmp → fsync → rename（进程崩溃时不会留下截断的 JSON）
+            tmp_path = path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, path)  # 原子操作（Windows os.replace 也保证原子）
             logger.debug(f"Checkpoint saved: {path} ({len(completed_ids)} subtasks done)")
         except Exception as e:
             logger.warning(f"Checkpoint save failed: {e}")
@@ -128,11 +133,31 @@ class MissionRunner:
             # Expire checkpoints older than 24 hours
             if time.time() - data.get("saved_at", 0) > 86400:
                 os.remove(path)
+                # 清理可能残留的 .tmp 文件
+                tmp_path = path + ".tmp"
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
                 logger.info(f"Checkpoint expired and removed: {path}")
                 return None
             return data
-        except Exception as e:
-            logger.warning(f"Checkpoint load failed: {e}")
+        except json.JSONDecodeError as e:
+            # checkpoint 文件损坏（可能是上次写入时崩溃），尝试从 .tmp 恢复
+            logger.warning(f"Checkpoint corrupt ({e}), attempting .tmp recovery")
+            tmp_path = path + ".tmp"
+            if os.path.exists(tmp_path):
+                try:
+                    os.replace(tmp_path, path)
+                    with open(path, encoding="utf-8") as f:
+                        data = json.load(f)
+                    logger.info(f"Checkpoint recovered from .tmp: {path}")
+                    return data
+                except Exception:
+                    pass
+            # 恢复也失败，删除损坏文件
+            for p in (path, tmp_path):
+                if os.path.exists(p):
+                    os.remove(p)
+            return None
             return None
 
     def _clear_checkpoint(self, session_id: str, goal: str) -> None:
@@ -347,6 +372,12 @@ class MissionRunner:
         # 2. 并发任务调度
         # 2. Concurrent task scheduling
         running_tasks: Dict[str, asyncio.Task] = {}
+        subtask_events: Dict[str, asyncio.Event] = {st.id: asyncio.Event() for st in current_mission_plan.subtasks}
+        # 如果是从 checkpoint 恢复的，已完成的任务需要直接 set
+        for cid in completed_task_ids:
+            if cid in subtask_events:
+                subtask_events[cid].set()
+                
         round_artifacts: List[
             str
         ] = []  # 本轮产出的文件，重规划时清理 / Files produced this round, cleaned on replanning
@@ -357,13 +388,18 @@ class MissionRunner:
         # between parallel subtasks (if ST1 finishes first, its result goes into session.history; without isolation, ST2/ST3 would incorrectly inherit ST1's output)
         _baseline_session_history = []
         for m in session.history[-20:]:
+            raw_content = m.content or ""
+            # --- 核心安全补丁: 防止全局历史中的长文本污染子任务 ---
+            if len(raw_content) > 1500:
+                raw_content = raw_content[:1500] + f"\n... [Context auto-truncated from {len(raw_content)} chars] ..."
+            
             if getattr(m, "images", None):
-                content = [{"type": "text", "text": m.content}]
+                content = [{"type": "text", "text": raw_content}]
                 for img in m.images:
                     content.append({"type": "image_url", "image_url": {"url": img}})
                 _baseline_session_history.append({"role": m.role, "content": content})
             else:
-                _baseline_session_history.append({"role": m.role, "content": m.content})
+                _baseline_session_history.append({"role": m.role, "content": raw_content})
 
         async def run_subtask(st: SubTask, current_idx: int):
             if st.owner == "USER":
@@ -421,13 +457,29 @@ class MissionRunner:
             # Wait for dependencies to complete, max 10 minutes to prevent permanent blocking
             _dep_wait_start = asyncio.get_running_loop().time()
             _DEP_WAIT_TIMEOUT = getattr(settings, "DEP_WAIT_TIMEOUT", 600)
+            
             while not all(dep in executed_tasks for dep in st.depends_on):
-                if asyncio.get_running_loop().time() - _dep_wait_start > _DEP_WAIT_TIMEOUT:
-                    missing = [d for d in st.depends_on if d not in executed_tasks]
-                    raise Exception(
-                        f"__ESCALATE__: [{st.id}] 依赖等待超时 ({_DEP_WAIT_TIMEOUT}s)，未就绪依赖: {missing}"
+                missing = [d for d in st.depends_on if d not in executed_tasks]
+                wait_tasks = [subtask_events[d].wait() for d in missing if d in subtask_events]
+                if not wait_tasks:
+                    break
+                
+                try:
+                    # 等待任意一个依赖完成，超时设为 20 秒用于进度播报
+                    await asyncio.wait_for(
+                        asyncio.wait(wait_tasks, return_when=asyncio.FIRST_COMPLETED),
+                        timeout=20.0
                     )
-                await asyncio.sleep(0.5)
+                except asyncio.TimeoutError:
+                    elapsed_s = int(asyncio.get_running_loop().time() - _dep_wait_start)
+                    if elapsed_s > _DEP_WAIT_TIMEOUT:
+                        raise Exception(
+                            f"__ESCALATE__: [{st.id}] 依赖等待超时 ({_DEP_WAIT_TIMEOUT}s)，未就绪依赖: {missing}"
+                        )
+                    await channel.send_message(
+                        to=msg.sender_id,
+                        text=f"⏳ [{st.id}] 等待上游步骤 {missing} 完成（已等 {elapsed_s}s）...",
+                    )
 
             # 计时从实际执行开始（不含依赖等待时间）
             _st_start_time = time.time()
@@ -861,6 +913,24 @@ class MissionRunner:
         try:
             task_counter = 0
             while True:
+                # [Graceful Shutdown] 检测 SIGTERM/SIGINT 信号，保存 checkpoint 后干净退出
+                from main import shutdown_requested
+                if shutdown_requested:
+                    logger.info("🛑 收到 shutdown 信号，保存 checkpoint 后退出")
+                    self._save_checkpoint(
+                        msg.session_id, current_mission_plan,
+                        completed_task_ids, executed_tasks,
+                        subtask_metrics=_subtask_metrics,
+                    )
+                    await channel.send_message(
+                        to=msg.sender_id,
+                        text="⏸️ [系统维护] 任务已暂停并保存进度，下次启动将自动恢复。",
+                    )
+                    # 取消所有运行中的任务
+                    for t in running_tasks.values():
+                        t.cancel()
+                    break
+
                 ready = [
                     st
                     for st in current_mission_plan.subtasks
@@ -887,7 +957,7 @@ class MissionRunner:
                     done, _ = await asyncio.wait(
                         list(running_tasks.values()),
                         return_when=asyncio.FIRST_COMPLETED,
-                        timeout=0.1,
+                        timeout=2.0,  # 2 秒轮询，兼顾响应速度和 CPU 效率
                     )
 
                     for done_task in done:
@@ -934,14 +1004,26 @@ class MissionRunner:
                                     new_ids = {st.id for st in current_mission_plan.subtasks}
                                     completed_task_ids -= new_ids
                                     running_tasks.clear()
+                                    
+                                    # [NEW PLAN] Re-initialize events for the new plan
+                                    subtask_events.clear()
+                                    for new_st in current_mission_plan.subtasks:
+                                        subtask_events[new_st.id] = asyncio.Event()
+                                    for cid in completed_task_ids:
+                                        if cid in subtask_events:
+                                            subtask_events[cid].set()
+                                            
                                     await channel.send_message(to=msg.sender_id, text="🔄 [重构完毕] 执行新方案...")
                                     break
                                 else:
                                     raise e
                             else:
                                 raise e
+                        finally:
+                            if finished_id in subtask_events:
+                                subtask_events[finished_id].set()
                 else:
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(1.0)  # 无运行任务时 1 秒检查一次 ready
 
         except Exception as e:
             if running_tasks:

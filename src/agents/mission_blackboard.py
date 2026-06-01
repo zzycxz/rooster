@@ -53,6 +53,7 @@ class MissionBlackboard:
         # 文件/资源锁：resource_key -> owner_subtask_id
         # File/Resource lock: resource_key -> owner_subtask_id
         self._resource_locks: Dict[str, str] = {}
+        self._resource_events: Dict[str, asyncio.Event] = {}
 
         # 子代理进度：subtask_id -> {"status", "step", "intent", "updated_at"}
         # Sub-agent progress: subtask_id -> {"status", "step", "intent", "updated_at"}
@@ -187,7 +188,7 @@ class MissionBlackboard:
         timeout: float = 30.0,
     ) -> bool:
         """
-        轮询等待 resource 释放，直到获取锁或超时。
+        事件驱动等待 resource 释放，直到获取锁或超时。
         返回 True 表示最终获取成功，False 表示超时。
         """
         import asyncio as _asyncio
@@ -196,10 +197,22 @@ class MissionBlackboard:
         while True:
             if await self.try_lock_resource(resource, owner):
                 return True
-            if _asyncio.get_running_loop().time() - start > timeout:
+                
+            elapsed = _asyncio.get_running_loop().time() - start
+            if elapsed > timeout:
                 logger.error(f"[Blackboard:{self.mission_id}] '{owner}' timed out waiting for resource '{resource}'")
                 return False
-            await _asyncio.sleep(poll_interval)
+                
+            async with self._lock:
+                if resource not in self._resource_events:
+                    self._resource_events[resource] = _asyncio.Event()
+                event = self._resource_events[resource]
+                event.clear()
+            
+            try:
+                await _asyncio.wait_for(event.wait(), timeout=timeout - elapsed)
+            except _asyncio.TimeoutError:
+                pass
 
     async def release_resource(self, resource: str, owner: str) -> None:
         """释放 owner 持有的 resource 锁。"""
@@ -207,6 +220,8 @@ class MissionBlackboard:
             if self._resource_locks.get(resource) == owner:
                 del self._resource_locks[resource]
                 logger.debug(f"[Blackboard:{self.mission_id}] '{owner}' released '{resource}'")
+                if resource in self._resource_events:
+                    self._resource_events[resource].set()
 
     # ------------------------------------------------------------------
     # 竞速组管理

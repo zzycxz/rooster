@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import signal
 import sys
 import os
 import getpass
@@ -52,6 +53,19 @@ _file_handler.setLevel(logging.DEBUG)  # 文件捕获全量 DEBUG
 _file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
 logging.getLogger().addHandler(_file_handler)
 logger.info(f"📋 日志文件: {_log_file_path}")
+
+# ── Graceful Shutdown 信号 ─────────────────────────────────────────────────
+# Guardian 通过 SIGTERM 终止子进程时，设置 flag 让 MissionRunner 在调度循环中
+# 检测到后主动保存 checkpoint 再退出，而非被暴力 kill 导致数据丢失。
+shutdown_requested = False
+
+def _handle_graceful_shutdown(signum, frame):
+    global shutdown_requested
+    shutdown_requested = True
+    logger.warning(f"📡 收到 shutdown 信号 ({signum})，等待当前步骤完成后保存 checkpoint...")
+
+signal.signal(signal.SIGTERM, _handle_graceful_shutdown)
+signal.signal(signal.SIGINT, _handle_graceful_shutdown)
 
 # 关键诊断模块显式开启 DEBUG，确保 FAILSAFE / Provider 错误不丢失
 # Key diagnostic modules explicitly set to DEBUG so FAILSAFE / provider errors are not lost

@@ -588,7 +588,13 @@ class AgentExecutor:
                         _recent_tool_calls.pop(0)
                     if len(_recent_tool_calls) == _STUCK_THRESHOLD and len(set(_recent_tool_calls)) == 1:
                         _stuck_break_count += 1
-                        if _stuck_break_count >= 2:
+                        if _stuck_break_count >= 3:
+                            executor_logger.error(
+                                f"[STUCK] Agent repeating identical tool calls "
+                                f"{_STUCK_THRESHOLD * _stuck_break_count} times. Forcing ESCALATE."
+                            )
+                            raise Exception("__ESCALATE__: 智能体陷入死循环，连续重复调用相同工具失败，申请重规划。")
+                        elif _stuck_break_count >= 2:
                             executor_logger.error(
                                 f"[STUCK] Agent repeating identical tool calls "
                                 f"{_STUCK_THRESHOLD * _stuck_break_count} times. Forcing exit."
@@ -649,6 +655,8 @@ class AgentExecutor:
                                     await self.event_handler.emit_assistant_delta(
                                         session_key=config.session_key, client_run_id=run_id, text=delta.content
                                     )
+                        except asyncio.TimeoutError:
+                            executor_logger.warning("[COMMIT] Synthesis pass timed out (120s), using current content")
                         except Exception as e:
                             executor_logger.warning(f"[COMMIT] Synthesis pass failed: {e}")
                         if synth_content:
@@ -658,49 +666,48 @@ class AgentExecutor:
 
                 # Parallel tool execution via dispatch module
                 # Each tool result is emitted immediately for Dashboard progress
-                tasks = [
-                    execute_orchestrated_tool(
-                        run_id,
-                        config,
-                        tool_name,
-                        args,
-                        step,
-                        session_history,
-                        orchestrator=self.orchestrator,
-                        tool_registry=config.tool_registry,
-                        event_handler=self.event_handler,
-                        llm_client=self.llm_client,
-                        uia_cache=self._uia_cache,
-                        visual_buffer=self.visual_buffer,
-                        memory_manager=self.memory_manager,
-                        reflection_engine_getter=self._get_reflection_engine,
-                        policy_override=config.policy_override,
-                    )
-                    for tool_name, args in tool_calls
-                ]
-
-                # Progressive observation: await each tool separately
-                # Emit tool_result as each completes for Dashboard UX
-                observations = []
-                for coro in asyncio.as_completed(tasks):
+                # 使用 index 标记保证结果顺序与 tool_calls 一致（FC 协议要求 tool_call_id 对应）
+                async def _run_tool(idx: int, tool_name: str, args: dict) -> tuple:
+                    """Execute a single tool, return (index, observation_string)."""
                     try:
-                        obs = await coro
-                        observations.append(obs)
+                        obs = await execute_orchestrated_tool(
+                            run_id,
+                            config,
+                            tool_name,
+                            args,
+                            step,
+                            session_history,
+                            orchestrator=self.orchestrator,
+                            tool_registry=config.tool_registry,
+                            event_handler=self.event_handler,
+                            llm_client=self.llm_client,
+                            uia_cache=self._uia_cache,
+                            visual_buffer=self.visual_buffer,
+                            memory_manager=self.memory_manager,
+                            reflection_engine_getter=self._get_reflection_engine,
+                            policy_override=config.policy_override,
+                        )
                         # Emit individual tool result to Dashboard for real-time progress
                         if self.event_handler:
                             self._fire_background(
                                 self.event_handler.emit_tool_response(
                                     session_key=config.session_key,
                                     client_run_id=run_id,
-                                    tool_name="tool",
+                                    tool_name=tool_name,
                                     response=obs[:200] if obs else "",
                                 )
                             )
+                        return (idx, obs)
                     except Exception as tool_exc:
                         # Individual tool failure does not crash other tools
                         executor_logger.warning(f"Tool execution failed: {tool_exc}")
-                        obs = f"Tool execution error: {type(tool_exc).__name__}"
-                        observations.append(obs)
+                        return (idx, f"Tool execution error: {type(tool_exc).__name__}")
+
+                indexed_results = await asyncio.gather(
+                    *[_run_tool(i, name, args) for i, (name, args) in enumerate(tool_calls)]
+                )
+                # 按 index 排序，保证 observations[i] 对应 tool_calls[i]
+                observations = [obs for _, obs in sorted(indexed_results, key=lambda x: x[0])]
 
                 # [Round 8] Record which tools were called this step so the
                 # ToolRouter can keep their kit schemas in scope next step.
@@ -793,12 +800,17 @@ class AgentExecutor:
             )
             final_messages = self.prompt_builder.compose_messages(system_prompt, session_history, "")
             final_content = ""
-            async for delta in self.llm_client.chat_stream(model=config.model, messages=final_messages):
-                if delta.content:
-                    final_content += delta.content
-                    await self.event_handler.emit_assistant_delta(
-                        session_key=config.session_key, client_run_id=run_id, text=delta.content
-                    )
+            try:
+                async for delta in self.llm_client.chat_stream(model=config.model, messages=final_messages):
+                    if delta.content:
+                        final_content += delta.content
+                        await self.event_handler.emit_assistant_delta(
+                            session_key=config.session_key, client_run_id=run_id, text=delta.content
+                        )
+            except asyncio.TimeoutError:
+                executor_logger.warning("[EMERGENCY] Max-steps summary timed out (120s), using what we have")
+            except Exception as e:
+                executor_logger.warning(f"[EMERGENCY] Max-steps summary failed: {e}")
             if final_content:
                 session_history.append({"role": "assistant", "content": final_content})
 
@@ -1099,37 +1111,6 @@ class AgentExecutor:
 
     # --- History and text utilities ---
 
-    async def _summarize_mid_history(self, messages: List[Dict[str, str]]) -> str:
-        """将被裁剪的中间对话压缩为摘要，防止信息丢失。"""
-        if not messages:
-            return ""
-        try:
-            lines = []
-            for m in messages:
-                role = m.get("role", "user")
-                content = (m.get("content") or "")[:300]
-                lines.append(f"{role}: {content}")
-            conversation_text = "\n".join(lines)
-
-            prompt = (
-                "请将以下对话压缩为一段 300 字以内的摘要，保留关键事实、决策和操作结果，省略过程细节：\n\n"
-                + conversation_text
-            )
-
-            from models.factory import ModelFactory
-
-            client = ModelFactory.get_client("local")
-            if hasattr(client, "chat_non_stream"):
-                resp = await client.chat_non_stream(
-                    messages=[{"role": "user", "content": prompt}],
-                    model=getattr(settings, "LOCAL_MODEL", ""),
-                )
-                return (resp.content or "")[:500]
-            return ""
-        except Exception as e:
-            executor_logger.warning(f"Mid-history summary failed (degraded): {e}")
-            return ""
-
     async def _prune_history(
         self, history: List[Dict[str, str]], max_total_tokens: int = 16000
     ) -> List[Dict[str, str]]:
@@ -1151,7 +1132,9 @@ class AgentExecutor:
         for i, msg in enumerate(history):
             content = msg.get("content") or ""
             role = msg.get("role", "user")
-            if role == "user" and i > 0 and i < len(history) - 2:
+            
+            # Truncate both user (tool outputs) and assistant (thoughts/reasoning)
+            if role in ("user", "assistant") and i > 0 and i < len(history) - 2:
                 if "【视觉分析报告】" in content:
                     visual_cap = obs_cap_chars * 2
                     if len(content) > visual_cap:
@@ -1164,26 +1147,32 @@ class AgentExecutor:
                         content[:obs_cap_chars]
                         + f"\n... [Content auto-truncated, original length {len(content)} chars] ..."
                     )
+                    
             entry = {k: v for k, v in msg.items()}
             entry["content"] = content
+            
+            # Also truncate reasoning_content for assistant
+            if role == "assistant" and entry.get("reasoning_content"):
+                r_content = entry["reasoning_content"]
+                if len(r_content) > obs_cap_chars:
+                    entry["reasoning_content"] = (
+                        r_content[:obs_cap_chars]
+                        + f"\n... [Reasoning auto-truncated, original length {len(r_content)} chars] ..."
+                    )
+                    
             pruned.append(entry)
 
         total_tokens = count_message_tokens(pruned)
         if total_tokens > max_total_tokens and len(pruned) > 8:
-            mid_messages = pruned[1:-10]
-            summary = await self._summarize_mid_history(mid_messages) if mid_messages else ""
             pruned = [pruned[0]] + pruned[-10:]
-            if summary:
-                pruned.insert(1, {"role": "user", "content": f"[对话摘要] {summary}", "_internal": True})
-            else:
-                pruned.insert(
-                    1,
-                    {
-                        "role": "user",
-                        "content": "[SYSTEM NOTE: Mid-term context pruned to fit context window.]",
-                        "_internal": True,
-                    },
-                )
+            pruned.insert(
+                1,
+                {
+                    "role": "user",
+                    "content": "[系统提示：中间对话已压缩以节约上下文，详细内容已由后台归档至长期记忆]",
+                    "_internal": True,
+                },
+            )
         return pruned
 
     def _clean_thought_chatter(self, text: str) -> str:

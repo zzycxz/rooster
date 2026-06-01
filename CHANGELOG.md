@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0] - 2026-06-01
+
+### Added
+- **Progressive History Compression (渐进式历史压缩)**：在 `Executor` 执行循环中引入渐进式上下文修剪机制 (`_summarize_mid_history`)。每 10 步触发一次局部语义蒸馏，保留最近 5 步原始上下文，彻底解决长任务后期因触碰 60% 阈值导致的“硬截断降智”问题。
+- **Task-Level Heartbeats (任务级心跳守护)**：在 `MissionRunner` 中新增任务级 `.heartbeat` 文件发射机制。`Guardian` 守护进程现可检测并干预长达 3 分钟毫无进度的子任务“隐性卡死”，而不仅仅是进程级崩溃。
+- **Blackboard Fact Confidence (黑板事实置信度)**：扩展 Blackboard 的 `FactEntry` 结构，新增 `status` (`confirmed`, `tentative`, `superseded`) 状态标签，避免子任务试错阶段的错误数据污染全局并发记忆。
+
+### Changed
+- **Executor Path Optimization (路径缓存优化)**：重构了 `SystemPrompt` 与 `FC Schema` 的渲染逻辑。通过计算 LTM 与最近使用工具的哈希值实现热缓存，消除了 ReAct 循环中多余的重复构建开销。
+- **Observation Head-Tail Truncation (头尾保留截断)**：优化了依赖任务的结果提取逻辑，由原先的“硬截断 2000 字符”改为“保留头部 600 字结论与尾部 600 字堆栈，省略中间部分”，确保长输出中的关键错误信息不丢失。
+
+### Fixed
+- **Fallback Chain 降级链收束 (B1)**：彻底修复了 6 条规划降级路径最终导向死胡同（"Tool not found"）的问题。引入并注册 `generic_tool` 作为标准兜底工具，使得规划失败的子任务能安全移交至 `Executor` 进行自主 ReAct 探索。
+- **Interpreter Sandbox Leak (沙箱线程泄漏)**：修复了云端 E2B 沙箱执行死循环代码时，未向 SDK 传递超时限制导致的 Python 后台线程与计费沙箱永久挂起的问题。
+- **Local Interpreter Vulnerabilities (解释器沙盒漏洞)**：
+  - 修复 `tool_dispatch.py` 中因参数默认值不一致导致 AST 安全检查被绕过的漏洞。
+  - 将本地子进程中的 `"python"` 指令替换为 `sys.executable`，解决虚拟环境隔离断裂问题。
+  - 修复了安全拦截时引发大模型“幻觉死循环”的矛盾提示词。
+
 ## [0.4.0] - 2026-05-31
 
 ### Added

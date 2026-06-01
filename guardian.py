@@ -189,8 +189,10 @@ class Guardian:
         self._shutdown = True
         self._graceful_kill_child()
 
-    def _graceful_kill_child(self, timeout: int = 8):
-        """SIGTERM first, wait for grace period, then SIGKILL the entire process tree."""
+    def _graceful_kill_child(self, timeout: int = 30):
+        """SIGTERM first, wait for grace period, then SIGKILL the entire process tree.
+        Default 30s gives MissionRunner time to save checkpoint and clean up."""
+
         if not self._child or self._child.poll() is not None:
             return
         try:
@@ -222,8 +224,12 @@ class Guardian:
             "timestamp": time.time(),
         }
         try:
-            with open(_STATUS_FILE, "w", encoding="utf-8") as f:
+            tmp_path = _STATUS_FILE + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(status, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, _STATUS_FILE)  # 原子操作
         except Exception:
             pass
 
