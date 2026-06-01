@@ -253,6 +253,12 @@ class AgentExecutor:
         all_fc = config.tool_registry.get_all_fc_schemas() if config.tool_registry else []
         fc_tools_count = len(all_fc)
 
+        # [V12 B3] Caching variables
+        _cached_system_prompt = None
+        _cached_ltm_hash = None
+        _cached_fc_schemas = None
+        _cached_recent_tools_hash = None
+
         while step < config.max_steps:
             step += 1
 
@@ -264,15 +270,24 @@ class AgentExecutor:
 
             # --- Phase 1: Pre-processing ---
             ltm_block = self.memory_manager.get_summary_for_prompt(query=config.prompt)
-
-            params = SystemPromptParams(
-                agent_id=config.agent_id,
-                workspace_dir=config.workspace_dir,
-                tools_info=tools_info,
-                ltm_memory=ltm_block,
-                fc_tools_count=fc_tools_count,
-            )
-            system_prompt = self.prompt_builder.build_system_prompt(params)
+            
+            # [V12 B3.1] System Prompt Caching
+            import hashlib
+            ltm_hash = hashlib.md5(ltm_block.encode()).hexdigest()[:8] if ltm_block else "empty"
+            
+            if _cached_system_prompt is None or ltm_hash != _cached_ltm_hash:
+                params = SystemPromptParams(
+                    agent_id=config.agent_id,
+                    workspace_dir=config.workspace_dir,
+                    tools_info=tools_info,
+                    ltm_memory=ltm_block,
+                    fc_tools_count=fc_tools_count,
+                )
+                system_prompt = self.prompt_builder.build_system_prompt(params)
+                _cached_system_prompt = system_prompt
+                _cached_ltm_hash = ltm_hash
+            else:
+                system_prompt = _cached_system_prompt
 
             context_limit = settings.AGENT_CONTEXT_LIMIT
             from utils.token_counter import count_message_tokens
@@ -376,11 +391,18 @@ class AgentExecutor:
             # Select only the kit schemas relevant to this task context.
             # Falls back to full set when routing produces too few tools.
             if config.tool_registry:
-                fc_schemas = config.tool_registry.get_fc_schemas_for_prompt(
-                    prompt=config.prompt,
-                    step=step,
-                    recently_used=_recently_used_tools,
-                )
+                # [V12 B3.2] FC Schema Caching
+                recent_tools_hash = "|".join(_recently_used_tools[-5:])
+                if _cached_fc_schemas is None or recent_tools_hash != _cached_recent_tools_hash:
+                    fc_schemas = config.tool_registry.get_fc_schemas_for_prompt(
+                        prompt=config.prompt,
+                        step=step,
+                        recently_used=_recently_used_tools,
+                    )
+                    _cached_fc_schemas = fc_schemas
+                    _cached_recent_tools_hash = recent_tools_hash
+                else:
+                    fc_schemas = _cached_fc_schemas
             else:
                 fc_schemas = None
 
