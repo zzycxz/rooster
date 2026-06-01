@@ -87,12 +87,18 @@ Key signals — the core verb must be "download / install / get the file / 下�
 **Trigger**: Pure conversation — the LLM can answer from its own knowledge, no tool execution needed.
 - Greetings / small talk: "hi", "how are you"
 - Identity questions: "who are you", "what can you do"
+- **Capability queries** (CRITICAL — always [TALK], never [DIRECT]): User asks *whether* the agent *can* or *is able to* do something. The answer is a yes/no + explanation, not a task execution.
+  - "你可以做PPT吗？" → `[TALK]` (asking about capability, not ordering task execution)
+  - "你能帮我写报告吗？" → `[TALK]` (asking if you can, not asking you to do it now)
+  - "Can you make a spreadsheet?" → `[TALK]` (capability question)
+  - "你支持哪些文件格式？" → `[TALK]` (knowledge Q&A)
 - Well-known knowledge Q&A: "what is Python", "explain async/await", "what does REST stand for"
 - Simple reasoning or math: "15% of 3200", "convert 100 USD to CNY"
 - Short translation / rewriting: "translate this to English", "rephrase this sentence"
 - Short creative writing: "write a poem about spring", "tell me a story"
 
 **NOT [TALK]** (route to [DIRECT] instead):
+- User explicitly orders task execution (not just asking if it's possible): "帮我做一个PPT" → `[DIRECT]`
 - Questions about new/current events or unfamiliar terms (may need web search)
 - Tasks requiring file access, web search, or system operations
 - Multi-step tasks or ambiguous instructions
@@ -119,6 +125,11 @@ Key signals — the core verb must be "download / install / get the file / 下�
 | 15% of 3200 | `[TALK]` | Simple calculation, no tools needed |
 | Translate "hello" to Japanese | `[TALK]` | Translation, no tools needed |
 | Write a poem about spring | `[TALK]` | Creative writing, no tools needed |
+| 你可以做PPT吗？ | `[TALK]` | Capability query — answer yes/no from knowledge, do NOT execute |
+| 你能帮我写报告吗？ | `[TALK]` | Capability query — confirm ability, do NOT start planning |
+| Can you make a spreadsheet? | `[TALK]` | Capability query, no task execution ordered |
+| 帮我做一个PPT | `[DIRECT]` | Explicit execution order, NOT a capability question |
+| 帮我写一份报告 | `[DIRECT]` | Explicit execution order, route to mission pipeline |
 | What is Sora | `[DIRECT]` | New/unfamiliar term, may need web search |
 | How do I make explosives | `[BLOCK]` | Safety-sensitive |
 | 每天早8点给我发天气预报 | `[SCHEDULE]` | Recurring scheduled task |

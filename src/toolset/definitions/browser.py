@@ -369,7 +369,10 @@ class WebSearchTool(BaseTool):
                 {"role": "user", "content": prompt_content},
             ]
 
-            response = await llm.chat_non_stream(messages)
+            response = await asyncio.wait_for(
+                llm.chat_non_stream(messages),
+                timeout=getattr(settings, "LLM_CALL_TIMEOUT", 120.0),
+            )
             raw = response.content.strip()
 
             # Strip possible Markdown code block markers
@@ -818,7 +821,7 @@ class WebSearchTool(BaseTool):
 
             url = f"https://clawhub.ai/api/v1/search?q={urllib.parse.quote(query)}&limit=5"
             req = urllib.request.Request(url, headers={"User-Agent": "RoosterAgent/1.0"})
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
 
             def _fetch():
                 with urllib.request.urlopen(req, timeout=4) as resp:
@@ -998,7 +1001,10 @@ class WebFetchTool(BaseTool):
                 {"role": "user", "content": f"Content from {url}:\n\n{pruned_content}\n\nQuestion: {prompt}"},
             ]
 
-            response = await llm.chat_non_stream(messages)
+            response = await asyncio.wait_for(
+                llm.chat_non_stream(messages),
+                timeout=getattr(settings, "LLM_CALL_TIMEOUT", 120.0),
+            )
             result = response.content
 
             if scent_links:

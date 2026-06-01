@@ -343,13 +343,13 @@ class LLMClient:
     async def chat_stream(self, messages: List[Dict[str, str]], **kwargs) -> AsyncGenerator[LLMResponseDelta, None]:
         """流式对话 — 支持 Provider 轮转 + Per-Provider 冷却"""  # Streaming chat — supports Provider rotation + Per-Provider cooldown
         await self._wait_rate_limit()
-        model = kwargs.pop("model", self.model_name)
+        caller_model = kwargs.pop("model", self.model_name)
 
         if not settings.LLM_FAILOVER_ENABLED:
             await self._wait_provider_rate_limit(self.provider)
             _msgs = _inline_system_for_mimo(messages) if self.provider == "mimo" else messages
             async with llm_traffic_controller.slot(self.provider, purpose="llm_stream"):
-                async for delta in self._internal_client.chat_stream(model, _msgs, **kwargs):
+                async for delta in self._internal_client.chat_stream(caller_model, _msgs, **kwargs):
                     yield delta
             return
 
@@ -358,7 +358,10 @@ class LLMClient:
         for current_p in self._iter_pipeline_for(messages):
             try:
                 await self._wait_provider_rate_limit(current_p)
-                model = await self._prepare_provider(current_p)
+                provider_default_model = await self._prepare_provider(current_p)
+                # Only honour caller_model on the preferred provider.
+                # On failover providers the model name is likely incompatible, so use their default.
+                model = caller_model if (current_p == self.preferred_provider and caller_model) else provider_default_model
 
                 # Strip reasoning_content from assistant messages when sending to providers
                 # that don't support it (everyone except MiMo).  MiMo *requires* it to be
@@ -434,18 +437,19 @@ class LLMClient:
     async def chat_non_stream(self, messages: List[Dict[str, str]], **kwargs) -> LLMResponseDelta:
         """非流式对话 — 支持 Provider 轮转 + Per-Provider 冷却"""  # Non-streaming chat — supports Provider rotation + Per-Provider cooldown
         await self._wait_rate_limit()
-        model = kwargs.pop("model", self.model_name)
+        caller_model = kwargs.pop("model", self.model_name)
 
         if not settings.LLM_FAILOVER_ENABLED:
             await self._wait_provider_rate_limit(self.provider)
             _msgs = _inline_system_for_mimo(messages) if self.provider == "mimo" else messages
             async with llm_traffic_controller.slot(self.provider, purpose="llm_non_stream"):
-                return await self._internal_client.chat_non_stream(model, _msgs, **kwargs)
+                return await self._internal_client.chat_non_stream(caller_model, _msgs, **kwargs)
 
         last_exc = None
         for current_p in self._iter_pipeline_for(messages):
             try:
-                model = await self._prepare_provider(current_p)
+                provider_default_model = await self._prepare_provider(current_p)
+                model = caller_model if (current_p == self.preferred_provider and caller_model) else provider_default_model
                 send_messages = (
                     _inline_system_for_mimo(messages)
                     if current_p == "mimo"
@@ -474,7 +478,8 @@ class LLMClient:
                 return result
             except Exception as e:
                 last_exc = e
-                _set_provider_cooldown_adaptive(current_p, repr(e))
+                # _set_provider_cooldown_adaptive already called inside _retry_call for each attempt;
+                # do NOT call again here to avoid double-counting the last failure.
                 logger.error(f"❌ [Client] {current_p} 崩溃: {e}")
 
         logger.error(f"🚫 [Client] 所有 Provider 折损。最后异常: {last_exc}")

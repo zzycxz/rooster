@@ -21,6 +21,7 @@ import logging
 from typing import Type
 from pydantic import BaseModel, Field
 from toolset.base import BaseTool, ToolResult
+from agents.executor import _stream_with_chunk_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +126,10 @@ class SubAgentSpawnTool(BaseTool):
             ]
             model = args.model_hint or self.context.get("current_model", "")
             output_text = ""
-            async for delta in llm_client.chat_stream(model=model, messages=messages):
+            async for delta in _stream_with_chunk_timeout(
+                llm_client.chat_stream(model=model, messages=messages),
+                chunk_timeout=getattr(settings, "LLM_STREAM_CHUNK_TIMEOUT", 30.0),
+            ):
                 if delta.content:
                     output_text += delta.content
             return output_text.strip()

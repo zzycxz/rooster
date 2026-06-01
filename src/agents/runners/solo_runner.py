@@ -56,7 +56,7 @@ class SoloRunner:
         # Apply frontend-selected model override (session level)
         model_override = session.metadata.get("model_override", "").strip()
         if model_override:
-            self.executor.llm_client = LLMClient(provider=model_override)
+            self.executor.llm_client = LLMClient(model=model_override)
             logger.info(f"SOLO 模式使用 model override: {model_override}")
         elif settings.LOCAL_MODEL and settings.LOCAL_LIGHTWEIGHT_DOMAINS:
             msg_lower = msg.text.lower()

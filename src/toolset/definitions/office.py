@@ -686,3 +686,347 @@ class PdfOpTool(BaseTool):
 
         else:
             return f"Error: Unknown action '{action}'. Valid: 'read', 'write'."
+
+
+# ---------------------------------------------------------------------------
+# [New] pptx_op — PowerPoint generation tool
+# Accepts Markdown-style slide content, handles themes and Chinese fonts.
+# ---------------------------------------------------------------------------
+
+
+class PptxOpArgs(BaseModel):
+    path: str = Field(description="输出 .pptx 文件的绝对路径，例如 C:/Users/xxx/Desktop/report.pptx")
+    slides_markdown: str = Field(
+        description=(
+            "幻灯片内容，Markdown 格式，每张幻灯片之间用 '---' 单独一行分隔。\n"
+            "每张幻灯片第一行 '# 标题' 作为幻灯片大标题，\n"
+            "'## 副标题' 作为副标题，\n"
+            "'-' 开头的行作为要点列表。\n"
+            "示例：\n"
+            "# 第一章 概述\n## 项目背景\n- 要点1\n- 要点2\n---\n# 第二章 方案\n- 核心方案\n- 执行路径"
+        )
+    )
+    theme: str = Field(
+        default="business",
+        description="主题风格：'business'（深蓝商务）、'minimal'（白色简约）、'dark'（深色科技）"
+    )
+    title: str = Field(default="", description="演示文稿全局标题（可选，用于首页封面）")
+    author: str = Field(default="", description="作者署名（可选）")
+    template_path: Optional[str] = Field(default=None, description="自定义 PPTX 模板文件的绝对路径。如果提供，将以此文件为底板生成内容。")
+
+
+class PptxOpTool(BaseTool):
+    """PowerPoint 演示文稿生成工具 — 支持 Markdown 输入和多种主题风格"""
+
+    name: str = "pptx_op"
+    kit: str = "Office"
+    description: str = (
+        "Generate a PowerPoint (.pptx) presentation from Markdown-formatted slide content. "
+        "Each slide is separated by '---'. First line '# Title' = slide title, "
+        "'## Subtitle' = subtitle, '- item' = bullet point. "
+        "Supports themes: 'business' (deep blue), 'minimal' (clean white), 'dark' (tech dark). "
+        "Always saves to local disk. Use this instead of writing python-pptx code manually."
+    )
+    domain: str = "craft"
+    args_schema: Type[BaseModel] = PptxOpArgs
+
+    # --- Theme definitions ---
+    THEMES = {
+        "business": {
+            "bg": (0x1F, 0x3D, 0x7A),        # 深海蓝背景
+            "title_color": (0xFF, 0xFF, 0xFF), # 白色标题
+            "body_color": (0xCC, 0xDD, 0xFF),  # 浅蓝正文
+            "accent": (0xFF, 0xC0, 0x00),      # 金色强调
+            "title_font_size": 36,
+            "body_font_size": 20,
+        },
+        "minimal": {
+            "bg": (0xFF, 0xFF, 0xFF),          # 白色背景
+            "title_color": (0x1A, 0x1A, 0x2E), # 深蓝标题
+            "body_color": (0x33, 0x33, 0x33),  # 深灰正文
+            "accent": (0x00, 0x78, 0xD4),      # 蓝色强调
+            "title_font_size": 38,
+            "body_font_size": 20,
+        },
+        "dark": {
+            "bg": (0x0D, 0x0D, 0x1A),          # 极深蓝背景
+            "title_color": (0x00, 0xFF, 0xCC),  # 青绿标题
+            "body_color": (0xE0, 0xE0, 0xE0),   # 浅灰正文
+            "accent": (0xFF, 0x6B, 0x35),       # 橙色强调
+            "title_font_size": 36,
+            "body_font_size": 20,
+        },
+    }
+
+    async def run(self, **kwargs) -> str:
+        try:
+            from pptx import Presentation
+            from pptx.util import Inches, Pt, Emu
+            from pptx.dml.color import RGBColor
+            from pptx.enum.text import PP_ALIGN
+        except ImportError:
+            return "Error: 'python-pptx' not installed. Please run 'pip install python-pptx'."
+
+        import re
+
+        path = kwargs.get("path", "")
+        slides_md = kwargs.get("slides_markdown", "")
+        theme_name = kwargs.get("theme", "business")
+        prs_title = kwargs.get("title", "")
+        template_path = kwargs.get("template_path", "")
+
+        if not path:
+            return "Error: 'path' is required."
+        if not slides_md.strip():
+            return "Error: 'slides_markdown' is required."
+
+        theme = self.THEMES.get(theme_name, self.THEMES["business"])
+
+        try:
+            if template_path and os.path.exists(template_path):
+                prs = Presentation(template_path)
+                use_template = True
+                try:
+                    cover_layout = prs.slide_layouts[0]
+                    content_layout = prs.slide_layouts[1]
+                except Exception:
+                    cover_layout = prs.slide_layouts[6]
+                    content_layout = prs.slide_layouts[6]
+            else:
+                prs = Presentation()
+                prs.slide_width = Inches(13.33)
+                prs.slide_height = Inches(7.5)
+                use_template = False
+                cover_layout = prs.slide_layouts[6]
+                content_layout = prs.slide_layouts[6]
+
+            def rgb(color_tuple):
+                return RGBColor(*color_tuple)
+
+            def add_textbox(slide, text, left, top, width, height,
+                            font_size=20, bold=False, color=(255, 255, 255),
+                            align=PP_ALIGN.LEFT, word_wrap=True):
+                txBox = slide.shapes.add_textbox(
+                    Inches(left), Inches(top), Inches(width), Inches(height)
+                )
+                tf = txBox.text_frame
+                tf.word_wrap = word_wrap
+                p = tf.paragraphs[0]
+                p.alignment = align
+                run = p.add_run()
+                run.text = text
+                run.font.size = Pt(font_size)
+                run.font.bold = bold
+                run.font.color.rgb = rgb(color)
+                # 中文字体设置
+                run.font.name = "微软雅黑"
+                return txBox
+
+            def set_slide_bg(slide, color_tuple):
+                from pptx.oxml.ns import qn
+                from lxml import etree
+                bg = slide.background
+                fill = bg.fill
+                fill.solid()
+                fill.fore_color.rgb = rgb(color_tuple)
+
+            def add_bullet_slide(slide, title_text, subtitle_text, bullets):
+                """渲染一张内容幻灯片"""
+                if use_template and slide.shapes.title:
+                    # 优先使用模板自带占位符
+                    slide.shapes.title.text = title_text
+                    
+                    body_shape = None
+                    for shape in slide.placeholders:
+                        if hasattr(shape, "placeholder_format") and shape.placeholder_format.idx == 1:
+                            body_shape = shape
+                            break
+                    
+                    # 智能回退：寻找除标题外的任意文本占位符
+                    if not body_shape:
+                        for shape in slide.placeholders:
+                            if shape != slide.shapes.title and hasattr(shape, "text_frame"):
+                                body_shape = shape
+                                break
+
+                    if body_shape:
+                        tf = body_shape.text_frame
+                        tf.clear()  # 清空占位符里的提示文字
+                        first_p = tf.paragraphs[0]
+                        if subtitle_text:
+                            first_p.text = subtitle_text
+                            # bullets start from new para
+                            for bullet in bullets:
+                                p = tf.add_paragraph()
+                                p.text = bullet
+                                p.level = 0
+                        else:
+                            if bullets:
+                                first_p.text = bullets[0]
+                                first_p.level = 0
+                                for bullet in bullets[1:]:
+                                    p = tf.add_paragraph()
+                                    p.text = bullet
+                                    p.level = 0
+                        return
+
+                    # 降级：如果没有占位符，清空已写的 title 避免重叠
+                    slide.shapes.title.text = ""
+
+                # 降级：手绘元素
+                if not use_template:
+                    set_slide_bg(slide, theme["bg"])
+                    # 顶部色条
+                    from pptx.util import Pt as _Pt
+                    accent_bar = slide.shapes.add_shape(
+                        1,  # MSO_SHAPE_TYPE.RECTANGLE
+                        Inches(0), Inches(0),
+                        prs.slide_width, Inches(0.08)
+                    )
+                    accent_bar.fill.solid()
+                    accent_bar.fill.fore_color.rgb = rgb(theme["accent"])
+                    accent_bar.line.fill.background()
+
+                # 标题
+                add_textbox(
+                    slide, title_text,
+                    left=0.4, top=0.3, width=12.5, height=1.2,
+                    font_size=theme["title_font_size"],
+                    bold=True, color=theme["title_color"] if not use_template else (0,0,0),
+                    align=PP_ALIGN.LEFT
+                )
+
+                # 副标题
+                if subtitle_text:
+                    add_textbox(
+                        slide, subtitle_text,
+                        left=0.4, top=1.4, width=12.5, height=0.6,
+                        font_size=theme["body_font_size"] - 2,
+                        bold=False, color=theme["accent"] if not use_template else (50,50,50),
+                        align=PP_ALIGN.LEFT
+                    )
+
+                # 要点列表
+                if bullets:
+                    top_start = 2.1 if subtitle_text else 1.8
+                    bullet_height = min(4.8, len(bullets) * 0.65 + 0.3)
+                    txBox = slide.shapes.add_textbox(
+                        Inches(0.5), Inches(top_start),
+                        Inches(12.3), Inches(bullet_height)
+                    )
+                    tf = txBox.text_frame
+                    tf.word_wrap = True
+                    first = True
+                    for bullet in bullets:
+                        if first:
+                            p = tf.paragraphs[0]
+                            first = False
+                        else:
+                            p = tf.add_paragraph()
+                        p.alignment = PP_ALIGN.LEFT
+                        p.space_before = Pt(4)
+                        run = p.add_run()
+                        run.text = f"◆  {bullet}"
+                        run.font.size = Pt(theme["body_font_size"])
+                        if not use_template:
+                            run.font.color.rgb = rgb(theme["body_color"])
+                        run.font.name = "微软雅黑"
+
+            # --- 封面幻灯片（如果指定了全局 title）---
+            if prs_title:
+                cover_slide = prs.slides.add_slide(cover_layout)
+                if use_template and cover_slide.shapes.title:
+                    cover_slide.shapes.title.text = prs_title
+                    author_shape = None
+                    for shape in cover_slide.placeholders:
+                        if hasattr(shape, "placeholder_format") and shape.placeholder_format.idx == 1:
+                            author_shape = shape
+                            break
+                    if not author_shape:
+                        for shape in cover_slide.placeholders:
+                            if shape != cover_slide.shapes.title and hasattr(shape, "text_frame"):
+                                author_shape = shape
+                                break
+                    if author_shape:
+                        author_shape.text_frame.text = author
+                else:
+                    if not use_template:
+                        set_slide_bg(cover_slide, theme["bg"])
+                        # 装饰色块
+                        deco = cover_slide.shapes.add_shape(
+                            1, Inches(0), Inches(2.8), prs.slide_width, Inches(0.12)
+                        )
+                        deco.fill.solid()
+                        deco.fill.fore_color.rgb = rgb(theme["accent"])
+                        deco.line.fill.background()
+                    
+                    # 主标题
+                    add_textbox(
+                        cover_slide, prs_title,
+                        left=0.8, top=1.5, width=11.5, height=1.8,
+                        font_size=44, bold=True,
+                        color=theme["title_color"] if not use_template else (0,0,0), align=PP_ALIGN.CENTER
+                    )
+                    if author:
+                        add_textbox(
+                            cover_slide, author,
+                            left=0.8, top=3.2, width=11.5, height=0.6,
+                            font_size=18, bold=False,
+                            color=theme["body_color"] if not use_template else (50,50,50), align=PP_ALIGN.CENTER
+                        )
+
+            # --- 解析 Markdown 幻灯片 ---
+            raw_slides = re.split(r"\n---\n|^---$", slides_md, flags=re.MULTILINE)
+            slide_count = 0
+
+            for raw in raw_slides:
+                raw = raw.strip()
+                if not raw:
+                    continue
+
+                lines = raw.split("\n")
+                title_text = ""
+                subtitle_text = ""
+                bullets = []
+                body_lines = []
+
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith("# "):
+                        title_text = line[2:].strip()
+                    elif line.startswith("## "):
+                        subtitle_text = line[3:].strip()
+                    elif line.startswith("- ") or line.startswith("* "):
+                        bullets.append(line[2:].strip())
+                    elif line.startswith("### "):
+                        bullets.append(f"【{line[4:].strip()}】")
+                    else:
+                        body_lines.append(line)
+
+                # 将正文行也转为要点
+                for bl in body_lines:
+                    if bl and not bl.startswith("|"):  # 跳过表格
+                        bullets.append(bl)
+
+                if not title_text and not bullets:
+                    continue
+
+                slide = prs.slides.add_slide(content_layout)
+                add_bullet_slide(slide, title_text, subtitle_text, bullets)
+                slide_count += 1
+
+            if slide_count == 0:
+                return "Error: No valid slides found in slides_markdown. Check format: use '# Title' for slide titles and '---' to separate slides."
+
+            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+            prs.save(path)
+            abs_path = os.path.abspath(path)
+            return (
+                f"Successfully created PowerPoint with {slide_count} slides "
+                f"(theme: {theme_name}). [RESULT_PATH: {abs_path}]"
+            )
+
+        except Exception as e:
+            return f"PPTX Error: {str(e)}"

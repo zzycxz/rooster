@@ -16,7 +16,7 @@ def strategist_with_mock_llm():
     mock_response = AsyncMock()
     mock_response.content = json.dumps(
         {
-            "schema_version": "10.0",
+            "schema_version": "11.0",
             "task_id": "TEST-TASK",
             "os_context": "windows",
             "goal": "Test population search",

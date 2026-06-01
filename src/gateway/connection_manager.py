@@ -75,11 +75,15 @@ class ConnectionManager:
         return nodes
 
     async def broadcast(self, message: str):
-        for meta in self.connections.values():
+        dead_ids = []
+        for meta in list(self.connections.values()):  # snapshot to avoid RuntimeError on concurrent disconnect
             try:
                 await meta.websocket.send_text(message)
             except Exception as e:
                 logger.error(f"Error sending message to {meta.connection_id}: {e}")
+                dead_ids.append(meta.connection_id)
+        for cid in dead_ids:
+            self.connections.pop(cid, None)
 
     async def send_personal_message(self, message: str, connection_id: str):
         if connection_id in self.connections:

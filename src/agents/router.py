@@ -239,7 +239,8 @@ class Router:
         if await self._short_circuit.try_handle(reframed_text, channel, msg.sender_id):
             return
 
-        await self.mission_runner.run(msg, channel, reframed_text, dynamic_event_handler)
+        is_direct = (triage_state == "[DIRECT]")
+        await self.mission_runner.run(msg, channel, reframed_text, dynamic_event_handler, is_direct=is_direct)
         self._fire_and_forget(evolution_engine.on_turn_complete(msg.session_id, msg.text, "Mission Completed", []))
 
     @staticmethod
@@ -247,7 +248,8 @@ class Router:
         """启动后台任务，异常记录到日志而非静默丢弃。"""  # Start background task, log exceptions instead of silently discarding
         task = asyncio.create_task(coro)
         task.add_done_callback(
-            lambda t: logger.error(f"Background task failed: {t.exception()}") if t.exception() else None
+            lambda t: logger.error(f"Background task failed: {t.exception()}") 
+            if not t.cancelled() and t.exception() else None
         )
 
     async def _triage_via_llm(self, text: str) -> str:
@@ -281,9 +283,12 @@ class Router:
             else:
                 user_content = f'{triage_prompt}\n\n用户输入："{text}"'
 
-            response = await triage_llm.chat_non_stream(
-                [{"role": "user", "content": user_content}],
-                model=settings.ROUTER_MODEL_NAME,
+            response = await asyncio.wait_for(
+                triage_llm.chat_non_stream(
+                    [{"role": "user", "content": user_content}],
+                    model=settings.ROUTER_MODEL_NAME,
+                ),
+                timeout=getattr(settings, "LLM_CALL_TIMEOUT", 120.0),
             )
             verdict = response.content.upper()
             if "[TALK]" in verdict:
@@ -357,6 +362,14 @@ class Router:
         "translate",
         "convert",
         "换算",
+        # 能力查询 — 询问 agent 是否具备某种能力，应直接口头回答
+        "你可以",
+        "你能",
+        "能不能",
+        "可以吗",
+        "你会",
+        "支持吗",
+        "支持哪些",
     ]
     _COMPLEX_KW = [
         "帮我",
@@ -381,19 +394,27 @@ class Router:
         "build",
         "generate",
         "help me",
-        "can you",
+        # "can you" 已由 _CAPABILITY_QUERY_PATTERN 正则前置处理，此处不再重复
         "please",
         "how do i",
         "what is the best",
     ]
 
+    # 英文能力查询正则 — "can you / could you / are you able to" 等句式
+    # 必须在 _COMPLEX_KW 之前检测，防止 "can you" 被误路由到 [DIRECT]
+    _CAPABILITY_QUERY_RE = r"(?:can you|could you|are you able to|do you support)"
+
     def _triage_by_keyword(self, text: str) -> str:
         """LLM 不可用时的关键词兜底分诊。"""  # Keyword fallback triage when LLM is unavailable
+        import re as _re
         t = text.lower()
         if any(k in t for k in self._SCHEDULE_KW):
             return "[SCHEDULE]"
         if any(k in t for k in self._DOWNLOAD_KW):
             return "[REFRAME]"
+        # 英文能力查询前置检测：must precede _COMPLEX_KW check
+        if _re.search(self._CAPABILITY_QUERY_RE, t):
+            return "[TALK]"
         if any(k in t for k in self._TALK_KW):
             return "[TALK]"
         if any(k in t for k in self._COMPLEX_KW):

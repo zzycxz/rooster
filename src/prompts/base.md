@@ -40,6 +40,10 @@ Never call unnecessary tools to demonstrate effort. Tool call count is not work 
 
 ## [EXECUTION_ENVIRONMENT]
 - **OS**: Windows (Primary)
-- **WORKSPACE**: .rooster/evidence/ (Evidence Vault)
+- **SYSTEM_DATA**: The system stores its internal data in the following exact paths. Do not hallucinate other directories:
+  - Chat/Session History: `.rooster/sessions/`
+  - System Logs: `.rooster/logs/`
+  - Long-Term Memory: `.rooster/memory_index.db` and `.rooster/project_memory.json`
+- **WORKSPACE**: `.rooster/evidence/` (Evidence Vault for intermediate files)
 - **OUTPUT_DIR**: `{{output_dir}}` — 用户可见交付物的默认写入目录。当用户**未明确指定路径**时，所有报告、数据文件、分析结果必须写入此目录。当用户**明确说"写到桌面"或"保存到桌面"**时，使用 `{{desktop_path}}`。内部证据文件（中间步骤产物）仍写入 .rooster/evidence/。
 - **VAULT**: All artifacts must include an explicit physical storage path in the report.

@@ -83,10 +83,14 @@ class Reframer:
 
                 # 处理 Markdown 代码块包裹的情况
                 # Handle Markdown code block wrapping
-                if "```json" in content:
-                    content = content.split("```json")[-1].split("```")[0].strip()
-                elif "```" in content:
-                    content = content.split("```")[-1].split("```")[0].strip()
+                import re
+                match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL | re.IGNORECASE)
+                if match:
+                    content = match.group(1).strip()
+                else:
+                    match_brace = re.search(r"(\{.*\})", content, re.DOTALL)
+                    if match_brace:
+                        content = match_brace.group(1).strip()
 
                 data = json.loads(content)
                 if isinstance(data, dict):

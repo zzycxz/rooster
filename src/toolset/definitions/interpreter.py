@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from toolset.base import BaseTool
 
 try:
-    from e2b_code_interpreter import CodeInterpreter
+    from e2b_code_interpreter import Sandbox as E2BSandbox
 
     E2B_AVAILABLE = True
 except ImportError:
@@ -32,46 +32,79 @@ class InterpreterArgs(BaseModel):
     code: str = Field(description="The Python code to execute.")
     kernel: str = Field(
         description=(
-            "Execution kernel: 'e2b' (cloud sandbox, default when E2B_API_KEY is set) or "
-            "'local' (host subprocess — requires AST safety pass or user confirmation). "
-            "Use 'local' only when code needs local filesystem, system APIs, or desktop access."
+            "Execution kernel: 'e2b' (cloud sandbox, requires E2B_API_KEY) or "
+            "'local' (host subprocess — for local filesystem, system APIs, pip, CLI tools, desktop access). "
+            "Prefer 'local' when the task involves local file creation, running CLI commands, or package installation."
         ),
-        default="e2b",
+        default="local",
     )
 
 
 class PythonInterpreterTool(BaseTool):
-    """Python code interpreter: E2B cloud sandbox (default) or local subprocess with safety gate."""
+    """Python code interpreter: local subprocess (default) or E2B cloud sandbox."""
 
     name: str = "python_interpreter"
     kit: str = "Interpreter"
     description: str = (
         "Execute Python code for data analysis, plotting, calculations, file operations, or automation scripts. "
-        "Default: E2B cloud sandbox (isolated, safe). "
-        "Set kernel='local' for code that needs local filesystem, system APIs, or desktop access. "
-        "Local execution requires passing AST safety analysis — dangerous operations (os.system, "
-        "subprocess, file deletion, etc.) will be blocked or require user confirmation. "
+        "Default: local subprocess (direct host access, safe with AST check). "
+        "Set kernel='e2b' for isolated cloud sandbox execution when E2B_API_KEY is configured. "
         "[Bash equivalent] With kernel='local', this tool acts as Rooster's shell: use subprocess.run() "
         "to call CLI tools (git, ffmpeg, curl, pip, etc.), os/shutil for file management, "
-        "or any system operation without needing a separate shell tool."
+        "or any system operation without needing a separate shell tool. "
+        "For file creation tasks (PPT, Excel, Word, etc.), always use kernel='local' to save to local disk."
     )
     domain: str = "craft"
     args_schema: Type[BaseModel] = InterpreterArgs
 
     async def run(self, **kwargs) -> str:
         code = kwargs.get("code")
-        kernel = kwargs.get("kernel", "e2b")
+        kernel = kwargs.get("kernel", "local")
         if not code:
             return "Error: No code provided."
 
-        # E2B cloud sandbox: default path when API key is available
-        if kernel == "e2b" or (os.getenv("E2B_API_KEY") and kernel != "local"):
-            if not E2B_AVAILABLE:
-                return "Error: E2B SDK is not installed. Run: pip install e2b-code-interpreter"
-            return await self._run_e2b(code)
-
-        # Local execution: AST safety gate (cannot be bypassed by string tricks)
         allow_local = os.getenv("INTERPRETER_ALLOW_LOCAL", "false").lower() == "true"
+
+        # --- E2B cloud sandbox path ---
+        # E2B_API_KEY 存储于 .env.local（不提交 git），由启动时统一加载。
+        # 降级优先级：先检查 SDK 包可用性，再检查 API Key 是否存在。
+        # 若任一条件不满足且 allow_local=true，自动 fallback 到本地执行，
+        # 避免将错误字符串返回给 LLM（LLM 会误解为可执行指令）。
+        if kernel == "e2b":
+            if not E2B_AVAILABLE:
+                # e2b-code-interpreter 包未安装 (pip install e2b-code-interpreter)
+                if allow_local:
+                    import logging as _logging
+                    _logging.getLogger(__name__).warning(
+                        "[Interpreter] e2b-code-interpreter SDK not installed, "
+                        "auto-fallback to local kernel (INTERPRETER_ALLOW_LOCAL=true). "
+                        "Run 'pip install e2b-code-interpreter' to enable E2B cloud sandbox."
+                    )
+                    kernel = "local"
+                else:
+                    return (
+                        "Error: E2B SDK is not installed. "
+                        "Run: pip install e2b-code-interpreter  OR  set kernel='local' for local execution."
+                    )
+            else:
+                api_key = os.getenv("E2B_API_KEY", "").strip()
+                if not api_key:
+                    # SDK 已安装但 E2B_API_KEY 未在 .env.local 中配置
+                    if allow_local:
+                        import logging as _logging
+                        _logging.getLogger(__name__).info(
+                            "[Interpreter] E2B_API_KEY not set in .env.local, auto-fallback to local kernel."
+                        )
+                        kernel = "local"
+                    else:
+                        return (
+                            "Error: E2B_API_KEY is not configured. "
+                            "Add it to .env.local or switch to kernel='local'."
+                        )
+                else:
+                    return await self._run_e2b(code)
+
+        # --- Local execution path ---
         if not allow_local:
             safety_error = _check_code_safety(code)
             if safety_error:
@@ -126,7 +159,7 @@ class PythonInterpreterTool(BaseTool):
                 os.remove(tmp_file)
 
     async def _run_e2b(self, code: str) -> str:
-        """E2B 云端沙箱执行，带超时保护。"""
+        """E2B 云端沙箱执行 (v2.x API: Sandbox)，带超时保护。"""
         from utils.config import settings
 
         timeout_sec = getattr(settings, "INTERPRETER_TIMEOUT_SECONDS", 120.0)
@@ -136,11 +169,21 @@ class PythonInterpreterTool(BaseTool):
             return "E2B error: E2B_API_KEY not set."
 
         def execute_sync():
-            with CodeInterpreter(api_key=api_key) as sandbox:
-                execution = sandbox.notebook.exec_cell(code)
+            sbx = E2BSandbox.create(api_key=api_key)
+            try:
+                execution = sbx.run_code(code)
+                stdout = "".join(getattr(execution.logs, "stdout", []) or [])
+                stderr = "".join(getattr(execution.logs, "stderr", []) or [])
                 if execution.error:
-                    return f"Error: {execution.error.name}\n{execution.error.value}\n{execution.error.traceback}"
-                return execution.text_output or "Execution successful (no output)."
+                    err = execution.error
+                    return f"Error: {getattr(err, 'name', 'ExecutionError')}\n{getattr(err, 'value', str(err))}"
+                result = stdout.strip() or "Execution successful (no output)."
+                if stderr.strip():
+                    result += f"\nStderr:\n{stderr.strip()}"
+                return result
+            finally:
+                sbx.kill()
+
 
         try:
             return await asyncio.wait_for(asyncio.to_thread(execute_sync), timeout=timeout_sec)

@@ -88,7 +88,7 @@ class CLIChannel(BaseChannel):
             try:
                 # 异步捕获输入（不阻塞后台服务）
                 # Async capture input (non-blocking background services)
-                user_text = await asyncio.get_event_loop().run_in_executor(
+                user_text = await asyncio.get_running_loop().run_in_executor(
                     None, lambda: Prompt.ask(f"[bold green]{self.current_session_id}[/bold green] >")
                 )
 

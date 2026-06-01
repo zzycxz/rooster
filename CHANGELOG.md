@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.4.0] - 2026-05-31
+
+### Added
+- **CCP 六步法规划协议 (Capability-Constrained Planning)**：在 `Strategist` 中引入了全新的六步规划协议（阻塞项检测、执行者标记、置信度评级、交付物声明、可行性分析、DAG 拓扑构建）。
+- **Protocol 蓝图字段升级**：`SubTask` 新增 `owner` (AGENT|USER)、`confidence` 与 `risk_note`；`MissionPlan` 新增 `blockers`、`deliverables` 与 `feasibility_note` 字段。
+- **Pydantic-AI 自修复引擎 (Self-Healing)**：在 `Strategist` 中实现了基于 `ValidationError` 和 `JSONDecodeError` 的拦截与大模型重试管道。
+- **核心逻辑与 DAG 防护网**：通过 `@model_validator` 为 `MissionPlan` 引入了严格的 DAG 拓扑校验（防向后引用与深度优先循环依赖检测），从底层杜绝发散。
+- **USER 步骤路由**：在 `MissionRunner` 中新增了基于 `owner: USER` 的分离路由，复用 `requires_confirm` 进行人类协作，且不占用并发槽位。
+- **前置预警展示**：规划完成后、执行前，自动展示前置阻塞项、可行性说明与预期交付物，提高决策掌控感。
+- **子任务执行指标**：新增任务级别的指标收集（包含耗时 `duration_s` 与重试次数 `retries`）并持久化到 Checkpoint 中。
+- **工具合法性校验**：`Strategist` 现已注入 `tool_registry`，可检测并降级不存在的幻觉工具至 `generic_tool`。
+
+### Changed
+- **Checkpoint 增强**：序列化模型新增 `blockers`、`deliverables`、`feasibility_note`、`subtask_metrics` 字段，实现更细粒度的崩溃恢复。
+- **双通道无损元数据提取**：优化了 `plan_stream()` 的流式拆包逻辑，通过正则在一次流式回复中同步提取全局元数据，省去一次额外的 LLM 调用。
+
+### Fixed
+- **SoulLoader 精简失效**：修复了 `Strategist` 实例化 `SoulLoader` 时未传入 `llm_client` 导致超长提示词无法自动精简的问题。
+- **USER 步骤超时死循环**：修复了人类超时未操作时调度器挂起的问题（将其标记为 `CANCELLED` 并安全取消下游依赖）。
+- **指标计时偏差**：将子任务的计时起点移至依赖等待之后，消除因等待上游任务导致的耗时虚高。
+- **Checkpoint 预警复读**：断点续跑时跳过重复打印规划阶段的交付物和阻塞预警。
+- **Fallback 字段缺失**：修补了 `Strategist` 极端降级正则表达式提取路径，确保强行解析时具备安全的默认值。
 ## [0.3.7] - 2026-05-30
 
 ### Added

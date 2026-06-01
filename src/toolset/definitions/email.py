@@ -66,7 +66,7 @@ class EmailSendTool(BaseTool):
         try:
             # Execute blocking SMTP operation in thread pool
             # 在线程池中执行阻塞的 SMTP 操作
-            result = await asyncio.get_event_loop().run_in_executor(
+            result = await asyncio.get_running_loop().run_in_executor(
                 None, self._send, smtp_host, smtp_port, username, password, to, subject, body, attachments, use_ssl
             )
             return result

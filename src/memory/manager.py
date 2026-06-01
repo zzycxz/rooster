@@ -106,18 +106,16 @@ class MemoryManager:
             index=self._index if use_new_path else None,
         )
 
-        # ─── 5. 去重 + 审计（优先本地模型，记忆数据不出本机；不可用时走 LLMClient failover）───
-        # ─── 5. Dedup + audit (prefer local model; fallback via LLMClient failover chain) ───
+        # ─── 5. 去重 + 审计（默认走 mimo）───
         _hk_client = llm_client
         _hk_model = model
         try:
             from agents.llm_client import LLMClient
             from utils.config import settings as _s
 
-            # 优先本地模型（隐私保护），不可用时 LLMClient 会自动 failover
-            _hk_provider = "local" if _s.LOCAL_MODEL else None
+            _hk_provider = "mimo"
             _hk_client = LLMClient(provider=_hk_provider)
-            _hk_model = _s.LOCAL_MODEL or model
+            _hk_model = getattr(_s, "MIMO_MODEL", model)
         except Exception as _e:
             logger.debug(f"[MemoryManager] LLMClient 创建失败，使用传入的 client: {_e}")
         self.deduplicator = MemoryDeduplicator(_hk_client, _hk_model)
@@ -514,19 +512,27 @@ class MemoryManager:
 
         try:
             if hasattr(llm_client, "chat_non_stream"):
-                resp = await llm_client.chat_non_stream(
-                    messages=[{"role": "user", "content": prompt}],
-                    model=model,
+                resp = await asyncio.wait_for(
+                    llm_client.chat_non_stream(
+                        messages=[{"role": "user", "content": prompt}],
+                        model=model,
+                    ),
+                    timeout=settings.LLM_CALL_TIMEOUT,
                 )
                 result = resp.content.strip()
             elif hasattr(llm_client, "chat_stream"):
                 result = ""
-                async for delta in llm_client.chat_stream(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}],
-                ):
-                    if delta.content:
-                        result += delta.content
+
+                async def _consume_distill_stream():
+                    nonlocal result
+                    async for delta in llm_client.chat_stream(
+                        model=model,
+                        messages=[{"role": "user", "content": prompt}],
+                    ):
+                        if delta.content:
+                            result += delta.content
+
+                await asyncio.wait_for(_consume_distill_stream(), timeout=settings.LLM_CALL_TIMEOUT)
                 result = result.strip()
             else:
                 logger.warning("[MemoryManager] distill_history: LLM client has no chat method, skipping distillation")

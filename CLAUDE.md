@@ -124,6 +124,7 @@ python -m uvicorn dashboard.src.mount:app --reload
 
 | 版本 | 主要变更 |
 |------|---------|
+| v11.0 | CCP 六步法规划协议，USER 步骤路由，交付物/阻塞项声明，工具名校验，Checkpoint 增强 |
 | v10.0 | DAG 拓扑推导 phase，叶节点才调 Auditor |
 | v9.2 | 子任务 timeout 最小保底机制 |
 | v8.0 | 流式 Strategist，实时产出子任务 |

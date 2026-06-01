@@ -1,4 +1,5 @@
 # src/models/vision_analyzer.py
+import asyncio
 import logging
 from typing import Optional, Tuple
 from utils.config import settings
@@ -159,10 +160,13 @@ class VisionAnalyzer:
         try:
             client = ModelFactory.get_client("local")
             local_model = settings.LOCAL_MODEL or "qwen3.5-4b"
-            response: LLMResponseDelta = await client.chat_non_stream(
-                model=local_model,
-                messages=messages,
-                max_tokens=600,
+            response: LLMResponseDelta = await asyncio.wait_for(
+                client.chat_non_stream(
+                    model=local_model,
+                    messages=messages,
+                    max_tokens=600,
+                ),
+                timeout=getattr(settings, "LLM_CALL_TIMEOUT", 120.0),
             )
             if response.content:
                 return f"(本地大脑) {response.content}"
@@ -185,10 +189,13 @@ class VisionAnalyzer:
             for model in models:
                 try:
                     logger.debug("Trying %s vision model: %s", provider, model)
-                    response: LLMResponseDelta = await client.chat_non_stream(
-                        model=model,
-                        messages=messages,
-                        max_tokens=600,
+                    response: LLMResponseDelta = await asyncio.wait_for(
+                        client.chat_non_stream(
+                            model=model,
+                            messages=messages,
+                            max_tokens=600,
+                        ),
+                        timeout=getattr(settings, "LLM_CALL_TIMEOUT", 120.0),
                     )
                     if response.content and "[API" not in response.content:
                         return f"({provider.upper()} - {model}) {response.content}"

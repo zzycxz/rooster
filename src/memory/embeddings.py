@@ -177,7 +177,7 @@ class LocalSentenceTransformerEmbedding(EmbeddingProvider):
             return []
         import asyncio
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def _encode():
             self._load_model()

@@ -1,6 +1,6 @@
 # src/agents/protocol.py
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from enum import Enum
 
 
@@ -12,7 +12,7 @@ class ActionType(str, Enum):
 
 class SubTask(BaseModel):
     """
-    Rooster 任务蓝图中的具体子步骤 (Strategist v10.0)。
+    Rooster 任务蓝图中的具体子步骤 (Strategist v11.0)。
     phase 由 Executor 从 DAG 拓扑自动推导，LLM 不再输出。
     """
 
@@ -46,11 +46,33 @@ class SubTask(BaseModel):
             "空字符串表示不参与任何竞速组。"
         ),
     )
+    owner: str = Field("AGENT", description="AGENT | USER")
+    confidence: str = Field("HIGH", description="HIGH | MEDIUM | LOW")
+    risk_note: str = Field("", description="风险提示，如'结果不可保证'")
+
+    @model_validator(mode='after')
+    def validate_subtask_logic(self) -> 'SubTask':
+        # 1. 用户操作指引校验 / USER instruction validation
+        if self.owner == "USER" and len(self.instruction.strip()) < 5:
+            raise ValueError("当 owner 为 USER 时，instruction 必须提供清晰、详细的用户操作指引。")
+            
+        # 2. 竞速模式组名校验 / RACE group validation
+        if self.sub_agent_mode == "RACE" and not self.race_group:
+            raise ValueError("sub_agent_mode 为 RACE 时，必须指定非空的 race_group。")
+        if self.sub_agent_mode != "RACE" and self.race_group:
+            raise ValueError("非 RACE 模式下不能指定 race_group。")
+            
+        # 3. 职能域合法性 / Domain validation
+        valid_domains = {"UI", "RESOURCE", "SYSTEM", "COMMS", "MEMORY"}
+        if self.domain not in valid_domains:
+            raise ValueError(f"不支持的职能域: {self.domain}。必须是 {valid_domains} 之一。")
+            
+        return self
 
 
 class MissionPlan(BaseModel):
     """
-    由战略官 (Strategist v9.2) 生成的宏观任务执行计划蓝图。
+    由战略官 (Strategist v11.0) 生成的宏观任务执行计划蓝图。
     """
 
     task_id: str
@@ -65,6 +87,51 @@ class MissionPlan(BaseModel):
     )
     mode: str = Field("SERIAL", description="整体执行模式: SERIAL | PARALLEL")
     subtasks: List[SubTask] = Field(default_factory=list, description="具体的执行子任务序列")
+    blockers: List[Dict[str, str]] = Field(default_factory=list, description="前置阻塞项")
+    deliverables: List[str] = Field(default_factory=list, description="预期交付物列表")
+    feasibility_note: str = Field("", description="可行性说明")
+
+    @model_validator(mode='after')
+    def validate_mission_plan(self) -> 'MissionPlan':
+        # 1. 悲观置信度说明关联校验 / Low confidence note requirement
+        if any(st.confidence == "LOW" for st in self.subtasks):
+            if not self.feasibility_note or not self.feasibility_note.strip():
+                raise ValueError("存在 confidence 为 LOW 的子任务，必须提供 feasibility_note 来说明可行性边界。")
+
+        # 2. 任务总数红线防御 / Task limit defense
+        if len(self.subtasks) > 50:
+            raise ValueError("子任务数量超过系统最大限制 (50)。请重新抽象和精简计划。")
+
+        # 3. DAG 拓扑合法性校验 (存在性与防环) / DAG validation
+        all_ids = {st.id for st in self.subtasks}
+        graph = {}
+        for st in self.subtasks:
+            graph[st.id] = st.depends_on
+            for dep_id in st.depends_on:
+                if dep_id not in all_ids:
+                    raise ValueError(f"子任务 {st.id} 的 depends_on 引用了不存在的节点 ID: {dep_id}")
+
+        visited = set()
+        rec_stack = set()
+        
+        def check_cycle(node):
+            if node in rec_stack:
+                return True
+            if node in visited:
+                return False
+            visited.add(node)
+            rec_stack.add(node)
+            for neighbor in graph.get(node, []):
+                if check_cycle(neighbor):
+                    return True
+            rec_stack.remove(node)
+            return False
+            
+        for node in graph:
+            if check_cycle(node):
+                raise ValueError("DAG 中存在循环依赖 (Cycle detected)！请检查 depends_on 指向，确保为有向无环图。")
+
+        return self
 
     def is_leaf(self, subtask_id: str) -> bool:
         """判断子任务是否为叶节点（无下游依赖）"""

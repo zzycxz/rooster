@@ -1,4 +1,5 @@
 import os
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -166,20 +167,31 @@ class SoulLoader:
     async def _run_condense_llm(self, path: str, label: str, original: str, prompt: str) -> None:
         """调用 LLM 执行精简并原子写回文件。"""
         try:
+            from utils.config import settings as _s
+            _timeout = getattr(_s, "LLM_CALL_TIMEOUT", 120.0)
+
             if hasattr(self._llm_client, "chat_non_stream"):
-                resp = await self._llm_client.chat_non_stream(
-                    messages=[{"role": "user", "content": prompt}],
-                    model=self._model,
+                resp = await asyncio.wait_for(
+                    self._llm_client.chat_non_stream(
+                        messages=[{"role": "user", "content": prompt}],
+                        model=self._model,
+                    ),
+                    timeout=_timeout,
                 )
                 condensed = resp.content.strip()
             elif hasattr(self._llm_client, "chat_stream"):
                 condensed = ""
-                async for delta in self._llm_client.chat_stream(
-                    model=self._model,
-                    messages=[{"role": "user", "content": prompt}],
-                ):
-                    if delta.content:
-                        condensed += delta.content
+
+                async def _consume_condense_stream():
+                    nonlocal condensed
+                    async for delta in self._llm_client.chat_stream(
+                        model=self._model,
+                        messages=[{"role": "user", "content": prompt}],
+                    ):
+                        if delta.content:
+                            condensed += delta.content
+
+                await asyncio.wait_for(_consume_condense_stream(), timeout=_timeout)
                 condensed = condensed.strip()
             else:
                 logger.warning("[SoulLoader] LLM client 不支持调用，跳过精简")

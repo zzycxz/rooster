@@ -8,6 +8,7 @@ from .protocol import MissionPlan, SubTask
 from utils.config import settings
 import re
 import os
+from .executor import _stream_with_chunk_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +27,10 @@ class Strategist:
     # Lazy singleton: load on first use, reuse thereafter
     _skill_loader = None
 
-    def __init__(self, llm_client: LLMClient, memory_manager=None):
+    def __init__(self, llm_client: LLMClient, memory_manager=None, tool_registry=None):
         self.llm_client = llm_client
         self.memory_manager = memory_manager
+        self._tool_registry = tool_registry
         if Strategist._skill_loader is None:
             try:
                 from skills._loader import SkillLoader
@@ -38,14 +40,33 @@ class Strategist:
                 logger.warning(f"⚠️ [Strategist] SkillLoader 初始化失败: {e}")
 
     def _get_skills_digest(self) -> str:
-        if Strategist._skill_loader:
+        digest_parts = []
+        
+        # 1. 注入系统原生工具（Native Tools）
+        if self._tool_registry:
             try:
-                return Strategist._skill_loader.get_skills_digest()
+                native_tools = "## ⚙️ 原生系统工具 (Native Tools)\n"
+                for t in self._tool_registry.get_all_tool_schemas():
+                    name = t.get("function", {}).get("name", "")
+                    desc = t.get("function", {}).get("description", "")
+                    if name:
+                        native_tools += f"- `{name}`: {desc}\n"
+                digest_parts.append(native_tools)
             except Exception:
                 pass
-        return ""
 
-    async def plan(self, user_request: str) -> MissionPlan:
+        # 2. 注入外部扩展技能（Custom Skills）
+        if Strategist._skill_loader:
+            try:
+                custom_skills = Strategist._skill_loader.get_skills_digest()
+                if custom_skills:
+                    digest_parts.append(custom_skills)
+            except Exception:
+                pass
+                
+        return "\n\n".join(digest_parts)
+
+    async def plan(self, user_request: str, max_tokens: int = 32768) -> MissionPlan:
         """
         [V3.0] 极速蓝图规划：接入 PromptManager。
         """
@@ -57,7 +78,7 @@ class Strategist:
 
         # 实例化加载器
         # Instantiate loader
-        soul_loader = SoulLoader()
+        soul_loader = SoulLoader(llm_client=self.llm_client, model=settings.STRATEGIST_MODEL_NAME)
         # 获取最相关的记忆召回 (语义搜索)
         # Get most relevant memory recall (semantic search)
         memory_manager = self.memory_manager or MemoryManager()
@@ -82,52 +103,98 @@ class Strategist:
             {"role": "user", "content": f"User Request: {user_request}"},
         ]
 
+        from pydantic import ValidationError
+
+        response = None
+        MAX_RETRIES = 2
+        
         try:
-            # Timeout guards against LLM hangs that would block MissionRunner indefinitely.
-            response = await asyncio.wait_for(
-                self.llm_client.chat_non_stream(
-                    messages=messages, model=settings.STRATEGIST_MODEL_NAME, temperature=0.1, max_tokens=32768
-                ),
-                timeout=settings.STRATEGIST_LLM_TIMEOUT,
-            )
+            for attempt in range(MAX_RETRIES + 1):
+                # Timeout guards against LLM hangs that would block MissionRunner indefinitely.
+                response = await asyncio.wait_for(
+                    self.llm_client.chat_non_stream(
+                        messages=messages, model=settings.STRATEGIST_MODEL_NAME, temperature=0.1, max_tokens=max_tokens
+                    ),
+                    timeout=settings.STRATEGIST_LLM_TIMEOUT,
+                )
 
-            raw_plan = response.content
+                raw_plan = response.content
 
-            # 健壮的 JSON 提取逻辑：支持 ```json 包裹和首尾大括号匹配
-            # Robust JSON extraction: support ```json wrapping and first/last brace matching
-            def extract_json(text: str) -> str:
-                match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL | re.IGNORECASE)
-                if match:
-                    return match.group(1)
-                match = re.search(r"(\{.*\})", text, re.DOTALL)
-                if match:
-                    return match.group(1)
-                return text.strip()
+                # 健壮的 JSON 提取逻辑：支持 ```json 包裹和首尾大括号匹配
+                # Robust JSON extraction: support ```json wrapping and first/last brace matching
+                def extract_json(text: str) -> str:
+                    match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL | re.IGNORECASE)
+                    if match:
+                        return match.group(1)
+                    match = re.search(r"(\{.*\})", text, re.DOTALL)
+                    if match:
+                        return match.group(1)
+                    return text.strip()
 
-            clean_plan = extract_json(raw_plan)
-            plan_data = json.loads(clean_plan)
-            # 全自动语义补全
-            # Automatic semantic completion
-            if "edicts" in plan_data:
-                plan_data["subtasks"] = plan_data.pop("edicts")
-            if "subtasks" not in plan_data:
-                plan_data["subtasks"] = []
+                try:
+                    clean_plan = extract_json(raw_plan)
+                    plan_data = json.loads(clean_plan)
+                    
+                    # 全自动语义补全
+                    # Automatic semantic completion
+                    if "edicts" in plan_data:
+                        plan_data["subtasks"] = plan_data.pop("edicts")
+                    if "subtasks" not in plan_data:
+                        plan_data["subtasks"] = []
 
-            # v9.2 默认值补全
-            # v9.2 default value completion
-            plan_data.setdefault("os_context", "unknown")
-            plan_data.setdefault("autonomy", "AUTO")
-            for task in plan_data["subtasks"]:
-                task.setdefault("on_failure", "RETRY")
-                task.setdefault("requires_confirm", False)
-                if task.get("domain") == "COMBAT":
-                    task["domain"] = "UI"  # 自动迁移旧 Domain / Auto-migrate old Domain
-                task.pop(
-                    "phase", None
-                )  # v10.0: phase 由 DAG 拓扑推导，忽略 LLM 输出 / v10.0: phase derived from DAG topology, ignore LLM output
-            plan = MissionPlan(**plan_data)
-            logger.info(f"⚡ [Strategist] 规划秒开: {len(plan.subtasks)} 子任务已锁定。")
-            return plan
+                    # v11.0 默认值补全（含 CCP 字段）
+                    # v11.0 default value completion (including CCP fields)
+                    plan_data.setdefault("os_context", "unknown")
+                    plan_data.setdefault("autonomy", "AUTO")
+                    plan_data.setdefault("blockers", [])
+                    plan_data.setdefault("deliverables", [])
+                    plan_data.setdefault("feasibility_note", "")
+
+                    # v11.0: 收集已注册工具名用于校验
+                    registered_tools = None
+                    if self._tool_registry:
+                        try:
+                            registered_tools = set(self._tool_registry.list_tool_names())
+                        except Exception:
+                            pass
+
+                    for task in plan_data["subtasks"]:
+                        task.setdefault("on_failure", "RETRY")
+                        task.setdefault("requires_confirm", False)
+                        task.setdefault("owner", "AGENT")
+                        task.setdefault("confidence", "HIGH")
+                        task.setdefault("risk_note", "")
+                        if task.get("domain") == "COMBAT":
+                            task["domain"] = "UI"  # 自动迁移旧 Domain / Auto-migrate old Domain
+                        task.pop(
+                            "phase", None
+                        )  # v10.0: phase 由 DAG 拓扑推导，忽略 LLM 输出 / v10.0: phase derived from DAG topology, ignore LLM output
+
+                        # v11.0: tool 名校验 — 如果 tool 不在注册表中，降级为 generic_tool
+                        if registered_tools and task.get("tool") not in registered_tools:
+                            logger.warning(
+                                f"⚠️ [Strategist] tool '{task.get('tool')}' 未注册，降级为 generic_tool (subtask {task.get('id')})"
+                            )
+                            task["tool"] = "generic_tool"
+
+                    plan = MissionPlan(**plan_data)
+                    logger.info(f"⚡ [Strategist] 规划秒开: {len(plan.subtasks)} 子任务已锁定。")
+                    return plan
+
+                except (json.JSONDecodeError, ValidationError) as parse_err:
+                    if attempt < MAX_RETRIES:
+                        err_msg = str(parse_err)
+                        if isinstance(parse_err, ValidationError):
+                            err_msg = "Pydantic Schema Error:\n" + "\n".join([f"- {err['loc']}: {err['msg']}" for err in parse_err.errors()])
+                        logger.warning(f"⚠️ [Strategist] 解析失败触发 LLM 自修复 (Attempt {attempt+1}/{MAX_RETRIES}):\n{err_msg}")
+                        messages.append({"role": "assistant", "content": raw_plan})
+                        messages.append({
+                            "role": "user",
+                            "content": f"The JSON validation failed with these errors:\n{err_msg}\nPlease strictly follow the schema and output ONLY valid JSON."
+                        })
+                        continue
+                    else:
+                        raise parse_err
 
         except asyncio.TimeoutError:
             logger.error(f"❌ [Strategist] plan() 超时 ({settings.STRATEGIST_LLM_TIMEOUT:.0f}s)，降级为单任务兜底方案")
@@ -140,35 +207,42 @@ class Strategist:
         except Exception as e:
             # 终极解析尝试：寻找文本中的第一个 { 和最后一个 }
             # Ultimate parse attempt: find first { and last } in text
-            try:
-                content = response.content
-                match = re.search(r"(\{.*\})", content, re.DOTALL)
-                if match:
-                    plan_data = json.loads(match.group(1))
-                    subtasks = []
-                    for i, t in enumerate(plan_data.get("subtasks", [])):
-                        instr = t.get("instruction", "")
-                        subtasks.append(
-                            SubTask(
-                                id=t.get("id", f"ST{i}"),
-                                instruction=instr,
-                                domain="UI" if t.get("domain") == "COMBAT" else t.get("domain", "SYSTEM"),
-                                tool=t.get("tool", "generic_tool"),
-                                depends_on=t.get("depends_on", []),
-                                on_failure=t.get("on_failure", "RETRY"),
-                                requires_confirm=t.get("requires_confirm", False),
-                                timeout=t.get("timeout", settings.SUBTASK_MIN_TIMEOUT),
+            if response and hasattr(response, "content") and response.content:
+                try:
+                    content = response.content
+                    match = re.search(r"(\{.*\})", content, re.DOTALL)
+                    if match:
+                        plan_data = json.loads(match.group(1))
+                        subtasks = []
+                        for i, t in enumerate(plan_data.get("subtasks", [])):
+                            instr = t.get("instruction", "")
+                            subtasks.append(
+                                SubTask(
+                                    id=t.get("id", f"ST{i}"),
+                                    instruction=instr,
+                                    domain="UI" if t.get("domain") == "COMBAT" else t.get("domain", "SYSTEM"),
+                                    tool=t.get("tool", "generic_tool"),
+                                    depends_on=t.get("depends_on", []),
+                                    on_failure=t.get("on_failure", "RETRY"),
+                                    requires_confirm=t.get("requires_confirm", False),
+                                    timeout=t.get("timeout", settings.SUBTASK_MIN_TIMEOUT),
+                                    owner=t.get("owner", "AGENT"),
+                                    confidence=t.get("confidence", "HIGH"),
+                                    risk_note=t.get("risk_note", ""),
+                                )
                             )
+                        return MissionPlan(
+                            task_id=plan_data.get("task_id", "ST-PLAN"),
+                            os_context=plan_data.get("os_context", "unknown"),
+                            goal=plan_data.get("goal", user_request),
+                            autonomy=plan_data.get("autonomy", "AUTO"),
+                            subtasks=subtasks,
+                            blockers=plan_data.get("blockers", []),
+                            deliverables=plan_data.get("deliverables", []),
+                            feasibility_note=plan_data.get("feasibility_note", ""),
                         )
-                    return MissionPlan(
-                        task_id=plan_data.get("task_id", "ST-PLAN"),
-                        os_context=plan_data.get("os_context", "unknown"),
-                        goal=plan_data.get("goal", user_request),
-                        autonomy=plan_data.get("autonomy", "AUTO"),
-                        subtasks=subtasks,
-                    )
-            except Exception:
-                pass
+                except Exception as fallback_e:
+                    logger.warning(f"❌ [Strategist] 降级解析也失败: {fallback_e}")
 
             logger.error(f"❌ [Strategist] 规划异常: {e}")
             return MissionPlan(
@@ -188,10 +262,10 @@ class Strategist:
         from memory.manager import MemoryManager
 
         # 实例化加载器
-        soul_loader = SoulLoader()
+        soul_loader = SoulLoader(llm_client=self.llm_client, model=settings.STRATEGIST_MODEL_NAME)
         # 获取最相关的记忆召回 (语义搜索)
-        memory_manager = MemoryManager()
-        ltm_context = memory_manager.get_summary_for_prompt(query=user_request)
+        manager = self.memory_manager or MemoryManager()
+        ltm_context = manager.get_summary_for_prompt(query=user_request)
 
         # 组装五层 Prompt
         # 使用 __file__ 构建绝对路径，避免因 CWD 不同导致 src/src/prompts 双层路径 bug
@@ -219,12 +293,20 @@ class Strategist:
 
         full_content = ""
         yielded_ids = set()
+        # 预置元数据，流结束后从 full_content 解析填充
+        self._last_plan_meta = {
+            "blockers": [],
+            "deliverables": [],
+            "feasibility_note": "",
+        }
 
         try:
-            async with asyncio.timeout(settings.STRATEGIST_LLM_TIMEOUT):
-                async for delta in self.llm_client.chat_stream(
+            async for delta in _stream_with_chunk_timeout(
+                self.llm_client.chat_stream(
                     messages=messages, model=settings.STRATEGIST_MODEL_NAME, temperature=0.1, max_tokens=32768
-                ):
+                ),
+                chunk_timeout=getattr(settings, "LLM_STREAM_CHUNK_TIMEOUT", 30.0),
+            ):
                     if delta.content:
                         full_content += delta.content
 
@@ -276,6 +358,9 @@ class Strategist:
                                                                 "requires_confirm", False
                                                             ),
                                                             "timeout": task_data.get("timeout", 120),
+                                                            "owner": task_data.get("owner", "AGENT"),
+                                                            "confidence": task_data.get("confidence", "HIGH"),
+                                                            "risk_note": task_data.get("risk_note", ""),
                                                         }
                                                     )
                                                     yield SubTask(**task_data)
@@ -286,7 +371,7 @@ class Strategist:
                             except Exception:
                                 continue
         except asyncio.TimeoutError:
-            logger.error(f"❌ [Strategist] plan_stream() 超时 ({settings.STRATEGIST_LLM_TIMEOUT:.0f}s)，降级 FAILSAFE")
+            logger.error(f"❌ [Strategist] plan_stream() 流中断：超过 {getattr(settings, 'LLM_STREAM_CHUNK_TIMEOUT', 30):.0f}s 无新 chunk，降级 FAILSAFE")
         except Exception as e:
             logger.error(f"❌ [Strategist] 流式规划异常: {e}")
 
@@ -328,6 +413,9 @@ class Strategist:
                                     "on_failure": t_obj.get("on_failure", "RETRY"),
                                     "requires_confirm": t_obj.get("requires_confirm", False),
                                     "timeout": t_obj.get("timeout", 120),
+                                    "owner": t_obj.get("owner", "AGENT"),
+                                    "confidence": t_obj.get("confidence", "HIGH"),
+                                    "risk_note": t_obj.get("risk_note", ""),
                                 }
                             )
                             yield SubTask(**t_obj)
@@ -346,6 +434,22 @@ class Strategist:
             summary = full_content.strip() if full_content else "LLM 无任何返回 (Empty Response)"
             logger.info(f"💾 [DEBUG] 原始输出快照: {summary[:500]}...")
             yield SubTask(id="FAILSAFE", instruction=user_request, domain="SYSTEM", tool="system_fallback")
+
+        # --- [V11] 从 full_content 提取顶层元数据，避免调用者再调一次 plan() ---
+        if full_content:
+            try:
+                raw_text = re.sub(r"```json\n?|\n?```", "", full_content).strip()
+                match = re.search(r"(\{.*\})", raw_text, re.DOTALL)
+                if match:
+                    plan_data = json.loads(match.group(1))
+                    self._last_plan_meta = {
+                        "blockers": plan_data.get("blockers", []),
+                        "deliverables": plan_data.get("deliverables", []),
+                        "feasibility_note": plan_data.get("feasibility_note", ""),
+                    }
+                    logger.info(f"📋 [Strategist] 元数据提取成功: blockers={len(self._last_plan_meta['blockers'])}, deliverables={len(self._last_plan_meta['deliverables'])}")
+            except Exception as meta_err:
+                logger.warning(f"⚠️ [Strategist] 元数据提取失败，使用空默认值: {meta_err}")
 
     async def replan(self, current_plan: MissionPlan, roadblock_reason: str, completed_tasks: List[str]) -> MissionPlan:
         """
@@ -408,71 +512,90 @@ class Strategist:
             {"role": "user", "content": "请立即进行战略重组并返回纯 JSON 蓝图。"},
         ]
 
+        from pydantic import ValidationError
+
         response = None
+        MAX_RETRIES = 2
+        
         try:
-            response = await asyncio.wait_for(
-                self.llm_client.chat_non_stream(
-                    messages=messages, model=settings.STRATEGIST_MODEL_NAME, temperature=0.3, max_tokens=32768
-                ),
-                timeout=settings.STRATEGIST_LLM_TIMEOUT,
-            )
-
-            raw_content = response.content
-
-            # --- [ROBUST JSON EXTRACTION] ---
-            def extract_json(text):
-                # 方案 1: 正则寻找带 JSON 标签的块
-                # Option 1: regex find JSON-tagged block
-                match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL | re.IGNORECASE)
-                if match:
-                    return match.group(1)
-
-                # 方案 2: 正则寻找第一个 { 和最后一个 }
-                # Option 2: regex find first { and last }
-                match = re.search(r"(\{.*\})", text, re.DOTALL)
-                if match:
-                    return match.group(1)
-
-                return text.strip()
-
-            clean_json_str = extract_json(raw_content)
-
-            try:
-                plan_data = json.loads(clean_json_str)
-            except json.JSONDecodeError:
-                # 方案 3: 尝试暴力清洗常见干扰字符
-                # Option 3: brute-force clean common interference characters
-                fixed_str = clean_json_str.replace("'", '"').replace("True", "true").replace("False", "false")
-                plan_data = json.loads(fixed_str)
-
-            new_subtasks_data = plan_data.get("subtasks", [])
-            new_subtasks = []
-            for i, t in enumerate(new_subtasks_data):
-                t_id = t.get("id", f"ST_R_{i + 1}")
-                t.pop("phase", None)  # v10.0: 忽略 LLM 输出的 phase
-                new_subtasks.append(
-                    SubTask(
-                        id=t_id,
-                        instruction=t.get("instruction", ""),
-                        domain="UI" if t.get("domain") == "COMBAT" else t.get("domain", "SYSTEM"),
-                        tool=t.get("tool", "generic_tool"),
-                        on_failure=t.get("on_failure", "RETRY"),
-                        requires_confirm=t.get("requires_confirm", False),
-                        timeout=t.get("timeout", settings.SUBTASK_MIN_TIMEOUT),
-                    )
+            for attempt in range(MAX_RETRIES + 1):
+                response = await asyncio.wait_for(
+                    self.llm_client.chat_non_stream(
+                        messages=messages, model=settings.STRATEGIST_MODEL_NAME, temperature=0.3, max_tokens=32768
+                    ),
+                    timeout=settings.STRATEGIST_LLM_TIMEOUT,
                 )
 
-            return MissionPlan(
-                task_id=current_plan.task_id,
-                os_context=plan_data.get("os_context", current_plan.os_context),
-                goal=current_plan.goal,
-                original_goal=target_goal,
-                autonomy=plan_data.get("autonomy", current_plan.autonomy),
-                replan_count=current_plan.replan_count + 1,
-                max_replan=current_plan.max_replan,
-                replan_history=current_plan.replan_history,
-                subtasks=new_subtasks,
-            )
+                raw_content = response.content
+
+                # --- [ROBUST JSON EXTRACTION] ---
+                def extract_json(text):
+                    # 方案 1: 正则寻找带 JSON 标签的块
+                    # Option 1: regex find JSON-tagged block
+                    match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL | re.IGNORECASE)
+                    if match:
+                        return match.group(1)
+
+                    # 方案 2: 正则寻找第一个 { 和最后一个 }
+                    # Option 2: regex find first { and last }
+                    match = re.search(r"(\{.*\})", text, re.DOTALL)
+                    if match:
+                        return match.group(1)
+
+                    return text.strip()
+
+                clean_json_str = extract_json(raw_content)
+
+                try:
+                    plan_data = json.loads(clean_json_str)
+                except json.JSONDecodeError:
+                    # 方案 3: 尝试暴力清洗常见干扰字符
+                    # Option 3: brute-force clean common interference characters
+                    fixed_str = clean_json_str.replace("'", '"').replace("True", "true").replace("False", "false")
+                    plan_data = json.loads(fixed_str)
+
+                new_subtasks_data = plan_data.get("subtasks", [])
+                new_subtasks = []
+                for i, t in enumerate(new_subtasks_data):
+                    t_id = t.get("id", f"ST_R_{i + 1}")
+                    t.pop("phase", None)  # v10.0: 忽略 LLM 输出的 phase
+                    new_subtasks.append(
+                        SubTask(
+                            id=t_id,
+                            instruction=t.get("instruction", ""),
+                            domain="UI" if t.get("domain") == "COMBAT" else t.get("domain", "SYSTEM"),
+                            tool=t.get("tool", "generic_tool"),
+                            on_failure=t.get("on_failure", "RETRY"),
+                            requires_confirm=t.get("requires_confirm", False),
+                            timeout=t.get("timeout", settings.SUBTASK_MIN_TIMEOUT),
+                        )
+                    )
+
+                try:
+                    plan = MissionPlan(
+                        task_id=current_plan.task_id,
+                        os_context=plan_data.get("os_context", current_plan.os_context),
+                        goal=current_plan.goal,
+                        original_goal=target_goal,
+                        autonomy=plan_data.get("autonomy", current_plan.autonomy),
+                        replan_count=current_plan.replan_count + 1,
+                        max_replan=current_plan.max_replan,
+                        replan_history=current_plan.replan_history,
+                        subtasks=new_subtasks,
+                    )
+                    return plan
+                except ValidationError as ve:
+                    if attempt < MAX_RETRIES:
+                        err_msg = "Pydantic Schema Error:\n" + "\n".join([f"- {err['loc']}: {err['msg']}" for err in ve.errors()])
+                        logger.warning(f"⚠️ [Strategist] replan 校验失败触发自修复 (Attempt {attempt+1}/{MAX_RETRIES}):\n{err_msg}")
+                        messages.append({"role": "assistant", "content": raw_content})
+                        messages.append({
+                            "role": "user",
+                            "content": f"The JSON validation failed with these errors:\n{err_msg}\nPlease strictly follow the schema and output ONLY valid JSON."
+                        })
+                        continue
+                    else:
+                        raise ve
 
         except asyncio.TimeoutError:
             logger.error("❌ [Strategist] replan() 超时 (120s)，原计划保持不变")

@@ -695,7 +695,6 @@ class Guardian:
                 logger.info("✅ Child process exited normally (config change restart).")
                 self._backoff_sleep(2)
                 continue
-                break
 
             logger.error(f"❌ Child process crashed (Exit Code: {exit_code})")
             logger.error(f"📄 Error traceback:\n{stderr_output}")

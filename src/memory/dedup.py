@@ -1,5 +1,6 @@
 """智能去重与记忆质量审计模块。"""
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -203,20 +204,31 @@ class MemoryDeduplicator:
 
     async def _llm_call(self, prompt: str) -> str:
         """统一 LLM 调用（支持 chat_non_stream 和 chat_stream）"""
+        from utils.config import settings as _s
+        _timeout = getattr(_s, "LLM_CALL_TIMEOUT", 120.0)
+
         if hasattr(self.llm_client, "chat_non_stream"):
-            resp = await self.llm_client.chat_non_stream(
-                messages=[{"role": "user", "content": prompt}],
-                model=self.model,
+            resp = await asyncio.wait_for(
+                self.llm_client.chat_non_stream(
+                    messages=[{"role": "user", "content": prompt}],
+                    model=self.model,
+                ),
+                timeout=_timeout,
             )
             return resp.content.strip()
         elif hasattr(self.llm_client, "chat_stream"):
             result = ""
-            async for delta in self.llm_client.chat_stream(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-            ):
-                if delta.content:
-                    result += delta.content
+
+            async def _consume_stream():
+                nonlocal result
+                async for delta in self.llm_client.chat_stream(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                ):
+                    if delta.content:
+                        result += delta.content
+
+            await asyncio.wait_for(_consume_stream(), timeout=_timeout)
             return result.strip()
         return ""
 
@@ -297,20 +309,31 @@ class MemoryAuditor:
         )
 
         try:
+            from utils.config import settings as _s
+            _timeout = getattr(_s, "LLM_CALL_TIMEOUT", 120.0)
+
             if hasattr(self.llm_client, "chat_non_stream"):
-                resp = await self.llm_client.chat_non_stream(
-                    messages=[{"role": "user", "content": prompt}],
-                    model=self.model,
+                resp = await asyncio.wait_for(
+                    self.llm_client.chat_non_stream(
+                        messages=[{"role": "user", "content": prompt}],
+                        model=self.model,
+                    ),
+                    timeout=_timeout,
                 )
                 result = resp.content.strip()
             elif hasattr(self.llm_client, "chat_stream"):
                 result = ""
-                async for delta in self.llm_client.chat_stream(
-                    model=self.model,
-                    messages=[{"role": "user", "content": prompt}],
-                ):
-                    if delta.content:
-                        result += delta.content
+
+                async def _consume_audit_stream():
+                    nonlocal result
+                    async for delta in self.llm_client.chat_stream(
+                        model=self.model,
+                        messages=[{"role": "user", "content": prompt}],
+                    ):
+                        if delta.content:
+                            result += delta.content
+
+                await asyncio.wait_for(_consume_audit_stream(), timeout=_timeout)
                 result = result.strip()
             else:
                 return {}

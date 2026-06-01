@@ -54,7 +54,7 @@ class OpenAILikeClient(BaseModelClient):
         timeout_config = httpx.Timeout(
             getattr(settings, "LLM_API_TIMEOUT", 300.0),  # read
             connect=15.0,
-            write=30.0,
+            write=60.0,
             pool=15.0,
         )
         self.client = httpx.AsyncClient(

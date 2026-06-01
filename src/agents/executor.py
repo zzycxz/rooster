@@ -23,6 +23,20 @@ from models.vision_strategy import UIACache
 
 executor_logger = logging.getLogger(__name__)
 
+async def _stream_with_chunk_timeout(generator, chunk_timeout: float):
+    """Wait for each chunk from the generator with a timeout."""
+    try:
+        iterator = generator.__aiter__()
+        while True:
+            try:
+                chunk = await asyncio.wait_for(iterator.__anext__(), timeout=chunk_timeout)
+                yield chunk
+            except StopAsyncIteration:
+                break
+    except asyncio.TimeoutError:
+        executor_logger.warning(f"⚠️ Stream chunk timeout after {chunk_timeout}s")
+        raise
+
 
 class AgentRunConfig(BaseModel):
     """Run configuration for a single agent turn."""
@@ -35,7 +49,7 @@ class AgentRunConfig(BaseModel):
     model: str = Field(
         default_factory=lambda: getattr(settings, "EXECUTOR_MODEL_NAME", None) or getattr(settings, "LOCAL_MODEL", "")
     )
-    history: List[Dict[str, str]] = []
+    history: List[Dict[str, Any]] = []
     tool_registry: Optional[Any] = Field(default=None, exclude=True)
     max_steps: int = Field(default_factory=lambda: settings.AGENT_MAX_STEPS)
     allowed_paths: List[str] = []
@@ -155,13 +169,12 @@ class AgentExecutor:
             try:
                 from evolution.engine import EvolutionEngine
 
-                # 隐私：进化引擎使用本地模型，用户对话不出本机
-                # Privacy: evolution engine uses local model, user conversations stay local
+                # 默认：进化引擎使用 mimo 模型
                 try:
                     from models.factory import ModelFactory
 
-                    _local_client = ModelFactory.get_client("local")
-                    self._evolution_engine = EvolutionEngine(llm_client=_local_client)
+                    _mimo_client = ModelFactory.get_client("mimo")
+                    self._evolution_engine = EvolutionEngine(llm_client=_mimo_client)
                 except Exception:
                     self._evolution_engine = EvolutionEngine(llm_client=self.llm_client)
             except Exception:
@@ -445,7 +458,37 @@ class AgentExecutor:
                                 session_key=config.session_key, client_run_id=run_id, text=_buffer
                             )
 
-                await perform_chat()
+                # --- Retry loop for network timeouts ---
+                max_net_retries = 2
+                _timeout_abort = False
+                for net_retry in range(max_net_retries):
+                    try:
+                        if net_retry > 0:
+                            await self.event_handler.emit_assistant_delta(
+                                session_key=config.session_key, client_run_id=run_id, text="Thinking..." if step > 1 else ""
+                            )
+                            _buffer = ""
+                            in_think = False
+                            full_content = ""
+                            full_reasoning_content = ""
+                            native_tool_calls = []
+
+                        await perform_chat()
+                        break
+                    except (asyncio.TimeoutError, TimeoutError) as e:
+                        executor_logger.warning(
+                            f"LLM Timeout (attempt {net_retry + 1}/{max_net_retries}). Retrying in 3s... {e}"
+                        )
+                        if net_retry == max_net_retries - 1:
+                            fallback_msg_ui = "\n\n⚠️ [系统提示] 抱歉，大模型服务端接口响应持续超时。由于连续请求未收到回复，为防止死锁，本次任务已自动安全中止。请您检查网络或稍后重新下发指令。"
+                            full_content = fallback_msg_ui + "\n[TASK_STATUS:FAILED]"
+                            native_tool_calls = []
+                            await self.event_handler.emit_assistant_delta(
+                                session_key=config.session_key, client_run_id=run_id, text=fallback_msg_ui
+                            )
+                            _timeout_abort = True
+                            break
+                        await asyncio.sleep(3.0)
 
                 executor_logger.debug(
                     f"Loop Step {step}: Sent {len(messages)} messages. Received {len(full_content)} chars."
@@ -459,6 +502,10 @@ class AgentExecutor:
                         executor_logger.warning(f"Empty response, retry {empty_retry + 1}/{empty_retry_max}...")
                         await asyncio.sleep(2.0 * (empty_retry + 1))
                         full_content = ""
+                        full_reasoning_content = ""
+                        native_tool_calls = []
+                        _buffer = ""
+                        in_think = False
                         try:
                             await perform_chat()
                         except Exception as e:
@@ -522,6 +569,17 @@ class AgentExecutor:
                 else:
                     tool_calls = extract_tool_calls(full_content)
 
+                # --- NEW: UI Feedback for micro-steps ---
+                if tool_calls and self.event_handler:
+                    tool_names = ", ".join([f"`{tc[0]}`" for tc in tool_calls])
+                    ui_msg = f"\n> ⚙️ **正在执行底层工具**: {tool_names}...\n\n"
+                    # Emit to UI without creating a new message bubble (append to current assistant text)
+                    await self.event_handler.emit_assistant_delta(
+                        session_key=config.session_key,
+                        client_run_id=run_id,
+                        text=ui_msg
+                    )
+
                 # --- Stuck detection: break if same tool+args repeated consecutively ---
                 if tool_calls:
                     _sig = "|".join(sorted(f"{n}:{json.dumps(a, sort_keys=True)[:120]}" for n, a in tool_calls))
@@ -569,7 +627,7 @@ class AgentExecutor:
                 if not tool_calls:
                     executor_logger.info("No tool calls found. Breaking loop.")
                     # COMMIT synthesis for leaf nodes
-                    if config.is_leaf and step > 1 and len(full_content.strip()) < 200:
+                    if config.is_leaf and step > 1 and len(full_content.strip()) < 200 and not _timeout_abort:
                         executor_logger.info(
                             f"[COMMIT] Leaf task response too short ({len(full_content.strip())} chars). "
                             "Injecting synthesis pass."
@@ -811,6 +869,7 @@ class AgentExecutor:
             phase_lines.append(
                 "[COMMIT PHASE] This is the FINAL delivery step. "
                 "Execute any required tool calls, then immediately state the answer clearly and directly. "
+                "IMPORTANT: If multiple tools were called, prioritize the results of ACTION tools (e.g. taking a screenshot, clicking, writing files) over QUERY tools (e.g. tool_info). If an action tool succeeded, do not let a query tool failure hide the success. "
                 "After all tools complete, your last message MUST contain the actual result — "
                 "a number, a sentence, a file path, or whatever the task demands. "
                 "Do NOT output boilerplate. Do NOT ask for further instructions."

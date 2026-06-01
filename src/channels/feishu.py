@@ -132,6 +132,11 @@ class FeishuChannel(BaseChannel):
 
     async def stop(self):
         self.is_running = False
+        # lark_oapi.ws.client.Client has no stop() method — the thread is daemonized,
+        # so it will be cleaned up automatically when the process exits.
+        # Log a note if the ws_client is alive so operators are aware.
+        if getattr(self, "ws_client", None) is not None:
+            logger.info("FeishuChannel stopped (WebSocket thread is daemon — will exit with process).")
 
     def _do_recv_message_v2(self, data: P2ImMessageReceiveV1) -> None:
         """适配 SDK 2.2.3 回调签名的标准处理器"""  # Standard handler adapted for SDK 2.2.3 callback signature
@@ -267,7 +272,10 @@ class FeishuChannel(BaseChannel):
         for attempt in range(max_retries):
             try:
                 loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, self.lark_client.im.v1.message.create, request)
+                await asyncio.wait_for(
+                    loop.run_in_executor(None, self.lark_client.im.v1.message.create, request),
+                    timeout=30.0,
+                )
                 return
             except Exception as e:
                 last_err = e
@@ -290,8 +298,11 @@ class FeishuChannel(BaseChannel):
             )
             .build()
         )
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self.lark_client.im.v1.message.create, request)
+        loop = asyncio.get_running_loop()
+        await asyncio.wait_for(
+            loop.run_in_executor(None, self.lark_client.im.v1.message.create, request),
+            timeout=30.0,
+        )
 
     async def send_file(self, to: str, file_path: str, **kwargs):
         """发送本地文件到飞书对话框"""
@@ -318,7 +329,10 @@ class FeishuChannel(BaseChannel):
                 )
 
                 loop = asyncio.get_running_loop()
-                response = await loop.run_in_executor(None, self.lark_client.im.v1.file.create, upload_request)
+                response = await asyncio.wait_for(
+                    loop.run_in_executor(None, self.lark_client.im.v1.file.create, upload_request),
+                    timeout=30.0,
+                )
 
                 if not response.success():
                     logger.error(f"❌ 飞书物理文件上传失败: {response.msg}")
@@ -339,7 +353,10 @@ class FeishuChannel(BaseChannel):
                 .build()
             )
 
-            await loop.run_in_executor(None, self.lark_client.im.v1.message.create, msg_request)
+            await asyncio.wait_for(
+                loop.run_in_executor(None, self.lark_client.im.v1.message.create, msg_request),
+                timeout=30.0,
+            )
             logger.info(f"✅ 文件已分发至飞书: {file_name}")
             return True
         except Exception as e:
@@ -361,7 +378,10 @@ class FeishuChannel(BaseChannel):
                 )
 
                 loop = asyncio.get_running_loop()
-                response = await loop.run_in_executor(None, self.lark_client.im.v1.image.create, upload_request)
+                response = await asyncio.wait_for(
+                    loop.run_in_executor(None, self.lark_client.im.v1.image.create, upload_request),
+                    timeout=30.0,
+                )
 
                 if not response.success():
                     return False
@@ -379,7 +399,10 @@ class FeishuChannel(BaseChannel):
                 )
                 .build()
             )
-            await loop.run_in_executor(None, self.lark_client.im.v1.message.create, msg_request)
+            await asyncio.wait_for(
+                loop.run_in_executor(None, self.lark_client.im.v1.message.create, msg_request),
+                timeout=30.0,
+            )
             return True
         except Exception as e:
             logger.error(f"❌ 飞书发送图片异常: {e}")
@@ -404,7 +427,10 @@ class FeishuChannel(BaseChannel):
                 .build()
             )
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self.lark_client.im.v1.message.create, request)
+            await asyncio.wait_for(
+                loop.run_in_executor(None, self.lark_client.im.v1.message.create, request),
+                timeout=30.0,
+            )
             return True
         except Exception as e:
             logger.error(f"❌ 飞书富文本发送失败: {e}")

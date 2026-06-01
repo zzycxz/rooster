@@ -48,7 +48,6 @@ topology_output.txt
 all_windows_diagnostic.txt
 
 # Frontend deps (rebuilt via npm install)
-src/ui/node_modules/
 dashboard/ui/node_modules/
 
 # Debug

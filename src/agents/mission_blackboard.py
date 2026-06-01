@@ -192,11 +192,11 @@ class MissionBlackboard:
         """
         import asyncio as _asyncio
 
-        start = _asyncio.get_event_loop().time()
+        start = _asyncio.get_running_loop().time()
         while True:
             if await self.try_lock_resource(resource, owner):
                 return True
-            if _asyncio.get_event_loop().time() - start > timeout:
+            if _asyncio.get_running_loop().time() - start > timeout:
                 logger.error(f"[Blackboard:{self.mission_id}] '{owner}' timed out waiting for resource '{resource}'")
                 return False
             await _asyncio.sleep(poll_interval)

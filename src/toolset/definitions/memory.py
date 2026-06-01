@@ -24,7 +24,10 @@ class MemoryAddFactTool(Tool):
             # 获取全局 MemoryManager 实例（在 AgentExecutor 中已初始化）
             # 这里我们通过单例模式或重新构造（由于它指向同一个磁盘文件，所以是安全的）
             manager = MemoryManager()
-            await asyncio.to_thread(manager.update_fact, args.fact)
+            await asyncio.wait_for(
+                asyncio.to_thread(manager.update_fact, args.fact),
+                timeout=30.0,
+            )
             return ToolResult.success(f"✅ 成功记录长期事实: {args.fact}")
         except Exception as e:
             return ToolResult.error(f"❌ 记录记忆失败: {str(e)}")

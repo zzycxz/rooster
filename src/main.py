@@ -9,10 +9,10 @@ os.environ["TQDM_DISABLE"] = "1"
 # Suppress noisy warnings
 import warnings
 
-warnings.filterwarnings("ignore", message=".*pkg_resources.*")
-warnings.filterwarnings("ignore", message=".*UNEXPECTED.*")
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API.*")
+warnings.filterwarnings("ignore", category=UserWarning, module="pkg_resources")
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pywinauto")
-warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources.*")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 from dotenv import load_dotenv
 
 # 确保 src 目录和项目根目录在搜索路径中
@@ -23,13 +23,6 @@ if current_dir not in sys.path:
 project_root = os.path.dirname(current_dir)  # rooster/
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-
-# 🚀 预先同步导入 huggingface_hub 解决多线程并发导入死锁
-# Pre-import huggingface_hub synchronously to prevent multi-threaded import deadlock
-try:
-    pass
-except Exception:
-    pass
 
 # 预加载环境变量 — 必须在任何可能触发 Settings 的 import 之前
 # Pre-load environment variables — must run before any import that triggers Settings
@@ -82,7 +75,19 @@ logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
 logging.getLogger("transformers").setLevel(logging.WARNING)
 logging.getLogger("torch").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("pkg_resources").setLevel(logging.ERROR)
+logging.getLogger("pkg_resources").setLevel(logging.WARNING)
+
+class MuteSpecificLogsFilter(logging.Filter):
+    def filter(self, record):
+        msg = str(record.msg)
+        if "LOAD REPORT" in msg or "UNEXPECTED" in msg:
+            return False
+        return True
+
+_mute_filter = MuteSpecificLogsFilter()
+logging.getLogger("sentence_transformers").addFilter(_mute_filter)
+logging.getLogger("transformers").addFilter(_mute_filter)
+logging.getLogger("transformers.modeling_utils").addFilter(_mute_filter)
 
 
 def _check_macos_permissions():
@@ -343,7 +348,7 @@ async def main():
 
     # Suppress benign ConnectionResetError on Windows ProactorEventLoop pipe close
     if sys.platform == "win32":
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         _orig = loop.get_exception_handler() or loop.default_exception_handler
 
         def _quiet_handler(loop, context):

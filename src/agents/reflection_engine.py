@@ -184,9 +184,24 @@ class ReflectionEngine:
     ) -> str:
         import os
 
-        # 从错误消息或 args 中尝试提取路径
-        # Extract path from error message or args
-        bad_path = str(error).split(":")[-1].strip().strip("'\"")
+        # Extract path from error message or args.
+        # Use os.fsdecode-safe approach: find the last quoted or unquoted path token.
+        # On Windows, splitting on ":" loses the drive letter (e.g. "C:\foo" → "\foo").
+        # Instead, find the first occurrence of a path-like token after the last ": ".
+        error_str = str(error)
+        import re as _re
+        # 1. Try quoted absolute paths: 'C:\...' or "/..." (most common CPython format)
+        path_match = _re.search(r"'([A-Za-z]:[^']+)'|\"([A-Za-z]:[^\"]+)\"|'(/[^']+)'|\"(/[^\"]+)\"", error_str)
+        if path_match:
+            bad_path = next(g for g in path_match.groups() if g is not None).strip()
+        else:
+            # 2. Try unquoted Windows absolute path (some Python versions omit quotes)
+            win_match = _re.search(r'([A-Za-z]:\\[^\s\'"]+)', error_str)
+            if win_match:
+                bad_path = win_match.group(1).strip()
+            else:
+                # 3. POSIX fallback — last colon segment (safe on Linux, harmless on Windows for non-drive paths)
+                bad_path = error_str.split(":")[-1].strip().strip("'\"")
         if not bad_path:
             return "[REFLECTION_FAILED] 无法从 FileNotFoundError 中解析路径。"
 

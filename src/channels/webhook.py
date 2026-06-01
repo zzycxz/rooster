@@ -71,6 +71,7 @@ class WebhookChannel(BaseChannel):
         self._on_message = on_message
         self._runner: Optional[object] = None
         self._site: Optional[object] = None
+        self._bg_tasks: set = set()  # strong refs to prevent GC of in-flight tasks
 
     async def start(self) -> None:
         if not _AIOHTTP_AVAILABLE:
@@ -131,7 +132,9 @@ class WebhookChannel(BaseChannel):
         logger.info(f"[WebhookChannel] 收到消息: session={session_id} text={text[:80]}")
 
         if self._on_message:
-            asyncio.create_task(self._on_message(msg))
+            task = asyncio.create_task(self._on_message(msg))
+            self._bg_tasks.add(task)
+            task.add_done_callback(self._bg_tasks.discard)
 
         resp = json.dumps({"status": "accepted", "session_id": session_id})
         return _web.Response(text=resp, content_type="application/json")

@@ -27,13 +27,16 @@ If the Failure History lists any prior attempts:
 2. You **MUST NOT** repeat these failed approaches. You must proactively shift to completely different tools, generic/alternative search queries, different endpoints, or distinct logic.
 3. In your thoughts, explicitly formulate a hypothesis on why the previous attempts failed, and detail how your new plan is 100% different and bypasses those specific failure modes.
 
-Output a pure JSON plan strictly following v10.0 schema:
+Output a pure JSON plan strictly following v11.0 schema:
 {
-    "schema_version": "10.0",
+    "schema_version": "11.0",
     "task_id": "string",
     "os_context": "windows | linux | macos | unknown",
     "goal": "string",
     "autonomy": "AUTO | SUPERVISED",
+    "blockers": [],
+    "deliverables": [],
+    "feasibility_note": "",
     "subtasks": [
         {
             "id": "ST_R1",
@@ -43,7 +46,10 @@ Output a pure JSON plan strictly following v10.0 schema:
             "depends_on": [],
             "on_failure": "RETRY | ABORT | REPLAN | REROUTE",
             "requires_confirm": false,
-            "timeout": 120
+            "timeout": 120,
+            "owner": "AGENT",
+            "confidence": "HIGH",
+            "risk_note": ""
         }
     ]
 }
