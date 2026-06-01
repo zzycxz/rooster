@@ -289,6 +289,18 @@ class AgentExecutor:
                 except Exception as e:
                     executor_logger.warning(f"Compaction flush failed (degraded to pruning): {e}")
 
+            # [V12 B2] 渐进式历史压缩 (Progressive History Compression)
+            # 避免长任务末期突然发生硬裁剪导致失忆。每 10 步主动进行一次温和的中间层摘要。
+            if step > 1 and step % 10 == 0 and len(session_history) > 12:
+                # 前 2 条通常是初始指令，后 10 条是最近 5 步的高清上下文
+                # 我们提炼中间的部分
+                mid_msgs = session_history[2:-10]
+                if mid_msgs:
+                    summary = await self._summarize_mid_history(mid_msgs)
+                    session_history = session_history[:2] + [
+                        {"role": "user", "content": f"[系统提示：历史执行摘要]\n{summary}", "_internal": True}
+                    ] + session_history[-10:]
+
             session_history = await self._prune_history(session_history, max_total_tokens=context_limit)
 
             # --- Blackboard: inject shared context from peer agents ---
@@ -1164,16 +1176,64 @@ class AgentExecutor:
 
         total_tokens = count_message_tokens(pruned)
         if total_tokens > max_total_tokens and len(pruned) > 8:
+            # V12: 退化情况下的硬裁剪（如果前面的渐进式压缩依然没能控制住）
+            # 这种情况极少发生，因为中间层已经被摘要化了
+            mid_msgs = pruned[1:-10]
+            summary = await self._summarize_mid_history(mid_msgs) if mid_msgs else "中间对话已压缩以节约上下文"
+            
             pruned = [pruned[0]] + pruned[-10:]
             pruned.insert(
                 1,
                 {
                     "role": "user",
-                    "content": "[系统提示：中间对话已压缩以节约上下文，详细内容已由后台归档至长期记忆]",
+                    "content": f"[系统提示：超限硬裁剪并生成摘要]\n{summary}",
                     "_internal": True,
                 },
             )
         return pruned
+
+    async def _summarize_mid_history(self, messages: List[Dict[str, str]]) -> str:
+        """[V12 B2] 渐进式挤水：利用快模型或规则提取中间轮次摘要"""
+        # 兜底规则提取
+        rule_summary_lines = []
+        for m in messages:
+            content = m.get('content') or ""
+            role = m.get('role', 'unknown')
+            if role == "tool" and len(content) > 200:
+                content = content[:200] + "..."
+            elif role == "assistant" and len(content) > 100:
+                content = content[:100] + "..."
+            rule_summary_lines.append(f"- [{role}] {content}")
+            
+        rule_summary = "\n".join(rule_summary_lines)
+        if len(rule_summary) > 2000:
+            rule_summary = rule_summary[:2000] + "...\n(truncated)"
+        
+        # 尝试调用小模型做快速摘要
+        try:
+            from models.factory import ModelFactory
+            # 优先使用配置中的 LOCAL_MODEL，或者 fallback 为基础模型
+            local_model_name = getattr(settings, "LOCAL_MODEL", None) or "gemini-2.5-flash"
+            # 为了避免循环依赖，我们直接使用当前 executor 的 llm_client，但传入小模型名称
+            if hasattr(self.llm_client, "chat_non_stream"):
+                prompt = (
+                    "请将以下大模型的历史执行记录压缩为一段 500 字以内的执行摘要。\n"
+                    "你只需要提取核心逻辑，不要赘述废话。\n"
+                    "【必须保留】: 关键工具的调用结果、取得的核心数据、已确认的失败尝试。\n"
+                    "【可以省略】: 啰嗦的思考过程、重复循环的重试、毫无意义的文本截断提示。\n\n"
+                    f"原始记录：\n{rule_summary}"
+                )
+                executor_logger.info("⏳ 触发 [B2] 渐进式中间层摘要 (Progressive History Compression)...")
+                resp = await self.llm_client.chat_non_stream(
+                    messages=[{"role": "user", "content": prompt}],
+                    model=local_model_name,
+                )
+                if resp and resp.content:
+                    return resp.content[:600]
+        except Exception as e:
+            executor_logger.debug(f"LLM 渐进式摘要压缩失败，退化为规则提取: {e}")
+        
+        return rule_summary[:600]
 
     def _clean_thought_chatter(self, text: str) -> str:
         # <think> tags are handled during stream; remove fragile regex chatter cleaning
