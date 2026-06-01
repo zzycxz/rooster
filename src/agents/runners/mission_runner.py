@@ -878,10 +878,15 @@ class MissionRunner:
                     # Blackboard: mark done and broadcast key result for peer agents
                     await blackboard.update_progress(st.id, "done", step=0)
                     if report.observation:
+                        # [V12 B4.2] 置信度判定 (Confidence Labeling)
+                        _obs_lower = report.observation.lower()
+                        status = "tentative" if any(kw in _obs_lower for kw in ["error", "failed", "fallback", "未找到", "妥协"]) else "confirmed"
+                        
                         await blackboard.post_fact(
                             key=f"{st.id}_result",
                             value=report.observation[:600],
                             author=st.id,
+                            status=status,
                         )
 
                     # RACE mode: first finisher cancels its race-group siblings

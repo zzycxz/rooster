@@ -767,11 +767,17 @@ class AgentExecutor:
                 # Only broadcast non-trivial, non-binary results (errors/successes with substance).
                 if config.blackboard and combined_obs and len(combined_obs) > 80:
                     fact_key = f"{config.agent_id}_step{step}"
+                    # [V12 B4.2] 置信度判定 (Confidence Labeling)
+                    # 如果结果中包含失败、回退或正则表达式提取错误，则标为可疑 (tentative)
+                    _obs_lower = combined_obs.lower()
+                    status = "tentative" if any(kw in _obs_lower for kw in ["error", "failed", "fallback", "未找到", "妥协"]) else "confirmed"
+                    
                     # Truncate to avoid blackboard bloat; peers only need the gist.
                     await config.blackboard.post_fact(
                         key=fact_key,
                         value=combined_obs[:600],
                         author=config.agent_id,
+                        status=status,
                     )
 
                 # Strip base64 image data — 所有 provider 都 strip，截图不发出本机

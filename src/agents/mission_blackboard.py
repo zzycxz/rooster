@@ -68,15 +68,19 @@ class MissionBlackboard:
     # Discovery Broadcasting
     # ------------------------------------------------------------------
 
-    async def post_fact(self, key: str, value: Any, author: str) -> None:
-        """子代理 author 向黑板广播一条发现/事实。"""
+    async def post_fact(self, key: str, value: Any, author: str, status: str = "confirmed") -> None:
+        """
+        子代理 author 向黑板广播一条发现/事实。
+        status 选项: confirmed | tentative | superseded
+        """
         async with self._lock:
             self._facts[key] = {
                 "value": value,
                 "author": author,
                 "timestamp": datetime.now().isoformat(),
+                "status": status,
             }
-        logger.debug(f"[Blackboard:{self.mission_id}] {author} → fact '{key}'")
+        logger.debug(f"[Blackboard:{self.mission_id}] {author} → fact '{key}' [{status}]")
 
     async def get_fact(self, key: str) -> Optional[Any]:
         """读取一条 fact 的值，不存在返回 None。"""
@@ -101,7 +105,9 @@ class MissionBlackboard:
             lines.append("📋 [Shared Discoveries from Peer Agents]:")
             for k, v in other_facts[:_CONTEXT_MAX_FACTS]:
                 val_str = str(v["value"])[:_FACT_MAX_LEN]
-                lines.append(f"  [{v['author']}] {k}: {val_str}")
+                # [V12 B4] 置信度标签
+                status_label = " 🚨[可疑，需二次验证]" if v.get("status") == "tentative" else ""
+                lines.append(f"  [{v['author']}] {k}: {val_str}{status_label}")
 
         # 当前正在运行的其他子代理意图（帮助协调，避免重复）
         # Currently running other sub-agent intents (help coordination, avoid duplication)
