@@ -24,6 +24,7 @@ from sessions.store import global_session_store
 from utils.audit.archiver import VaultArchiver
 from utils.config import settings
 from utils.security import state_guard
+from utils.observation import summarize_dependency_observation
 
 logger = logging.getLogger(__name__)
 
@@ -492,8 +493,13 @@ class MissionRunner:
                     if dep_report.status == "CANCELLED":
                         cancelled_deps.append(dep_id)
                     elif dep_report.observation:
-                        # 2000 chars — enough to pass substantial upstream context without flooding prompt
-                        dep_results.append(f"[{dep_id}] {dep_report.observation[:2000]}")
+                        # [V12] B2.5 Codex-style Dependency Observation Digest
+                        digest = summarize_dependency_observation(
+                            observation=dep_report.observation,
+                            task_id=dep_id,
+                            run_dir=getattr(settings, "WORKSPACE_DIR", ".rooster/runs")
+                        )
+                        dep_results.append(f"[{dep_id}]\n{digest.to_prompt_string()}")
 
             # [V11] 如果上游有被取消的步骤（如 USER 步骤超时），当前步骤也应取消
             if cancelled_deps:
