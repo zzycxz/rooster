@@ -159,6 +159,23 @@ class MissionRunner:
                 if os.path.exists(p):
                     os.remove(p)
             return None
+
+    def _write_heartbeat(self, session_id: str, task_id: str, running_subtask: str, completed: int, total: int) -> None:
+        """[V12 B5.1] 写入监控心跳，供 guardian 守护线程轮询"""
+        heartbeat_path = os.path.join(_CHECKPOINT_DIR, f"{session_id}.heartbeat")
+        try:
+            os.makedirs(_CHECKPOINT_DIR, exist_ok=True)
+            with open(heartbeat_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "task_id": task_id,
+                    "running_subtask": running_subtask,
+                    "completed": completed,
+                    "total": total,
+                    "timestamp": time.time(),
+                }, f)
+        except Exception as e:
+            logger.debug(f"Failed to write heartbeat: {e}")
+
     def _clear_checkpoint(self, session_id: str, goal: str) -> None:
         if not getattr(settings, "CHECKPOINT_ENABLED", False):
             return
@@ -409,6 +426,14 @@ class MissionRunner:
 
         async def _run_subtask_inner(st: SubTask, current_idx: int):
             from utils.config import settings
+            
+            self._write_heartbeat(
+                session_id=msg.session_id,
+                task_id=current_mission_plan.task_id,
+                running_subtask=st.id,
+                completed=len(completed_task_ids),
+                total=total_tasks,
+            )
 
             retry_limit = settings.AUDIT_MAX_REMAND_RETRY
             current_retry = 0
