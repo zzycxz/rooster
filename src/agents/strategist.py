@@ -201,7 +201,7 @@ class Strategist:
             return MissionPlan(
                 task_id="FAILSAFE",
                 goal="降级任务处理",
-                subtasks=[SubTask(id="FAILSAFE", instruction=user_request, domain="SYSTEM", tool="system_fallback")],
+                subtasks=[SubTask(id="FAILSAFE", instruction=user_request, domain="SYSTEM", tool="generic_tool")],
             )
 
         except Exception as e:
@@ -248,7 +248,7 @@ class Strategist:
             return MissionPlan(
                 task_id="FAILSAFE",
                 goal="降级任务处理",
-                subtasks=[SubTask(id="FAILSAFE", instruction=user_request, domain="SYSTEM", tool="system_fallback")],
+                subtasks=[SubTask(id="FAILSAFE", instruction=user_request, domain="SYSTEM", tool="generic_tool")],
             )
 
     async def plan_stream(self, user_request: str, images: Optional[List[str]] = None):
@@ -433,7 +433,7 @@ class Strategist:
             # Add raw output echo to help user locate whether model refusal or parse logic bug
             summary = full_content.strip() if full_content else "LLM 无任何返回 (Empty Response)"
             logger.info(f"💾 [DEBUG] 原始输出快照: {summary[:500]}...")
-            yield SubTask(id="FAILSAFE", instruction=user_request, domain="SYSTEM", tool="system_fallback")
+            yield SubTask(id="FAILSAFE", instruction=user_request, domain="SYSTEM", tool="generic_tool")
 
         # --- [V11] 从 full_content 提取顶层元数据，避免调用者再调一次 plan() ---
         if full_content:
@@ -622,7 +622,7 @@ class Strategist:
                         id="FAILSAFE",
                         instruction=target_goal,
                         domain="SYSTEM",
-                        tool="system_fallback",
+                        tool="generic_tool",
                         on_failure="RETRY",
                     )
                 ],

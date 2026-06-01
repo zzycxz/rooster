@@ -158,8 +158,6 @@ class MissionRunner:
                 if os.path.exists(p):
                     os.remove(p)
             return None
-            return None
-
     def _clear_checkpoint(self, session_id: str, goal: str) -> None:
         if not getattr(settings, "CHECKPOINT_ENABLED", False):
             return
