@@ -5,7 +5,7 @@ import time
 import hashlib
 import asyncio
 import threading
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Any, Dict, Optional
 from cachetools import TTLCache
 
 
@@ -43,7 +43,7 @@ class FeishuChannel(BaseChannel):
         # 延迟初始化 Lark 组件以加快系统启动速度 (7.5s -> 0.1s)
         self.lark_client = None
         self.event_handler = None
-        
+
         # [去重扩展] 缓存最近 10 分钟的消息 ID，防止断网重连时的重复规划
         # [Deduplication] Cache recent 10 min message IDs, prevent duplicate planning on reconnect
         self.processed_msg_ids = TTLCache(maxsize=1000, ttl=600)
@@ -59,7 +59,7 @@ class FeishuChannel(BaseChannel):
         logger.info(
             "🌩️ 正在启动飞书高级长连接隧道 (WebSocket)..."
         )  # Starting Feishu advanced long-connection tunnel (WebSocket)
-        
+
         # 延迟加载核心组件并放入线程，彻底避免阻塞主循环 (Defer heavy SDK imports to thread)
         # Initialize SDK components
         self.lark_client = Client.builder().app_id(self.app_id).app_secret(self.app_secret).build()
@@ -260,7 +260,7 @@ class FeishuChannel(BaseChannel):
             # Only send minimal hint, don't interfere with final answer
             content = json.dumps({"text": f"🔍 Rooster 正在使用工具: `{tool_name}`..."})
 
-        
+
         request = (
             im.CreateMessageRequest.builder()
             .receive_id_type("open_id")
@@ -291,7 +291,7 @@ class FeishuChannel(BaseChannel):
             logger.error(f"❌ [Feishu] 消息发送彻底失败: {last_err}")
 
     async def send_card(self, to: str, card_content: Dict[str, Any], **kwargs):
-        
+
         content = json.dumps(card_content)
         request = (
             im.CreateMessageRequest.builder()

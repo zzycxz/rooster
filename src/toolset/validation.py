@@ -13,7 +13,7 @@ class ToolCallValidator:
     LLM 工具调用的 Schema 校验 + 自愈 (Validation-Driven Self-Healing)。
     捕获 Pydantic ValidationError，并允许 LLM 进行局部修复重试，避免异常冒泡。
     """
-    
+
     MAX_HEAL_RETRIES = 2
 
     async def validate_and_heal(
@@ -96,7 +96,7 @@ class ToolCallValidator:
             schema_json = tool.args_schema.model_json_schema()
         except Exception:
             schema_json = "No schema available"
-            
+
         prompt = (
             f"The tool call you made has parameter schema errors:\n{error_detail}\n\n"
             f"Expected JSON Schema for {tool.name}:\n{json.dumps(schema_json, indent=2)}\n\n"
@@ -114,7 +114,7 @@ class ToolCallValidator:
                 temperature=0.1
             )
             text = (resp.content or "").strip()
-            
+
             # 剥离 Markdown 代码块
             if "```" in text:
                 parts = text.split("```")

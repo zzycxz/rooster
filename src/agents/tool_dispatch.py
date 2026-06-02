@@ -307,7 +307,7 @@ async def execute_orchestrated_tool(
         if error_msg:
             # If self-healing failed, return error to the main ReAct loop
             return f'<tool_response name="{name}">[SchemaValidationFailed] {error_msg}</tool_response>'
-        
+
         # Override args with validated ones if available
         if validated_model is not None:
             args = validated_model.model_dump()

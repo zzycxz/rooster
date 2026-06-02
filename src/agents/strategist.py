@@ -41,7 +41,7 @@ class Strategist:
 
     def _get_skills_digest(self) -> str:
         digest_parts = []
-        
+
         # 1. 注入系统原生工具（Native Tools）
         if self._tool_registry:
             try:
@@ -63,7 +63,7 @@ class Strategist:
                     digest_parts.append(custom_skills)
             except Exception:
                 pass
-                
+
         return "\n\n".join(digest_parts)
 
     async def plan(self, user_request: str, max_tokens: int = 32768) -> MissionPlan:
@@ -107,7 +107,7 @@ class Strategist:
 
         response = None
         MAX_RETRIES = 2
-        
+
         try:
             for attempt in range(MAX_RETRIES + 1):
                 # Timeout guards against LLM hangs that would block MissionRunner indefinitely.
@@ -134,7 +134,7 @@ class Strategist:
                 try:
                     clean_plan = extract_json(raw_plan)
                     plan_data = json.loads(clean_plan)
-                    
+
                     # 全自动语义补全
                     # Automatic semantic completion
                     if "edicts" in plan_data:
@@ -516,7 +516,7 @@ class Strategist:
 
         response = None
         MAX_RETRIES = 2
-        
+
         try:
             for attempt in range(MAX_RETRIES + 1):
                 response = await asyncio.wait_for(

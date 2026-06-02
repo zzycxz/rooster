@@ -120,7 +120,7 @@ class WebSearchTool(BaseTool):
 
     def _check_exa_quota(self) -> bool:
         return get_exa_active()
-        
+
     def _mark_exa_exhausted(self):
         disable_exa()
 
@@ -144,7 +144,7 @@ class WebSearchTool(BaseTool):
         query = kwargs.get("query")
         en_keywords = kwargs.get("en_keywords", "")
         deep_research = kwargs.get("deep_research", False)
-        
+
         if not query:
             return "Error: No search query provided."
 

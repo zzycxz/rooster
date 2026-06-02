@@ -5,7 +5,7 @@ Typed exceptions for control flow and error handling across agents.
 
 class EscalateSignal(Exception):
     """
-    Signal raised when a subtask is blocked and needs to escalate back to the Strategist 
+    Signal raised when a subtask is blocked and needs to escalate back to the Strategist
     or the Orchestrator for re-planning or failover.
     """
     def __init__(self, message: str):
@@ -15,7 +15,7 @@ class EscalateSignal(Exception):
 
 class AbortSignal(Exception):
     """
-    Signal raised for critical, unrecoverable errors (e.g. security violations, prompt injections) 
+    Signal raised for critical, unrecoverable errors (e.g. security violations, prompt injections)
     that should immediately abort the mission and notify the user.
     """
     def __init__(self, message: str):

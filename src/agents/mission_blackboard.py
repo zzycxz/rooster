@@ -203,18 +203,18 @@ class MissionBlackboard:
         while True:
             if await self.try_lock_resource(resource, owner):
                 return True
-                
+
             elapsed = _asyncio.get_running_loop().time() - start
             if elapsed > timeout:
                 logger.error(f"[Blackboard:{self.mission_id}] '{owner}' timed out waiting for resource '{resource}'")
                 return False
-                
+
             async with self._lock:
                 if resource not in self._resource_events:
                     self._resource_events[resource] = _asyncio.Event()
                 event = self._resource_events[resource]
                 event.clear()
-            
+
             try:
                 await _asyncio.wait_for(event.wait(), timeout=timeout - elapsed)
             except _asyncio.TimeoutError:

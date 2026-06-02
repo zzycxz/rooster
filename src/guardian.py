@@ -17,23 +17,23 @@ async def _heartbeat_loop():
     如果发现有文件超过 180 秒未更新，则发出警告。
     """
     logger.info("Guardian Monitor started. Watching for stalled tasks...")
-    
+
     while True:
         try:
             if not os.path.exists(_CHECKPOINT_DIR):
                 await asyncio.sleep(30)
                 continue
-                
+
             now = time.time()
             for filename in os.listdir(_CHECKPOINT_DIR):
                 if not filename.endswith(".heartbeat"):
                     continue
-                    
+
                 path = os.path.join(_CHECKPOINT_DIR, filename)
                 try:
                     with open(path, "r", encoding="utf-8") as f:
                         hb = json.load(f)
-                        
+
                     age = now - hb.get("timestamp", 0)
                     if age > _HEARTBEAT_TIMEOUT_S:
                         logger.warning(
@@ -44,10 +44,10 @@ async def _heartbeat_loop():
                         )
                 except Exception as e:
                     logger.debug(f"Failed to read heartbeat {filename}: {e}")
-                    
+
         except Exception as e:
             logger.error(f"Guardian monitor error: {e}")
-            
+
         await asyncio.sleep(30)
 
 def start_guardian_task() -> Optional[asyncio.Task]:

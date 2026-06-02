@@ -67,7 +67,6 @@ class SubAgentSpawnTool(BaseTool):
 
     async def execute(self, args: SubAgentSpawnArgs) -> ToolResult:
         # --- Recursion depth guard ---
-        from utils.config import settings
 
         # Always use depth from execution context (trust system, not LLM-supplied value)
         current_depth = self.context.get("spawn_depth", 0)

@@ -20,7 +20,7 @@ from utils.audit import audit_manager
 from utils.config import settings
 from memory.visual_context import VisualContextBuffer
 from models.vision_strategy import UIACache
-from utils.exceptions import EscalateSignal, AbortSignal
+from utils.exceptions import EscalateSignal
 
 executor_logger = logging.getLogger(__name__)
 
@@ -271,11 +271,11 @@ class AgentExecutor:
 
             # --- Phase 1: Pre-processing ---
             ltm_block = self.memory_manager.get_summary_for_prompt(query=config.prompt)
-            
+
             # [V12 B3.1] System Prompt Caching
             import hashlib
             ltm_hash = hashlib.md5(ltm_block.encode()).hexdigest()[:8] if ltm_block else "empty"
-            
+
             if _cached_system_prompt is None or ltm_hash != _cached_ltm_hash:
                 params = SystemPromptParams(
                     agent_id=config.agent_id,
@@ -772,7 +772,7 @@ class AgentExecutor:
                     # 如果结果中包含失败、回退或正则表达式提取错误，则标为可疑 (tentative)
                     _obs_lower = combined_obs.lower()
                     status = "tentative" if any(kw in _obs_lower for kw in ["error", "failed", "fallback", "未找到", "妥协"]) else "confirmed"
-                    
+
                     # Truncate to avoid blackboard bloat; peers only need the gist.
                     await config.blackboard.post_fact(
                         key=fact_key,
@@ -1173,7 +1173,7 @@ class AgentExecutor:
         for i, msg in enumerate(history):
             content = msg.get("content") or ""
             role = msg.get("role", "user")
-            
+
             # Truncate both user (tool outputs) and assistant (thoughts/reasoning)
             if role in ("user", "assistant") and i > 0 and i < len(history) - 2:
                 if "【视觉分析报告】" in content:
@@ -1188,10 +1188,10 @@ class AgentExecutor:
                         content[:obs_cap_chars]
                         + f"\n... [Content auto-truncated, original length {len(content)} chars] ..."
                     )
-                    
+
             entry = {k: v for k, v in msg.items()}
             entry["content"] = content
-            
+
             # Also truncate reasoning_content for assistant
             if role == "assistant" and entry.get("reasoning_content"):
                 r_content = entry["reasoning_content"]
@@ -1200,7 +1200,7 @@ class AgentExecutor:
                         r_content[:obs_cap_chars]
                         + f"\n... [Reasoning auto-truncated, original length {len(r_content)} chars] ..."
                     )
-                    
+
             pruned.append(entry)
 
         total_tokens = count_message_tokens(pruned)
@@ -1209,7 +1209,7 @@ class AgentExecutor:
             # 这种情况极少发生，因为中间层已经被摘要化了
             mid_msgs = pruned[1:-10]
             summary = await self._summarize_mid_history(mid_msgs) if mid_msgs else "中间对话已压缩以节约上下文"
-            
+
             pruned = [pruned[0]] + pruned[-10:]
             pruned.insert(
                 1,
@@ -1233,14 +1233,13 @@ class AgentExecutor:
             elif role == "assistant" and len(content) > 100:
                 content = content[:100] + "..."
             rule_summary_lines.append(f"- [{role}] {content}")
-            
+
         rule_summary = "\n".join(rule_summary_lines)
         if len(rule_summary) > 2000:
             rule_summary = rule_summary[:2000] + "...\n(truncated)"
-        
+
         # 尝试调用小模型做快速摘要
         try:
-            from models.factory import ModelFactory
             # 优先使用配置中的 LOCAL_MODEL，或者 fallback 为基础模型
             local_model_name = getattr(settings, "LOCAL_MODEL", None) or "gemini-2.5-flash"
             # 为了避免循环依赖，我们直接使用当前 executor 的 llm_client，但传入小模型名称
@@ -1261,7 +1260,7 @@ class AgentExecutor:
                     return resp.content[:600]
         except Exception as e:
             executor_logger.debug(f"LLM 渐进式摘要压缩失败，退化为规则提取: {e}")
-        
+
         return rule_summary[:600]
 
     def _clean_thought_chatter(self, text: str) -> str:

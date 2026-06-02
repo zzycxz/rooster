@@ -17,13 +17,13 @@ class GenericTool(BaseTool):
     """
     兜底工具：当 Strategist 无法将任务映射到具体工具时，将原始指令交给
     Executor 的 ReAct 循环处理。LLM 会在后续步骤中自主选择正确的工具。
-    
+
     触发场景:
     1. Strategist 规划失败（超时、JSON 解析失败、异常）→ FAILSAFE SubTask
     2. Strategist 输出了未注册的 tool 名 → 降级为 generic_tool
     3. is_direct 模式 → 直接执行用户指令
     """
-    
+
     name: str = "generic_tool"
     kit: str = "Core"
     description: str = (

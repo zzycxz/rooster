@@ -1,12 +1,13 @@
 import logging
 import asyncio
 import time
-from typing import Type, List, Optional, Dict
+from typing import Type, List, Dict
 from pydantic import BaseModel, Field
 from bs4 import BeautifulSoup
 from toolset.base import BaseTool
 from utils.browser.manager import BrowserManager, html_to_markdown, semantic_prune_markdown
 from utils.browser.pruner import MarkdownPruner
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +69,6 @@ class WebFetchTool(BaseTool):
 
         # Step 2: Smart content extraction pipeline (PruningContentFilter + Table + Citation)
         # Step 2: 智能内容提取管线 (PruningContentFilter + Table + Citation)
-        from utils.browser.manager import semantic_prune_markdown
-        from utils.browser.pruner import MarkdownPruner
 
         # First extract scent links from raw HTML (all links)
         # 先从原始 HTML 中提取 scent links（全量链接）

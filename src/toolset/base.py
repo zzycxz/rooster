@@ -89,7 +89,7 @@ class Tool:
                 args_obj = self.args_schema(**kwargs)
             except Exception as e:
                 return ToolResult.error(f"[ArgumentValidation] {e}")
-            
+
             # 兼容：如果 execute 不接收 ctx 或者我们在旧模式下，我们得兼容它
             import inspect
             sig = inspect.signature(self.execute)

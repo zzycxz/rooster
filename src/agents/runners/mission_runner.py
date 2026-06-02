@@ -405,7 +405,7 @@ class MissionRunner:
         for cid in completed_task_ids:
             if cid in subtask_events:
                 subtask_events[cid].set()
-                
+
         round_artifacts: List[
             str
         ] = []  # 本轮产出的文件，重规划时清理 / Files produced this round, cleaned on replanning
@@ -420,7 +420,7 @@ class MissionRunner:
             # --- 核心安全补丁: 防止全局历史中的长文本污染子任务 ---
             if len(raw_content) > 1500:
                 raw_content = raw_content[:1500] + f"\n... [Context auto-truncated from {len(raw_content)} chars] ..."
-            
+
             if getattr(m, "images", None):
                 content = [{"type": "text", "text": raw_content}]
                 for img in m.images:
@@ -438,7 +438,7 @@ class MissionRunner:
 
         async def _run_subtask_inner(st: SubTask, current_idx: int):
             from utils.config import settings
-            
+
             self._write_heartbeat(
                 session_id=msg.session_id,
                 task_id=current_mission_plan.task_id,
@@ -493,13 +493,13 @@ class MissionRunner:
             # Wait for dependencies to complete, max 10 minutes to prevent permanent blocking
             _dep_wait_start = asyncio.get_running_loop().time()
             _DEP_WAIT_TIMEOUT = getattr(settings, "DEP_WAIT_TIMEOUT", 600)
-            
+
             while not all(dep in executed_tasks for dep in st.depends_on):
                 missing = [d for d in st.depends_on if d not in executed_tasks]
                 wait_tasks = [subtask_events[d].wait() for d in missing if d in subtask_events]
                 if not wait_tasks:
                     break
-                
+
                 try:
                     # 等待任意一个依赖完成，超时设为 20 秒用于进度播报
                     await asyncio.wait_for(
@@ -929,7 +929,7 @@ class MissionRunner:
                             # [V12 B4.2] 置信度判定 (Confidence Labeling)
                             _obs_lower = report.observation.lower()
                             status = "tentative" if any(kw in _obs_lower for kw in ["error", "failed", "fallback", "未找到", "妥协"]) else "confirmed"
-                        
+
                             await blackboard.post_fact(
                                 key=f"{st.id}_result",
                                 value=report.observation[:600],
@@ -1078,7 +1078,7 @@ class MissionRunner:
                                     new_ids = {st.id for st in current_mission_plan.subtasks}
                                     completed_task_ids -= new_ids
                                     running_tasks.clear()
-                                    
+
                                     # [NEW PLAN] Re-initialize events for the new plan
                                     subtask_events.clear()
                                     for new_st in current_mission_plan.subtasks:
@@ -1086,7 +1086,7 @@ class MissionRunner:
                                     for cid in completed_task_ids:
                                         if cid in subtask_events:
                                             subtask_events[cid].set()
-                                            
+
                                     await channel.send_message(to=msg.sender_id, text="🔄 [重构完毕] 执行新方案...")
                                     break
                                 else:

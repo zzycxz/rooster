@@ -2,7 +2,7 @@ import os
 import json
 import logging
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class DependencyObservationDigest:
         lines = [
             f"Dependency Task Status: {self.status}",
         ]
-        
+
         if self.artifact_paths:
             lines.append("Full output saved to environment artifacts:")
             for path in self.artifact_paths:
@@ -29,28 +29,28 @@ class DependencyObservationDigest:
                 if os.path.exists(path):
                     size = os.path.getsize(path)
                 lines.append(f"  - {path} ({size} bytes)")
-                
+
         if self.summary:
             lines.append(f"\nDiagnostic Summary:\n  {self.summary}")
-            
+
         if self.diagnostics:
             lines.append("\nKey Diagnostics (Traceback / Errors):")
             for diag in self.diagnostics:
                 lines.append(f"  {diag}")
-                
+
         if self.preview:
             lines.append(f"\nTail Preview:\n{self.preview}")
-            
+
         if self.retrieval_hint:
             lines.append(f"\n({self.retrieval_hint})")
-            
+
         return "\n".join(lines)
 
 
 def summarize_dependency_observation(
-    observation: str, 
-    task_id: str, 
-    run_dir: str, 
+    observation: str,
+    task_id: str,
+    run_dir: str,
     token_budget: int = 2000
 ) -> DependencyObservationDigest:
     """
@@ -75,22 +75,22 @@ def summarize_dependency_observation(
     # 1. 如果超出预算，自动落盘
     obs_dir = os.path.join(run_dir, "observations")
     os.makedirs(obs_dir, exist_ok=True)
-    
+
     log_path = os.path.join(obs_dir, f"{task_id}.full.log")
     try:
         with open(log_path, "w", encoding="utf-8") as f:
             f.write(observation)
     except Exception as e:
         logger.error(f"Failed to write observation log for {task_id}: {e}")
-        
+
     artifact_paths = [log_path]
-    
+
     # 2. 诊断信息提取
     diagnostics = []
     summary = []
-    
+
     lines = observation.splitlines()
-    
+
     # 2.1 尝试寻找 Traceback 块
     traceback_lines = []
     in_traceback = False
@@ -104,7 +104,7 @@ def summarize_dependency_observation(
             else:
                 traceback_lines.append(line)
                 in_traceback = False # Exception details is usually the last line of a traceback block
-                
+
     if traceback_lines:
         diagnostics.append("\n".join(traceback_lines))
         exception_line = traceback_lines[-1]
@@ -126,13 +126,13 @@ def summarize_dependency_observation(
             summary.append(f"Data type: JSON Array, Length: {len(data)}")
         except (json.JSONDecodeError, ValueError):
             pass
-            
+
     # 3. 构造 Tail Preview
     # 取最后 500 个字符
     preview = "...\n" + observation[-500:]
-    
+
     retrieval_hint = "If you need the full context, please use file reading tools to inspect the artifact paths above."
-    
+
     return DependencyObservationDigest(
         status=status,
         artifact_paths=artifact_paths,

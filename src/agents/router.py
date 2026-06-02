@@ -93,8 +93,6 @@ class Router:
 
     async def handle_inbound(self, msg: Any, channel: Any):
         """处理所有入口指令：分拣 → 路由 → 进化。"""  # Handle all inbound commands: sort → route → evolve
-        from evolution.engine import EvolutionEngine
-        from agents.reframer import Reframer
 
         # [v13.3-fix] Set correlation ID at the top level so all downstream logs inherit it
         _mission_token = set_mission_id(getattr(msg, "session_id", "router"))
@@ -295,7 +293,7 @@ class Router:
         """启动后台任务，异常记录到日志而非静默丢弃。"""  # Start background task, log exceptions instead of silently discarding
         task = asyncio.create_task(coro)
         task.add_done_callback(
-            lambda t: logger.error(f"Background task failed: {t.exception()}") 
+            lambda t: logger.error(f"Background task failed: {t.exception()}")
             if not t.cancelled() and t.exception() else None
         )
 

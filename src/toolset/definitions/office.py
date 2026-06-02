@@ -761,7 +761,7 @@ class PptxOpTool(BaseTool):
     async def run(self, **kwargs) -> str:
         try:
             from pptx import Presentation
-            from pptx.util import Inches, Pt, Emu
+            from pptx.util import Inches, Pt
             from pptx.dml.color import RGBColor
             from pptx.enum.text import PP_ALIGN
         except ImportError:
@@ -773,6 +773,7 @@ class PptxOpTool(BaseTool):
         slides_md = kwargs.get("slides_markdown", "")
         theme_name = kwargs.get("theme", "business")
         prs_title = kwargs.get("title", "")
+        author = kwargs.get("author", "")
         template_path = kwargs.get("template_path", "")
 
         if not path:
@@ -823,8 +824,6 @@ class PptxOpTool(BaseTool):
                 return txBox
 
             def set_slide_bg(slide, color_tuple):
-                from pptx.oxml.ns import qn
-                from lxml import etree
                 bg = slide.background
                 fill = bg.fill
                 fill.solid()
@@ -835,13 +834,13 @@ class PptxOpTool(BaseTool):
                 if use_template and slide.shapes.title:
                     # 优先使用模板自带占位符
                     slide.shapes.title.text = title_text
-                    
+
                     body_shape = None
                     for shape in slide.placeholders:
                         if hasattr(shape, "placeholder_format") and shape.placeholder_format.idx == 1:
                             body_shape = shape
                             break
-                    
+
                     # 智能回退：寻找除标题外的任意文本占位符
                     if not body_shape:
                         for shape in slide.placeholders:
@@ -877,7 +876,6 @@ class PptxOpTool(BaseTool):
                 if not use_template:
                     set_slide_bg(slide, theme["bg"])
                     # 顶部色条
-                    from pptx.util import Pt as _Pt
                     accent_bar = slide.shapes.add_shape(
                         1,  # MSO_SHAPE_TYPE.RECTANGLE
                         Inches(0), Inches(0),
@@ -959,7 +957,7 @@ class PptxOpTool(BaseTool):
                         deco.fill.solid()
                         deco.fill.fore_color.rgb = rgb(theme["accent"])
                         deco.line.fill.background()
-                    
+
                     # 主标题
                     add_textbox(
                         cover_slide, prs_title,

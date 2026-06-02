@@ -55,18 +55,18 @@ class SubTask(BaseModel):
         # 1. 用户操作指引校验 / USER instruction validation
         if self.owner == "USER" and len(self.instruction.strip()) < 5:
             raise ValueError("当 owner 为 USER 时，instruction 必须提供清晰、详细的用户操作指引。")
-            
+
         # 2. 竞速模式组名校验 / RACE group validation
         if self.sub_agent_mode == "RACE" and not self.race_group:
             raise ValueError("sub_agent_mode 为 RACE 时，必须指定非空的 race_group。")
         if self.sub_agent_mode != "RACE" and self.race_group:
             raise ValueError("非 RACE 模式下不能指定 race_group。")
-            
+
         # 3. 职能域合法性 / Domain validation
         valid_domains = {"UI", "RESOURCE", "SYSTEM", "COMMS", "MEMORY"}
         if self.domain not in valid_domains:
             raise ValueError(f"不支持的职能域: {self.domain}。必须是 {valid_domains} 之一。")
-            
+
         return self
 
 
@@ -113,7 +113,7 @@ class MissionPlan(BaseModel):
 
         visited = set()
         rec_stack = set()
-        
+
         def check_cycle(node):
             if node in rec_stack:
                 return True
@@ -126,7 +126,7 @@ class MissionPlan(BaseModel):
                     return True
             rec_stack.remove(node)
             return False
-            
+
         for node in graph:
             if check_cycle(node):
                 raise ValueError("DAG 中存在循环依赖 (Cycle detected)！请检查 depends_on 指向，确保为有向无环图。")

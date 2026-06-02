@@ -10,7 +10,6 @@ from channels.registry import ChannelRegistry
 from channels.cli import CLIChannel
 from utils.browser import BrowserManager
 from utils.system import TunnelManager
-from utils.config import settings
 from gateway.local_node import RoosterLocalNode
 
 logger = logging.getLogger("RoosterLauncher")
@@ -78,14 +77,14 @@ class RoosterLauncher:
         self.gateway_port = port
 
         from rich.progress import Progress, SpinnerColumn, TextColumn
-        
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             transient=True,
         ) as progress:
             task_core = progress.add_task("[cyan]正在启动核心网关服务...", total=None)
-            
+
             logger.info(f"📡 网关正在监听: {self.base_url}:{port}")  # Gateway listening
 
             # 2. 内网穿透
@@ -215,8 +214,10 @@ class RoosterLauncher:
                     distill_llm_client = LLMClient(provider=distill_provider)
                     distill_model = ""  # 使用 provider 默认模型
 
+                from agents.router import Router
+                _router = Router.get_instance()
                 self._distill_scheduler = DistillationScheduler(
-                    memory_manager=router.memory_manager,
+                    memory_manager=_router.memory_manager,
                     session_store=global_session_store,
                     llm_client=distill_llm_client,
                     model=distill_model,

@@ -17,15 +17,15 @@ class RoosterContext:
     task_id: str
     subtask_id: Optional[str] = None
     workspace_dir: str = ""
-    
+
     # 核心组件注入
     memory_manager: Optional['MemoryManager'] = None
     llm_client: Optional['LLMClient'] = None
     blackboard: Optional['MissionBlackboard'] = None
-    
+
     # 配置与安全
     config: Dict[str, Any] = field(default_factory=dict)
     security_policy: Dict[str, Any] = field(default_factory=dict)
-    
+
     # 其他预留扩展
     extras: Dict[str, Any] = field(default_factory=dict)
