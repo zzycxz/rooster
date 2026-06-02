@@ -126,7 +126,7 @@
 
 **当 `[VAR_TYPE]` 为 `software` 或 `file` 时，使用两步法：**
 ```
-步骤1：使用 web_search 工具，搜索关键词 "{搜索词}"，找到下载链接。
+步骤1：使用 web_search 工具，搜索关键词 "{搜索词}"，找到下载链接。如需深度调研，可设置 deep_research=true。
 步骤2：调用 multimedia_download 工具，传入链接 URI 启动下载。
 ```
 

@@ -4,7 +4,7 @@ import logging
 from typing import List, Type, Dict, Optional
 from pydantic import BaseModel, Field
 from toolset.base import BaseTool
-from .browser import WebSearchTool
+from .web_search import WebSearchTool
 from utils.security.state_guard import state_guard  # 核心状态锁集成
 
 logger = logging.getLogger(__name__)
@@ -19,8 +19,8 @@ class ResourceArgs(BaseModel):
     )
 
 
-class ResourceFetchTool(BaseTool):
-    name: str = "resource_fetch"
+class MagnetSnifferTool(BaseTool):
+    name: str = "magnet_sniffer"
     kit: str = "Network"
     description: str = (
         "Locate downloadable resources across multiple protocols (magnet, torrent, cloud drives, ED2K, direct links). "

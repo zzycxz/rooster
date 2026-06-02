@@ -46,7 +46,7 @@ Output a pure JSON plan strictly following v11.0 schema:
             "depends_on": [],
             "on_failure": "RETRY | ABORT | REPLAN | REROUTE",
             "requires_confirm": false,
-            "timeout": 120,
+            "timeout": 1800,
             "owner": "AGENT",
             "confidence": "HIGH",
             "risk_note": ""

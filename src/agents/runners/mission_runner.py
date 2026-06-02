@@ -23,8 +23,10 @@ from agents.prompt_builder import PromptBuilder
 from sessions.store import global_session_store
 from utils.audit.archiver import VaultArchiver
 from utils.config import settings
+from utils.logging_context import reset_mission_id, set_mission_id
 from utils.security import state_guard
 from utils.observation import summarize_dependency_observation
+from utils.exceptions import EscalateSignal, AbortSignal
 
 logger = logging.getLogger(__name__)
 
@@ -333,12 +335,20 @@ class MissionRunner:
 
             async def _consume_plan():
                 nonlocal subtask_list
+                has_printed_first = False
                 async for subtask in plan_iterator:
-                    await channel.send_message(
-                        to=msg.sender_id,
-                        text=f"🧠 [规划中] {subtask.id}: {subtask.instruction}",
-                    )
                     subtask_list.append(subtask)
+                    if len(subtask_list) > 1:
+                        if not has_printed_first:
+                            await channel.send_message(
+                                to=msg.sender_id,
+                                text=f"🧠 [规划中] {subtask_list[0].id}: {subtask_list[0].instruction}",
+                            )
+                            has_printed_first = True
+                        await channel.send_message(
+                            to=msg.sender_id,
+                            text=f"🧠 [规划中] {subtask.id}: {subtask.instruction}",
+                        )
 
             await asyncio.wait_for(
                 _consume_plan(),
@@ -360,6 +370,8 @@ class MissionRunner:
             executed_tasks: Dict[str, Report] = {}
             completed_task_ids: Set[str] = set()
             _subtask_metrics: Dict[str, dict] = {}
+
+        mission_token = set_mission_id(current_mission_plan.task_id)
 
         # 展示阻塞项 / 可行性说明 / 交付物（仅首次规划时展示，checkpoint 恢复跳过）
         if not checkpoint:
@@ -497,8 +509,8 @@ class MissionRunner:
                 except asyncio.TimeoutError:
                     elapsed_s = int(asyncio.get_running_loop().time() - _dep_wait_start)
                     if elapsed_s > _DEP_WAIT_TIMEOUT:
-                        raise Exception(
-                            f"__ESCALATE__: [{st.id}] 依赖等待超时 ({_DEP_WAIT_TIMEOUT}s)，未就绪依赖: {missing}"
+                        raise EscalateSignal(
+                            f"[{st.id}] 依赖等待超时 ({_DEP_WAIT_TIMEOUT}s)，未就绪依赖: {missing}"
                         )
                     await channel.send_message(
                         to=msg.sender_id,
@@ -585,7 +597,8 @@ class MissionRunner:
                 if current_retry > 0:
                     status_text = f"🛡️ [补救 {current_retry}/{retry_limit}] {st.id}"
 
-                await channel.send_message(to=msg.sender_id, text=f"--- {status_text} ---")
+                if total_tasks > 1 or current_retry > 0:
+                    await channel.send_message(to=msg.sender_id, text=f"--- {status_text} ---")
 
                 # 发射子任务开始事件
                 await self.event_handler.emit_subtask_start(
@@ -665,283 +678,308 @@ class MissionRunner:
                         f"⚡ [Ollama Local Router] 检测到子任务 {st.id} 职能域为 {st.domain}，自动路由至本地模型 (local)"
                     )
 
+                subtask_llm_client = LLMClient(
+                    provider=subtask_provider,
+                    model=subtask_model,
+                    failover_order=settings.LLM_FAILOVER_ORDER,
+                )
                 subtask_executor = AgentExecutor(
                     event_handler=dynamic_event_handler,
-                    llm_client=LLMClient(
-                        provider=subtask_provider,
-                        model=subtask_model,
-                        failover_order=settings.LLM_FAILOVER_ORDER,
-                    ),
+                    llm_client=subtask_llm_client,
                     tool_registry=subtask_tool_registry,
                     orchestrator=self.orchestrator,
                     memory_manager=self.memory_manager,
                     prompt_builder=self.prompt_builder,
                 )
+                report = None
+                try:
 
-                # 合并前置任务结果和审计修正指令
-                context_parts = []
-                if dep_results:
-                    context_parts.append("前置任务结果：\n" + "\n".join(dep_results))
-                if previous_audit_cmd:
-                    context_parts.append(f"审计官修正指令：\n{previous_audit_cmd}")
-                # REMAND 重试：将上次执行的工具输出摘要注入 previous_observations，
-                # 让 Executor 知道上次做了什么、哪里出错，才能定向修复。
-                if current_retry > 0 and _retry_history:
-                    tool_outputs = [
-                        m.get("content", "")
-                        for m in _retry_history
-                        if m.get("role") == "tool" and m.get("content")
-                    ]
-                    if tool_outputs:
-                        combined_tool_output = "\n---\n".join(
-                            o[:500] for o in tool_outputs[-5:]  # 最多取最后 5 条，每条截断 500 字符
+                    # 合并前置任务结果和审计修正指令
+                    context_parts = []
+                    if dep_results:
+                        context_parts.append("前置任务结果：\n" + "\n".join(dep_results))
+                    if previous_audit_cmd:
+                        context_parts.append(f"审计官修正指令：\n{previous_audit_cmd}")
+                    # REMAND 重试：将上次执行的工具输出摘要注入 previous_observations，
+                    # 让 Executor 知道上次做了什么、哪里出错，才能定向修复。
+                    if current_retry > 0 and _retry_history:
+                        tool_outputs = [
+                            m.get("content", "")
+                            for m in _retry_history
+                            if m.get("role") == "tool" and m.get("content")
+                        ]
+                        if tool_outputs:
+                            combined_tool_output = "\n---\n".join(
+                                o[:500] for o in tool_outputs[-5:]  # 最多取最后 5 条，每条截断 500 字符
+                            )
+                            context_parts.append(f"上次执行工具输出（供纠错参考）：\n{combined_tool_output}")
+                    combined_context = "\n\n".join(context_parts) if context_parts else ""
+
+                    # [V10.0] DAG 叶节点判定：无下游依赖 → 叶节点
+                    is_leaf = not any(st.id in other.depends_on for other in current_mission_plan.subtasks)
+
+                    # [V10.1] 激活 SubTask.timeout 墙钟超时
+                    # 最小保底由 settings.SUBTASK_MIN_TIMEOUT 控制（默认 1800s）
+                    # 可在 .env 中用 SUBTASK_MIN_TIMEOUT=3600 等调大
+                    MIN_SUBTASK_TIMEOUT = settings.SUBTASK_MIN_TIMEOUT
+                    effective_timeout = max(st.timeout, MIN_SUBTASK_TIMEOUT) if st.timeout > 0 else 0
+                    if effective_timeout > st.timeout:
+                        logger.warning(
+                            f"⚠️ [{st.id}] Strategist 设定超时 {st.timeout}s 低于最小保底 {MIN_SUBTASK_TIMEOUT}s，"
+                            f"已自动提升至 {effective_timeout}s。"
                         )
-                        context_parts.append(f"上次执行工具输出（供纠错参考）：\n{combined_tool_output}")
-                combined_context = "\n\n".join(context_parts) if context_parts else ""
-
-                # [V10.0] DAG 叶节点判定：无下游依赖 → 叶节点
-                is_leaf = not any(st.id in other.depends_on for other in current_mission_plan.subtasks)
-
-                # [V10.1] 激活 SubTask.timeout 墙钟超时
-                # 最小保底由 settings.SUBTASK_MIN_TIMEOUT 控制（默认 300s）
-                # 可在 .env 中用 SUBTASK_MIN_TIMEOUT=600 等调大
-                MIN_SUBTASK_TIMEOUT = settings.SUBTASK_MIN_TIMEOUT
-                effective_timeout = max(st.timeout, MIN_SUBTASK_TIMEOUT) if st.timeout > 0 else 0
-                if effective_timeout > st.timeout:
-                    logger.warning(
-                        f"⚠️ [{st.id}] Strategist 设定超时 {st.timeout}s 低于最小保底 {MIN_SUBTASK_TIMEOUT}s，"
-                        f"已自动提升至 {effective_timeout}s。"
-                    )
-                if effective_timeout > 0:
-                    try:
-                        report = await asyncio.wait_for(
-                            subtask_executor.execute_subtask(
-                                st, config, previous_observations=combined_context, is_leaf=is_leaf
-                            ),
-                            timeout=effective_timeout,
-                        )
-                    except asyncio.TimeoutError:
-                        report = Report(
-                            subtask_id=st.id,
-                            status="FAILED",
-                            evidence={"error": f"SubTask timed out after {effective_timeout}s"},
-                            failure_code="SUBTASK_TIMEOUT",
-                            observation=f"子任务 {st.id} 超时 ({effective_timeout}s)",
-                            provider_used=subtask_provider,
-                        )
-                else:
-                    # timeout=0: 无超时限制
-                    report = await subtask_executor.execute_subtask(
-                        st, config, previous_observations=combined_context, is_leaf=is_leaf
-                    )
-
-                if len(config.history) > len(history):
-                    _retry_history.extend(config.history[len(history):])
-
-                # Propagate provider info (may differ from initial if failover occurred)
-                if report and not report.provider_used:
-                    report.provider_used = subtask_executor.llm_client.provider
-
-                # --- [歧义拦截门] CONFIRM_REQUIRED 路由 (MISSION 模式) ---
-                # 执行官在子任务执行过程中发现歧义时，返回 CONFIRM_REQUIRED 类型的 Report。
-                # 任务编排器居中转发，晨2用户并挂起当前子任务，将用户回复注入指令后重试。
-                if getattr(report, "type", "FINAL_REPORT") == "CONFIRM_REQUIRED":
-                    question = report.evidence.get("question", "") or report.observation or ""
-                    options = report.evidence.get("options", [])
-                    clarification_text = self._format_subtask_clarification(st.id, question, options)
-                    await channel.send_message(to=msg.sender_id, text=clarification_text)
-
-                    user_answer = await self._wait_for_clarification(
-                        session_id=msg.session_id,
-                        sender_id=msg.sender_id,
-                        channel=channel,
-                        subtask_id=st.id,
-                        timeout=getattr(settings, "WAIT_CONFIRM_TIMEOUT", 300),
-                    )
-
-                    if user_answer:
-                        logger.info(f"[歧义拦截门] [{st.id}] 用户已澄清: {user_answer[:80]}")
-                        # 将用户回复作为补充约束注入子任务指令，重新构造 SubTask
-                        updated_instruction = (
-                            f"{st.instruction}\n"
-                            f"\n[\u7528\u6237\u6f84\u6e05] {user_answer}\n"
-                            "\u8bf7严格按照用户确认的内容执行，不得再次猜测。"
-                        )
-                        st = st.model_copy(update={"instruction": updated_instruction})
-                        current_retry += 1  # 此次重试不计入审计次数限制
-                        await channel.send_message(
-                            to=msg.sender_id,
-                            text=f"⚡ [重新执行] [{st.id}] 根据您的选择继续执行...",
-                        )
-                        continue  # 重试当前子任务
+                    if effective_timeout > 0:
+                        try:
+                            report = await asyncio.wait_for(
+                                subtask_executor.execute_subtask(
+                                    st, config, previous_observations=combined_context, is_leaf=is_leaf
+                                ),
+                                timeout=effective_timeout,
+                            )
+                        except asyncio.TimeoutError:
+                            report = Report(
+                                subtask_id=st.id,
+                                status="FAILED",
+                                evidence={"error": f"SubTask timed out after {effective_timeout}s"},
+                                failure_code="SUBTASK_TIMEOUT",
+                                observation=f"子任务 {st.id} 超时 ({effective_timeout}s)",
+                                provider_used=subtask_provider,
+                            )
                     else:
-                        logger.warning(f"[歧义拦截门] [{st.id}] 用户澄清超时，子任务标记为 FAILED")
-                        executed_tasks[st.id] = Report(
-                            subtask_id=st.id,
-                            status="FAILED",
-                            observation=f"子任务 {st.id} 因歧义澄清超时而失败，未收到用户确认。",
-                            failure_code="CLARIFICATION_TIMEOUT",
+                        # timeout=0: 无超时限制
+                        report = await subtask_executor.execute_subtask(
+                            st, config, previous_observations=combined_context, is_leaf=is_leaf
                         )
-                        completed_task_ids.add(st.id)
-                        return
 
-                if report.status == "ESCALATE":
-                    raise Exception(f"__ESCALATE__: {report.observation}")
+                    if len(config.history) > len(history):
+                        _retry_history.extend(config.history[len(history):])
 
-                # [V10.1] 处理 on_failure=RETRY 策略
-                if report.status == "RETRY" and current_retry < retry_limit:
-                    current_retry += 1
-                    await channel.send_message(
-                        to=msg.sender_id,
-                        text=f"🔄 [{st.id}] 执行失败，自动重试 ({current_retry}/{retry_limit})...",
-                    )
-                    continue
+                    # Propagate provider info (may differ from initial if failover occurred)
+                    if report and not report.provider_used:
+                        report.provider_used = subtask_executor.llm_client.provider
 
-                # [V10.1] 处理 on_failure=ABORT 策略
-                if report.status == "ABORT":
-                    await channel.send_message(
-                        to=msg.sender_id,
-                        text=f"🛑 [{st.id}] 任务中止: {report.observation}",
-                    )
-                    raise Exception(f"__ABORT__: {report.observation}")
+                    # --- [歧义拦截门] CONFIRM_REQUIRED 路由 (MISSION 模式) ---
+                    # 执行官在子任务执行过程中发现歧义时，返回 CONFIRM_REQUIRED 类型的 Report。
+                    # 任务编排器居中转发，晨2用户并挂起当前子任务，将用户回复注入指令后重试。
+                    if getattr(report, "type", "FINAL_REPORT") == "CONFIRM_REQUIRED":
+                        question = report.evidence.get("question", "") or report.observation or ""
+                        options = report.evidence.get("options", [])
+                        clarification_text = self._format_subtask_clarification(st.id, question, options)
+                        await channel.send_message(to=msg.sender_id, text=clarification_text)
 
-                # [V10.0] DAG 叶节点审计策略：
-                # - 非叶节点（有下游依赖）：检查状态，失败则触发重规划
-                # - 叶节点（无下游依赖）：调 LLM 审计
+                        user_answer = await self._wait_for_clarification(
+                            session_id=msg.session_id,
+                            sender_id=msg.sender_id,
+                            channel=channel,
+                            subtask_id=st.id,
+                            timeout=getattr(settings, "WAIT_CONFIRM_TIMEOUT", 300),
+                        )
 
-                if not is_leaf or is_direct:
-                    if report.status == "FAILED" and not is_direct:
-                        # 非叶节点失败：下游会拿到空数据，必须重规划
+                        if user_answer:
+                            logger.info(f"[歧义拦截门] [{st.id}] 用户已澄清: {user_answer[:80]}")
+                            # 将用户回复作为补充约束注入子任务指令，重新构造 SubTask
+                            updated_instruction = (
+                                f"{st.instruction}\n"
+                                f"\n[\u7528\u6237\u6f84\u6e05] {user_answer}\n"
+                                "\u8bf7严格按照用户确认的内容执行，不得再次猜测。"
+                            )
+                            st = st.model_copy(update={"instruction": updated_instruction})
+                            current_retry += 1  # 此次重试不计入审计次数限制
+                            await channel.send_message(
+                                to=msg.sender_id,
+                                text=f"⚡ [重新执行] [{st.id}] 根据您的选择继续执行...",
+                            )
+                            continue  # 重试当前子任务
+                        else:
+                            logger.warning(f"[歧义拦截门] [{st.id}] 用户澄清超时，子任务标记为 FAILED")
+                            executed_tasks[st.id] = Report(
+                                subtask_id=st.id,
+                                status="FAILED",
+                                observation=f"子任务 {st.id} 因歧义澄清超时而失败，未收到用户确认。",
+                                failure_code="CLARIFICATION_TIMEOUT",
+                            )
+                            completed_task_ids.add(st.id)
+                            return
+
+                    if report.status == "ESCALATE":
+                        raise EscalateSignal(f"{report.observation}")
+
+                    # [V10.1] 处理 on_failure=RETRY 策略
+                    if report.status == "RETRY" and current_retry < retry_limit:
+                        current_retry += 1
                         await channel.send_message(
                             to=msg.sender_id,
-                            text=f"⚠️ [{st.id}] 上游失败，触发重规划: {report.observation}",
+                            text=f"🔄 [{st.id}] 执行失败，自动重试 ({current_retry}/{retry_limit})...",
                         )
-                        raise Exception(f"__ESCALATE__: 子任务 {st.id} 失败 ({report.observation})")
-                    verdict = None
-                    is_affirm = True
-                else:
-                    # 叶节点：调 LLM 审计
-                    # Emit auditor_start lifecycle event for Dashboard pipeline
-                    await self.event_handler.emit_lifecycle(
-                        session_key=msg.session_id,
-                        client_run_id=current_mission_plan.task_id,
-                        status="auditor_start",
-                    )
-                    verdict = await self.auditor.review(report, st, is_leaf=True)
-                    is_affirm = verdict is not None and verdict.verdict == AuditVerdictType.AFFIRM
+                        continue
 
-                    # 广播审计判决事件到 Dashboard
-                    if verdict is not None:
-                        await self.event_handler.emit_audit_verdict(
+                    # [V10.1] 处理 on_failure=ABORT 策略
+                    if report.status == "ABORT":
+                        await channel.send_message(
+                            to=msg.sender_id,
+                            text=f"🛑 [{st.id}] 任务中止: {report.observation}",
+                        )
+                        raise AbortSignal(f"{report.observation}")
+
+                    # [V10.0] DAG 叶节点审计策略：
+                    # - 非叶节点（有下游依赖）：检查状态，失败则触发重规划
+                    # - 叶节点（无下游依赖）：调 LLM 审计
+
+                    if not is_leaf or is_direct:
+                        if report.status == "FAILED" and not is_direct:
+                            # 非叶节点失败：下游会拿到空数据，必须重规划
+                            await channel.send_message(
+                                to=msg.sender_id,
+                                text=f"⚠️ [{st.id}] 上游失败，触发重规划: {report.observation}",
+                            )
+                            raise EscalateSignal(f"子任务 {st.id} 失败 ({report.observation})")
+                        verdict = None
+                        is_affirm = True
+                    else:
+                        # 叶节点：调 LLM 审计
+                        # Emit auditor_start lifecycle event for Dashboard pipeline
+                        await self.event_handler.emit_lifecycle(
+                            session_key=msg.session_id,
+                            client_run_id=current_mission_plan.task_id,
+                            status="auditor_start",
+                        )
+                        verdict = await self.auditor.review(report, st, is_leaf=True)
+                        is_affirm = verdict is not None and verdict.verdict == AuditVerdictType.AFFIRM
+
+                        # 广播审计判决事件到 Dashboard
+                        if verdict is not None:
+                            await self.event_handler.emit_audit_verdict(
+                                session_key=msg.session_id,
+                                client_run_id=current_mission_plan.task_id,
+                                subtask_id=st.id,
+                                verdict=verdict.verdict.value,
+                                result_verdict=verdict.result_verdict,
+                                reason=verdict.reason,
+                                recommendation=verdict.recommendation,
+                                findings=[f.get("summary", "") for f in (verdict.findings or [])],
+                                command=verdict.command or "",
+                            )
+
+                        # 短路竞速判定
+                        if verdict is not None and str(verdict.concurrency_action).upper() == "TERMINATE_SIBLINGS":
+                            state_guard.set_terminate_signal(current_mission_plan.task_id, is_group=True)
+
+                    if is_affirm:
+                        if report.observation and report.observation.strip():
+                            if total_tasks > 1:
+                                await channel.send_message(
+                                    to=msg.sender_id,
+                                    text=f"💬 **完成小结 ({st.id})**:\n{report.observation}",
+                                )
+                            else:
+                                await channel.send_message(
+                                    to=msg.sender_id,
+                                    text=f"{report.observation}",
+                                )
+
+                        # 追踪本轮产出的文件（重规划时清理）
+                        round_artifacts.extend(report.artifacts)
+
+                        # 成果归档
+                        for file_path in report.artifacts + report.process_snapshots:
+                            if os.path.exists(file_path):
+                                archived = archiver.archive_file(file_path)
+                                if archived:
+                                    if hasattr(channel, "send_file") and channel.channel_id == "feishu":
+                                        await channel.send_file(to=msg.sender_id, file_path=archived)
+                                    else:
+                                        await channel.send_message(
+                                            to=msg.sender_id,
+                                            text=f"📦 [成果归档] {os.path.basename(archived)}",
+                                        )
+
+                        if total_tasks > 1:
+                            label = "审计通过" if is_leaf else "执行完成"
+                            await channel.send_message(to=msg.sender_id, text=f"✅ [{label}] {st.id}")
+
+                        # 发射子任务完成事件
+                        await self.event_handler.emit_subtask_complete(
                             session_key=msg.session_id,
                             client_run_id=current_mission_plan.task_id,
                             subtask_id=st.id,
-                            verdict=verdict.verdict.value,
-                            result_verdict=verdict.result_verdict,
-                            reason=verdict.reason,
-                            recommendation=verdict.recommendation,
-                            findings=[f.get("summary", "") for f in (verdict.findings or [])],
-                            command=verdict.command or "",
+                            result_status="SUCCESS",
+                            provider_used=report.provider_used or "",
                         )
 
-                    # 短路竞速判定
-                    if verdict is not None and str(verdict.concurrency_action).upper() == "TERMINATE_SIBLINGS":
-                        state_guard.set_terminate_signal(current_mission_plan.task_id, is_group=True)
+                        # 产出文件在任务结案时统一 batch 写入，此处不再单独 record
 
-                if is_affirm:
-                    if report.observation and report.observation.strip():
+                        executed_tasks[st.id] = report
+                        # Record subtask metrics
+                        _subtask_metrics[st.id] = {
+                            "duration_s": round(time.time() - _st_start_time, 1),
+                            "retries": current_retry,
+                        }
+                        # Persist progress so the task can resume if the process crashes
+                        self._save_checkpoint(
+                            msg.session_id,
+                            current_mission_plan,
+                            completed_task_ids | {st.id},
+                            executed_tasks,
+                            subtask_metrics=_subtask_metrics,
+                        )
+
+                        # Blackboard: mark done and broadcast key result for peer agents
+                        await blackboard.update_progress(st.id, "done", step=0)
+                        if report.observation:
+                            # [V12 B4.2] 置信度判定 (Confidence Labeling)
+                            _obs_lower = report.observation.lower()
+                            status = "tentative" if any(kw in _obs_lower for kw in ["error", "failed", "fallback", "未找到", "妥协"]) else "confirmed"
+                        
+                            await blackboard.post_fact(
+                                key=f"{st.id}_result",
+                                value=report.observation[:600],
+                                author=st.id,
+                                status=status,
+                            )
+
+                        # RACE mode: first finisher cancels its race-group siblings
+                        if sub_agent_mode == "RACE" and getattr(st, "race_group", ""):
+                            won = await blackboard.declare_race_winner(st.race_group, st.id)
+                            if won:
+                                logger.info(f"🏁 [{st.id}] 赢得竞速组 '{st.race_group}'，取消兄弟任务")
+                                # Set terminate signal so siblings check it at their next retry iteration
+                                state_guard.set_terminate_signal(current_mission_plan.task_id, is_group=True)
+                                for sibling in current_mission_plan.subtasks:
+                                    if sibling.id != st.id and getattr(sibling, "race_group", "") == st.race_group:
+                                        if sibling.id in running_tasks:
+                                            logger.info(f"🛑 取消竞速失败的兄弟任务: {sibling.id}")
+                                            running_tasks[sibling.id].cancel()
+                                        completed_task_ids.add(sibling.id)
+
+                        state_guard.release_locks(st.id)
+                        return
+
+                    elif verdict is not None and verdict.verdict == AuditVerdictType.REMAND and current_retry < retry_limit:
+                        current_retry += 1
+                        previous_audit_cmd = verdict.command
                         await channel.send_message(
                             to=msg.sender_id,
-                            text=f"💬 **完成小结 ({st.id})**:\n{report.observation}",
+                            text=f"🔍 [审计纠错] {st.id}: {verdict.reason}",
                         )
+                        continue
+                    else:
+                        reason = verdict.reason if verdict else "叶节点审计未通过"
+                        raise EscalateSignal(f"审计官拒绝放行 ({st.id})。原因: {reason}")
+                finally:
+                    # [v13.2-fix] Close per-subtask LLMClient to prevent connection pool leak
+                    try:
+                        if "subtask_llm_client" in locals():
+                            await subtask_llm_client.close()
+                    except Exception:
+                        pass
+                    try:
+                        from gateway.metrics import metrics
 
-                    # 追踪本轮产出的文件（重规划时清理）
-                    round_artifacts.extend(report.artifacts)
-
-                    # 成果归档
-                    for file_path in report.artifacts + report.process_snapshots:
-                        if os.path.exists(file_path):
-                            archived = archiver.archive_file(file_path)
-                            if archived:
-                                if hasattr(channel, "send_file") and channel.channel_id == "feishu":
-                                    await channel.send_file(to=msg.sender_id, file_path=archived)
-                                else:
-                                    await channel.send_message(
-                                        to=msg.sender_id,
-                                        text=f"📦 [成果归档] {os.path.basename(archived)}",
-                                    )
-
-                    label = "审计通过" if is_leaf else "执行完成"
-                    await channel.send_message(to=msg.sender_id, text=f"✅ [{label}] {st.id}")
-
-                    # 发射子任务完成事件
-                    await self.event_handler.emit_subtask_complete(
-                        session_key=msg.session_id,
-                        client_run_id=current_mission_plan.task_id,
-                        subtask_id=st.id,
-                        result_status="SUCCESS",
-                        provider_used=report.provider_used or "",
-                    )
-
-                    # 产出文件在任务结案时统一 batch 写入，此处不再单独 record
-
-                    executed_tasks[st.id] = report
-                    # Record subtask metrics
-                    _subtask_metrics[st.id] = {
-                        "duration_s": round(time.time() - _st_start_time, 1),
-                        "retries": current_retry,
-                    }
-                    # Persist progress so the task can resume if the process crashes
-                    self._save_checkpoint(
-                        msg.session_id,
-                        current_mission_plan,
-                        completed_task_ids | {st.id},
-                        executed_tasks,
-                        subtask_metrics=_subtask_metrics,
-                    )
-
-                    # Blackboard: mark done and broadcast key result for peer agents
-                    await blackboard.update_progress(st.id, "done", step=0)
-                    if report.observation:
-                        # [V12 B4.2] 置信度判定 (Confidence Labeling)
-                        _obs_lower = report.observation.lower()
-                        status = "tentative" if any(kw in _obs_lower for kw in ["error", "failed", "fallback", "未找到", "妥协"]) else "confirmed"
-                        
-                        await blackboard.post_fact(
-                            key=f"{st.id}_result",
-                            value=report.observation[:600],
-                            author=st.id,
-                            status=status,
-                        )
-
-                    # RACE mode: first finisher cancels its race-group siblings
-                    if sub_agent_mode == "RACE" and getattr(st, "race_group", ""):
-                        won = await blackboard.declare_race_winner(st.race_group, st.id)
-                        if won:
-                            logger.info(f"🏁 [{st.id}] 赢得竞速组 '{st.race_group}'，取消兄弟任务")
-                            # Set terminate signal so siblings check it at their next retry iteration
-                            state_guard.set_terminate_signal(current_mission_plan.task_id, is_group=True)
-                            for sibling in current_mission_plan.subtasks:
-                                if sibling.id != st.id and getattr(sibling, "race_group", "") == st.race_group:
-                                    if sibling.id in running_tasks:
-                                        logger.info(f"🛑 取消竞速失败的兄弟任务: {sibling.id}")
-                                        running_tasks[sibling.id].cancel()
-                                    completed_task_ids.add(sibling.id)
-
-                    state_guard.release_locks(st.id)
-                    return
-
-                elif verdict is not None and verdict.verdict == AuditVerdictType.REMAND and current_retry < retry_limit:
-                    current_retry += 1
-                    previous_audit_cmd = verdict.command
-                    await channel.send_message(
-                        to=msg.sender_id,
-                        text=f"🔍 [审计纠错] {st.id}: {verdict.reason}",
-                    )
-                    continue
-                else:
-                    reason = verdict.reason if verdict else "叶节点审计未通过"
-                    raise Exception(f"__ESCALATE__: 审计官拒绝放行 ({st.id})。原因: {reason}")
+                        if "report" in locals() and report is not None:
+                            duration_s = round(time.time() - _st_start_time, 3)
+                            metrics.observe_subtask_execution(duration_s, status=str(report.status or "unknown").lower())
+                    except Exception:
+                        pass
 
         # 调度循环
         try:
@@ -1012,8 +1050,8 @@ class MissionRunner:
                                     process_snapshots=[],
                                 )
                         except Exception as e:
-                            if "__ESCALATE__" in str(e):
-                                blocker = str(e).replace("__ESCALATE__:", "").strip()
+                            if isinstance(e, EscalateSignal):
+                                blocker = str(e).strip()
                                 await channel.send_message(to=msg.sender_id, text=f"🚧 [战略重组] {blocker}")
                                 for t in running_tasks.values():
                                     t.cancel()
@@ -1032,6 +1070,8 @@ class MissionRunner:
                                     current_mission_plan = await self.strategist.replan(
                                         current_mission_plan, blocker, list(completed_task_ids)
                                     )
+                                    reset_mission_id(mission_token)
+                                    mission_token = set_mission_id(current_mission_plan.task_id)
                                     # Reset completed_task_ids for the new plan.
                                     # New plan may reuse IDs like ST1/ST2 — keeping old IDs would
                                     # cause the scheduler to skip those subtasks as already-done.
@@ -1067,10 +1107,10 @@ class MissionRunner:
             logger.error(f"调度崩溃: {e}")
 
             error_msg = str(e)
-            if "__ESCALATE__:" in error_msg:
-                error_msg = error_msg.replace("__ESCALATE__:", "策略受阻 (由于资源缺失或审计未通过):")
-            if "__ABORT__:" in error_msg:
-                error_msg = error_msg.replace("__ABORT__:", "任务已中止:")
+            if isinstance(e, EscalateSignal):
+                error_msg = f"策略受阻 (由于资源缺失或审计未通过): {error_msg}"
+            if isinstance(e, AbortSignal):
+                error_msg = f"任务已中止: {error_msg}"
 
             await channel.send_message(to=msg.sender_id, text=f"❌ [执行失败] {error_msg}")
 
@@ -1083,6 +1123,7 @@ class MissionRunner:
             )
 
             # Keep the checkpoint so the user can resume after fixing the issue
+            reset_mission_id(mission_token)
             return
 
         if completed_task_ids:
@@ -1122,12 +1163,14 @@ class MissionRunner:
             if _batch:
                 self.memory_manager.batch_update_facts(_batch)
 
+        if total_tasks > 1:
             await channel.send_message(to=msg.sender_id, text="✅ **[任务结案]** 所有步骤已通过审计。")
             # Task succeeded — remove the checkpoint so it doesn't get replayed
             self._clear_checkpoint(msg.session_id, reframed_text)
 
         # Clean up MissionTactician state to prevent unbounded memory growth in long-running processes
         self.tactician.states.pop(current_mission_plan.task_id, None)
+        reset_mission_id(mission_token)
 
     # ----------------------------------------------------------------
     # Clarification Gate helpers (MISSION mode)

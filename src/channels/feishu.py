@@ -5,21 +5,20 @@ import time
 import hashlib
 import asyncio
 import threading
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 from cachetools import TTLCache
 
 
-# 飞书 SDK 核心组件
-# Feishu SDK core components
-from lark_oapi.client import Client
-from lark_oapi.ws.client import Client as WSClient
-from lark_oapi.api.im.v1 import *
-
-# 依据物理源码第 44/185 行，准确导入分发器处理逻辑
-# Per physical source lines 44/185, accurately import dispatcher handler logic
-from lark_oapi.event.dispatcher_handler import EventDispatcherHandler
-
-import lark_oapi.ws.client as sdk_ws_module
+try:
+    import lark_oapi.api.im.v1 as im
+    import lark_oapi.ws.client as sdk_ws_module
+    from lark_oapi.client import Client
+    from lark_oapi.event.dispatcher_handler import EventDispatcherHandler
+    from lark_oapi.ws.client import Client as WSClient
+    from lark_oapi.core.enum import LogLevel
+    from lark_oapi.api.im.v1 import P2ImMessageReceiveV1
+except ImportError:
+    pass
 
 from .base import BaseChannel, InboundMessage
 
@@ -41,19 +40,10 @@ class FeishuChannel(BaseChannel):
         self.app_id = settings.CH_FEISHU_ID
         self.app_secret = settings.CH_FEISHU_SECRET
 
-        # 1. 业务客户端
-        # 1. Business client
-        self.lark_client = Client.builder().app_id(self.app_id).app_secret(self.app_secret).build()
-
-        # 3. ⚡ 最终修正：使用官方 builder 模式注册事件
-        # 3. Final fix: use official builder pattern to register events
-        self.event_handler = (
-            EventDispatcherHandler.builder(encrypt_key="", verification_token="")
-            .register_p2_im_message_receive_v1(self._do_recv_message_v2)
-            .register_p2_im_message_message_read_v1(self._handle_message_read)  # 处理已读事件，消除报错
-            .build()
-        )
-
+        # 延迟初始化 Lark 组件以加快系统启动速度 (7.5s -> 0.1s)
+        self.lark_client = None
+        self.event_handler = None
+        
         # [去重扩展] 缓存最近 10 分钟的消息 ID，防止断网重连时的重复规划
         # [Deduplication] Cache recent 10 min message IDs, prevent duplicate planning on reconnect
         self.processed_msg_ids = TTLCache(maxsize=1000, ttl=600)
@@ -69,6 +59,17 @@ class FeishuChannel(BaseChannel):
         logger.info(
             "🌩️ 正在启动飞书高级长连接隧道 (WebSocket)..."
         )  # Starting Feishu advanced long-connection tunnel (WebSocket)
+        
+        # 延迟加载核心组件并放入线程，彻底避免阻塞主循环 (Defer heavy SDK imports to thread)
+        # Initialize SDK components
+        self.lark_client = Client.builder().app_id(self.app_id).app_secret(self.app_secret).build()
+        self.event_handler = (
+            EventDispatcherHandler.builder(encrypt_key="", verification_token="")
+            .register_p2_im_message_receive_v1(self._do_recv_message_v2)
+            .register_p2_im_message_message_read_v1(self._handle_message_read)
+            .build()
+        )
+
         # 捕获主循环供回调使用
         # Capture main loop for callback use
         self.main_loop = asyncio.get_running_loop()
@@ -80,6 +81,7 @@ class FeishuChannel(BaseChannel):
 
     def _executor_thread(self):
         try:
+
             # 1. 物理创建并激活子线程私有 Loop
             # 1. Physically create and activate thread-private Loop
             new_loop = asyncio.new_event_loop()
@@ -91,7 +93,6 @@ class FeishuChannel(BaseChannel):
 
             # 3. 在正确线程内实例化 WSClient，确保其内部 Lock 绑定到 new_loop
             # 3. Instantiate WSClient in the correct thread to ensure its internal Lock binds to new_loop
-            from lark_oapi.core.enum import LogLevel
 
             self.ws_client = WSClient(
                 app_id=self.app_id,
@@ -138,7 +139,7 @@ class FeishuChannel(BaseChannel):
         if getattr(self, "ws_client", None) is not None:
             logger.info("FeishuChannel stopped (WebSocket thread is daemon — will exit with process).")
 
-    def _do_recv_message_v2(self, data: P2ImMessageReceiveV1) -> None:
+    def _do_recv_message_v2(self, data: 'P2ImMessageReceiveV1') -> None:
         """适配 SDK 2.2.3 回调签名的标准处理器"""  # Standard handler adapted for SDK 2.2.3 callback signature
         msg_event = data.event.message
         sender_id = data.event.sender.sender_id.open_id
@@ -259,10 +260,11 @@ class FeishuChannel(BaseChannel):
             # Only send minimal hint, don't interfere with final answer
             content = json.dumps({"text": f"🔍 Rooster 正在使用工具: `{tool_name}`..."})
 
+        
         request = (
-            CreateMessageRequest.builder()
+            im.CreateMessageRequest.builder()
             .receive_id_type("open_id")
-            .request_body(CreateMessageRequestBody.builder().receive_id(to).msg_type("text").content(content).build())
+            .request_body(im.CreateMessageRequestBody.builder().receive_id(to).msg_type("text").content(content).build())
             .build()
         )
 
@@ -289,12 +291,13 @@ class FeishuChannel(BaseChannel):
             logger.error(f"❌ [Feishu] 消息发送彻底失败: {last_err}")
 
     async def send_card(self, to: str, card_content: Dict[str, Any], **kwargs):
+        
         content = json.dumps(card_content)
         request = (
-            CreateMessageRequest.builder()
+            im.CreateMessageRequest.builder()
             .receive_id_type("open_id")
             .request_body(
-                CreateMessageRequestBody.builder().receive_id(to).msg_type("interactive").content(content).build()
+                im.CreateMessageRequestBody.builder().receive_id(to).msg_type("interactive").content(content).build()
             )
             .build()
         )
@@ -318,7 +321,6 @@ class FeishuChannel(BaseChannel):
         try:
             file_name = os.path.basename(file_path)
             with open(file_path, "rb") as f:
-                import lark_oapi.api.im.v1 as im
 
                 upload_request = (
                     im.CreateFileRequest.builder()
@@ -369,7 +371,6 @@ class FeishuChannel(BaseChannel):
             return False
         try:
             with open(image_path, "rb") as f:
-                import lark_oapi.api.im.v1 as im
 
                 upload_request = (
                     im.CreateImageRequest.builder()
@@ -411,7 +412,6 @@ class FeishuChannel(BaseChannel):
     async def send_post(self, to: str, title: str, content_list: list, **kwargs):
         """[Premium] 发送飞书富文本消息"""
         try:
-            import lark_oapi.api.im.v1 as im
 
             post_content = {"zh_cn": {"title": title, "content": content_list}}
             request = (

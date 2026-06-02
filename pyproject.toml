@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rooster"
-version = "0.4.0"
+version = "0.5.0"
 description = "Autonomous multi-agent desktop OS"
 requires-python = ">=3.12"
 license = "MIT"
@@ -84,7 +84,7 @@ webhook = ["aiohttp"]
 windows = ["pywin32", "pywinauto"]
 mcp = ["uv>=0.4.0"]
 all = ["rooster[vision,sandbox,pdf,windows,webhook,mcp]"]
-dev = ["pytest", "pytest-asyncio", "ruff"]
+dev = ["pytest", "pytest-asyncio", "pytest-cov", "ruff"]
 
 [project.scripts]
 rooster = "src.main:main_cli"
@@ -96,6 +96,7 @@ include = ["src*", "dashboard*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+addopts = "--cov=src --cov-report=term-missing --cov-fail-under=50"
 markers = [
     "integration: marks tests requiring external services",
     "slow: marks tests as slow (> 1s)",

@@ -17,6 +17,7 @@ from .models import MemoryFact, MemoryFactType
 from .backends import JSONFileBackend
 from .semantic_search import SemanticMemorySearch
 from .dedup import MemoryDeduplicator, MemoryAuditor
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 

@@ -1,23 +1,124 @@
 # Changelog
 
-## [0.5.0] - 2026-06-01
+## [0.5.0] - 2026-06-02
 
-### Added
-- **Progressive History Compression (渐进式历史压缩)**：在 `Executor` 执行循环中引入渐进式上下文修剪机制 (`_summarize_mid_history`)。每 10 步触发一次局部语义蒸馏，保留最近 5 步原始上下文，彻底解决长任务后期因触碰 60% 阈值导致的“硬截断降智”问题。
-- **Task-Level Heartbeats (任务级心跳守护)**：在 `MissionRunner` 中新增任务级 `.heartbeat` 文件发射机制。`Guardian` 守护进程现可检测并干预长达 3 分钟毫无进度的子任务“隐性卡死”，而不仅仅是进程级崩溃。
+> **涵盖**: v11 CCP 规划协议 | v12 执行引擎增强 (B1-B5) | v13 工程加固 (安全/资源/观测/测试) | v14.1 架构范式重塑 (P1 DI + P2 Schema 自愈)
+
+---
+
+### v11 CCP 能力约束驱动规划
+
+> **核心主题**: CCP 规划协议 + USER 步骤支持 + Checkpoint 增强
+> **设计原则**: 5 不做 (CapabilityMap / MissionState FSM / loop_back / SQLite 持久化 / 新模块) + 4 聚焦 (Protocol 扩展 / Strategist Prompt / Checkpoint 增强 / USER 步骤路由)
+
+#### Added
+
+- **CCP 六步法规划协议 (Capability-Constrained Planning)**：在 `Strategist` 中引入了全新的六步规划协议（阻塞项检测、执行者标记、置信度评级、交付物声明、可行性分析、DAG 拓扑构建）。
+- **Protocol 蓝图字段升级**：`SubTask` 新增 `owner` (AGENT|USER)、`confidence` 与 `risk_note`；`MissionPlan` 新增 `blockers`、`deliverables` 与 `feasibility_note` 字段。全部有默认值，向后兼容。
+- **Pydantic 自修复引擎 (Self-Healing)**：在 `Strategist` 中实现了基于 `ValidationError` 和 `JSONDecodeError` 的拦截与大模型重试管道。
+- **核心逻辑与 DAG 防护网**：通过 `@model_validator` 为 `MissionPlan` 引入了严格的 DAG 拓扑校验（防向后引用与深度优先循环依赖检测），从底层杜绝发散。
+- **USER 步骤路由**：在 `MissionRunner` 中新增了基于 `owner: USER` 的分离路由，复用 `requires_confirm` 进行人类协作，且不占用并发槽位。
+- **前置预警展示**：规划完成后、执行前，自动展示前置阻塞项、可行性说明与预期交付物，提高决策掌控感。
+- **子任务执行指标**：新增任务级别的指标收集（包含耗时 `duration_s` 与重试次数 `retries`）并持久化到 Checkpoint 中。
+- **工具合法性校验**：`Strategist` 现已注入 `tool_registry`，可检测并降级不存在的幻觉工具至 `generic_tool`。
+- **上游取消传播**：如果依赖链中的 USER 步骤被取消，下游 AGENT 步骤也自动取消，避免空等。
+
+#### Changed
+
+- **Checkpoint 增强**：序列化模型新增 `blockers`、`deliverables`、`feasibility_note`、`subtask_metrics` 字段，实现更细粒度的崩溃恢复。
+- **双通道无损元数据提取**：优化了 `plan_stream()` 的流式拆包逻辑，通过正则在一次流式回复中同步提取全局元数据，省去一次额外的 LLM 调用。
+- **tool_registry 注入 Strategist**：构造函数接收 `tool_registry` 参数，`_get_skills_digest()` 将原生工具 schema 注入系统 prompt，`plan()` 中校验 LLM 规划的 tool 名是否在注册表中。
+- **SoulLoader 传 llm_client**：修复 `plan()` 和 `plan_stream()` 中实例化 `SoulLoader` 时未传入 `llm_client` 导致超长提示词无法自动精简的问题。
+
+#### Fixed
+
+- **USER 步骤超时死循环**：修复了人类超时未操作时调度器挂起的问题（将其标记为 `CANCELLED` 并安全取消下游依赖）。
+- **指标计时偏差**：将子任务的计时起点移至依赖等待之后，消除因等待上游任务导致的耗时虚高。
+- **Checkpoint 预警复读**：断点续跑时跳过重复打印规划阶段的交付物和阻塞预警。
+- **Fallback 字段缺失**：修补了 `Strategist` 极端降级正则表达式提取路径，确保强行解析时具备安全的默认值。
+
+#### ⚠️ v11 Known Gaps
+
+- **replan() 元数据丢失**：`replan()` 不传递 `blockers`/`deliverables`/`feasibility_note`，重规划后元数据丢失（当前可接受，阻塞项可能已变化）。
+- **plan_stream 无内部超时**：依赖外部 `mission_runner` 的 `wait_for` 保护。
+
+---
+
+### v12 执行引擎增强
+
+#### Added
+- **Progressive History Compression (渐进式历史压缩)**：在 `Executor` 执行循环中引入渐进式上下文修剪机制 (`_summarize_mid_history`)。每 10 步触发一次局部语义蒸馏，保留最近 5 步原始上下文，彻底解决长任务后期因触碰 60% 阈值导致的”硬截断降智”问题。
+- **Task-Level Heartbeats (任务级心跳守护)**：在 `MissionRunner` 中新增任务级 `.heartbeat` 文件发射机制。`Guardian` 守护进程现可检测并干预长达 3 分钟毫无进度的子任务”隐性卡死”，而不仅仅是进程级崩溃。
 - **Blackboard Fact Confidence (黑板事实置信度)**：扩展 Blackboard 的 `FactEntry` 结构，新增 `status` (`confirmed`, `tentative`, `superseded`) 状态标签，避免子任务试错阶段的错误数据污染全局并发记忆。
 
-### Changed
+#### Changed
 - **Executor Path Optimization (路径缓存优化)**：重构了 `SystemPrompt` 与 `FC Schema` 的渲染逻辑。通过计算 LTM 与最近使用工具的哈希值实现热缓存，消除了 ReAct 循环中多余的重复构建开销。
-- **Observation Head-Tail Truncation (头尾保留截断)**：优化了依赖任务的结果提取逻辑，由原先的“硬截断 2000 字符”改为“保留头部 600 字结论与尾部 600 字堆栈，省略中间部分”，确保长输出中的关键错误信息不丢失。
+- **Observation Head-Tail Truncation (头尾保留截断)**：优化了依赖任务的结果提取逻辑，由原先的”硬截断 2000 字符”改为”保留头部 600 字结论与尾部 600 字堆栈，省略中间部分”，确保长输出中的关键错误信息不丢失。
 
-### Fixed
-- **Fallback Chain 降级链收束 (B1)**：彻底修复了 6 条规划降级路径最终导向死胡同（"Tool not found"）的问题。引入并注册 `generic_tool` 作为标准兜底工具，使得规划失败的子任务能安全移交至 `Executor` 进行自主 ReAct 探索。
+#### Fixed
+- **Fallback Chain 降级链收束 (B1)**：彻底修复了 6 条规划降级路径最终导向死胡同（”Tool not found”）的问题。引入并注册 `generic_tool` 作为标准兜底工具，使得规划失败的子任务能安全移交至 `Executor` 进行自主 ReAct 探索。
 - **Interpreter Sandbox Leak (沙箱线程泄漏)**：修复了云端 E2B 沙箱执行死循环代码时，未向 SDK 传递超时限制导致的 Python 后台线程与计费沙箱永久挂起的问题。
 - **Local Interpreter Vulnerabilities (解释器沙盒漏洞)**：
   - 修复 `tool_dispatch.py` 中因参数默认值不一致导致 AST 安全检查被绕过的漏洞。
-  - 将本地子进程中的 `"python"` 指令替换为 `sys.executable`，解决虚拟环境隔离断裂问题。
-  - 修复了安全拦截时引发大模型“幻觉死循环”的矛盾提示词。
+  - 将本地子进程中的 `”python”` 指令替换为 `sys.executable`，解决虚拟环境隔离断裂问题。
+  - 修复了安全拦截时引发大模型”幻觉死循环”的矛盾提示词。
+
+---
+
+### v13 工程底座加固
+
+#### Security (v13.1)
+
+- **Security Defaults Upgraded (安全默认值升级)**：将 `runtime.py` 中 `ADVANCED_SECURITY` 默认从 `false` 改为 `true`，`CONFIRMATION_BEHAVIOR` 默认从 `log` 改为 `block`。危险操作不再静默放行，需显式确认。
+- **PI Scan Exemptions Removed (注入扫描豁免清除)**：清空 `advanced_guard.py` 的 `_PI_EXEMPT_TOOLS`，此前 `python_exec`、`terminal` 等破坏力最强的代码执行工具被豁免了 Prompt Injection 扫描。现在所有工具输出一律强制扫描。
+- **Typed Signal Exceptions (类型化控制流信号)**：新建 `src/utils/exceptions.py`，用原生 Python 类型安全异常 `EscalateSignal`、`AbortSignal` 替代了过去散落在 `executor.py` 和 `mission_runner.py` 中的 `raise Exception(“__ESCALATE__: ...”)` + `.replace()` 魔法字符串解析模式。异常捕捉和堆栈回溯现在精确到类型。
+
+#### Resource Governance (v13.2)
+
+- **Launcher Graceful Shutdown (长生命周期资源回收)**：在 `src/launcher.py:cleanup()` 中挂载统一退出钩子，确保 Router、DistillationScheduler、ModelFactory 所持有的 LLMClient 连接池在进程退出时正确释放。之前这些单例组件的 HTTPX 连接池会随进程被强杀而泄漏。
+- **Bare Except Elimination (静默吞错修复)**：将 `observation.py` 中的裸 `except:` 全部收敛为 `except (json.JSONDecodeError, ValueError):`，防止底层严重异常被无意吞没。
+
+#### Observability (v13.3)
+
+- **Structured Metrics (立体指标监控)**：在 `gateway/metrics.py` 新增 `observe_tool_execution()`（工具延迟直方图 + 状态计数器）、`observe_subtask_execution()`（子任务耗时）、`observe_failover()`（Provider 故障切换率）、`observe_llm_error()`（LLM 错误追踪）。打破此前仅监控 token 计数的盲区。
+- **Mission Correlation ID (任务关联 ID)**：新建 `src/utils/logging_context.py`，通过 `ContextVar` 实现 `mission_id` 在日志中的自动注入。`MissionRunner` 调用 `set_mission_id()` 后，该任务产生的所有日志均带有 `[mission=xxx]` 标记。
+- **Robust Config Parsing (环境变量防呆)**：增强 `_env_bool()` / `_env_int()` 的容错解析，类似写成 `TURE` 的错别字不再被静默当成 `False`，而是抛出明确的配置错误提示。
+
+#### Test Quality (v13.4)
+
+- **Hardening Test Suite (加固测试集)**：新增 `tests/test_v13_hardening.py`（6 个测试），覆盖 `_env_bool` 常见拼写、`_env_int` 非数字输入、LLMClient close 语义、PI 扫描终端输出、AbortSignal 传播、V13 指标注册。
+- **pytest-cov Integration (覆盖率基础设施)**：将 `pytest-cov` 加入 dev 依赖，为后续覆盖率门禁打下基础。
+
+#### ⚠️ v13 Known Gaps (已验证未闭合)
+
+> 以下 4 项在代码实证核查（2026-06-02）中发现未完全落地，已纳入 v14.1 收尾批次。
+
+- **Critical Injection Not Blocking (关键注入未阻断)**：`tool_dispatch.py` 检测到 critical 注入攻击时仍只添加 warning prefix，未 `raise AbortSignal` 硬阻断。测试通过 monkeypatch 模拟而非验证真实代码路径。
+- **Subtask LLMClient Leak (子任务连接泄漏)**：`mission_runner.py` 每个子任务创建独立的 `subtask_llm_client`（含 HTTPX 异步连接池），但 `finally` 块中没有 `await llm_client.close()`。长任务中连接池累积泄漏。
+- **Correlation ID Partial Coverage (关联 ID 覆盖不全)**：只有 `MissionRunner` 调用了 `set_mission_id()`。Router、Strategist、Executor、Auditor 四个核心模块的日志仍显示 `mission=-`。
+- **Coverage Gate Unconfigured (覆盖率门禁未配置)**：`pytest-cov` 是 dev 依赖，但无 `--cov-fail-under` 配置，无 CI workflow 强制执行。
+
+---
+
+### v14.1 架构范式重塑
+
+#### P1: Tool Dependency Injection (工具级依赖注入上下文)
+
+- **RoosterContext Protocol (上下文协议)**：新建 `src/toolset/context.py`，定义 `RoosterContext` dataclass（含 `session_id`、`task_id`、`workspace_dir`、`memory_manager`、`llm_client`、`blackboard`、`config`、`security_policy` 等字段），作为工具执行的统一依赖注入容器。
+- **BaseTool Dual Signature (基类双签名兼容)**：重构 `src/toolset/base.py`，新增 `execute(self, args, ctx)` 签名规范。`run(**kwargs)` 方法自动检测子类是否实现了 `execute`，若存在且有 `args_schema`，则自动将 kwargs 反序列化为 Pydantic model 并注入 `RoosterContext`。旧工具无需改动即可继续运行（零破坏迁移）。
+- **Dispatcher Context Assembly (调度器上下文装配)**：重构 `src/agents/tool_dispatch.py`，在每次工具调用时从当前执行配置中构建 `RoosterContext` 并注入到工具的 `execute` 调用中。
+
+#### P2: Schema Validation Self-Healing (Schema 强校验底盘拦截)
+
+- **ToolCallValidator (工具调用校验器)**：新建 `src/toolset/validation.py`，基于 Pydantic 设计底层校验引擎。包含两条自愈路径：JSON 语法修复（`_heal_json_parse`）和 Schema 结构修复（`_heal_schema`），各最多 2 次重试。
+- **Validation Pipeline Integration (校验管道集成)**：在 `tool_dispatch.py` 的执行链中，先经过 `ToolCallValidator.validate_and_heal()` 校验，通过后才交给工具执行。如果 Pydantic `model_validate` 抛出 `ValidationError`，校验器自动将错误信息打包成 Prompt 发给轻量路由模型（`ROUTER_MODEL_NAME`，`temperature=0.1`）要求订正参数。大模型在一两秒内修正后系统继续执行，上层 MissionRunner / Strategist 完全无感。
+- **Healing Budget (自愈预算硬上限)**：`MAX_HEAL_RETRIES = 2`，超出后降级为返回 SchemaValidationFailed 错误，由 ReAct 循环自主处理。永不死循环。
+
+#### ⚠️ v14.1 Known Gaps (已验证未闭合)
+
+> 以下 1 项在代码实证核查（2026-06-02）中发现未落地，已纳入 v14.1 收尾批次。
+
+- **Zero Tools Using ctx Parameter (无工具使用注入上下文)**：框架管道全部到位，但 25+ 个工具中没有任何一个实际从注入的 `RoosterContext` 中获取依赖。`memory.py` 内部自己重建 `MemoryManager()`；`subagent.py` 从 `self.context` dict 取值；`file_system.py` 仍用旧 `run(**kwargs)` 模式。管道已修好，水未接通。
 
 ## [0.4.0] - 2026-05-31
 

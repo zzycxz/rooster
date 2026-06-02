@@ -122,6 +122,47 @@ class MetricsRegistry:
             model_total = self.counter(f"llm_tokens_{provider}_{model}", f"Total tokens for {provider}/{model}")
             model_total.inc(prompt_tokens + completion_tokens)
 
+    def observe_tool_execution(self, tool_name: str, duration_s: float, status: str = "success"):
+        """Record tool execution latency and outcome."""
+        self.histogram("tool_execution_seconds", "Tool execution latency in seconds").observe(duration_s)
+        self.histogram(
+            f"tool_execution_{tool_name}_seconds",
+            f"Latency for tool {tool_name} in seconds",
+        ).observe(duration_s)
+        self.counter("tool_execution_total", "Total tool executions").inc()
+        self.counter(f"tool_execution_{status}_total", f"Total tool executions with status={status}").inc()
+        self.counter(
+            f"tool_execution_{tool_name}_{status}_total",
+            f"Total executions for tool {tool_name} with status={status}",
+        ).inc()
+
+    def observe_subtask_execution(self, duration_s: float, status: str = "success"):
+        """Record subtask execution latency and outcome."""
+        self.histogram("subtask_execution_seconds", "Subtask execution latency in seconds").observe(duration_s)
+        self.counter("subtask_execution_total", "Total subtask executions").inc()
+        self.counter(f"subtask_execution_{status}_total", f"Total subtask executions with status={status}").inc()
+
+    def observe_failover(self, from_provider: str, to_provider: str):
+        """Record provider failover transitions."""
+        self.counter("llm_failover_total", "Total LLM provider failovers").inc()
+        self.counter(
+            f"llm_failover_{from_provider}_to_{to_provider}_total",
+            f"Total failovers from {from_provider} to {to_provider}",
+        ).inc()
+
+    def observe_llm_error(self, provider: str):
+        """Record provider-side LLM call errors."""
+        self.counter("llm_errors_total", "Total LLM call errors").inc()
+        self.counter(f"llm_errors_{provider}_total", f"Total LLM call errors for provider {provider}").inc()
+
+    def observe_route_decision(self, target: str, llm_used: bool, duration_s: float):
+        """Record routing decision distribution, LLM usage ratio, and triage latency."""
+        self.counter("route_decision_total", "Total routing decisions").inc()
+        self.counter(f"route_decision_{target}_total", f"Routing decisions to {target}").inc()
+        if llm_used:
+            self.counter("route_triage_llm_total", "Triages that used LLM").inc()
+        self.histogram("route_triage_seconds", "Triage latency in seconds").observe(duration_s)
+
 
 # Global singleton
 metrics = MetricsRegistry()

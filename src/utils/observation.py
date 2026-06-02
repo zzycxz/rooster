@@ -118,13 +118,13 @@ def summarize_dependency_observation(
         try:
             data = json.loads(observation)
             summary.append(f"Data type: JSON Object, Keys: {list(data.keys())[:10]}...")
-        except:
+        except (json.JSONDecodeError, ValueError):
             pass
     elif observation.strip().startswith("[") and observation.strip().endswith("]"):
         try:
             data = json.loads(observation)
             summary.append(f"Data type: JSON Array, Length: {len(data)}")
-        except:
+        except (json.JSONDecodeError, ValueError):
             pass
             
     # 3. 构造 Tail Preview

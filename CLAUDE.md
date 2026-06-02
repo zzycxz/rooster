@@ -85,7 +85,11 @@ STRATEGIST_LLM_TIMEOUT=90         # Strategist 超时秒数
 AUDIT_MAX_REMAND_RETRY=1          # Auditor REMAND 最大重试次数
 AGENT_MAX_STEPS=20                # 单任务 ReAct 最大步数
 AGENT_STUCK_THRESHOLD=4           # 重复工具调用检测阈值
-SUBTASK_MIN_TIMEOUT=300           # 子任务最小超时秒数
+SUBTASK_MIN_TIMEOUT=1800          # 子任务最小超时秒数（绑定: protocol.py, strategist.py, strategist.md, replan.md, mission_runner.py）
+DOWNLOAD_TIMEOUT=300              # 多媒体/资源下载超时（绑定: multimedia.py）
+SUBAGENT_TOOL_TIMEOUT=120         # SubAgent 工具级执行超时（绑定: subagent.py）
+MEMORY_INIT_TIMEOUT=120           # 启动时记忆系统初始化超时（绑定: launcher.py）
+LLM_CALL_TIMEOUT=120              # 通用 LLM 调用安全网超时（绑定: router.py, memory/dedup.py, vision_analyzer.py, browser_automation.py）
 
 # 并发配置
 MAX_PARALLEL_SUBTASKS=3           # MissionRunner 最大并发子任务数

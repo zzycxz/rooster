@@ -207,6 +207,7 @@ class LLMClient:
         self.preferred_provider = provider or ("cloud" if settings.CLOUD_KEY else "zhipu")
         self.provider = self.preferred_provider
         self._internal_client = ModelFactory.get_client(self.provider)
+        self._uses_shared_internal_client = True
         self.model_name = model or self._get_default_model(self.provider)
         self.failover_order = failover_order  # 自定义故障转移顺序
 
@@ -357,6 +358,13 @@ class LLMClient:
         committed = False
         for current_p in self._iter_pipeline_for(messages):
             try:
+                if current_p != self.preferred_provider:
+                    try:
+                        from gateway.metrics import metrics
+
+                        metrics.observe_failover(self.preferred_provider, current_p)
+                    except Exception:
+                        pass
                 await self._wait_provider_rate_limit(current_p)
                 provider_default_model = await self._prepare_provider(current_p)
                 # Only honour caller_model on the preferred provider.
@@ -413,6 +421,12 @@ class LLMClient:
                 return
             except Exception as e:
                 last_exc = e
+                try:
+                    from gateway.metrics import metrics
+
+                    metrics.observe_llm_error(current_p)
+                except Exception:
+                    pass
                 if committed:
                     logger.error(f"❌ [Client] {current_p} 在交付内容后失败: {e}")
                     raise
@@ -448,6 +462,13 @@ class LLMClient:
         last_exc = None
         for current_p in self._iter_pipeline_for(messages):
             try:
+                if current_p != self.preferred_provider:
+                    try:
+                        from gateway.metrics import metrics
+
+                        metrics.observe_failover(self.preferred_provider, current_p)
+                    except Exception:
+                        pass
                 provider_default_model = await self._prepare_provider(current_p)
                 model = caller_model if (current_p == self.preferred_provider and caller_model) else provider_default_model
                 send_messages = (
@@ -478,6 +499,12 @@ class LLMClient:
                 return result
             except Exception as e:
                 last_exc = e
+                try:
+                    from gateway.metrics import metrics
+
+                    metrics.observe_llm_error(current_p)
+                except Exception:
+                    pass
                 # _set_provider_cooldown_adaptive already called inside _retry_call for each attempt;
                 # do NOT call again here to avoid double-counting the last failure.
                 logger.error(f"❌ [Client] {current_p} 崩溃: {e}")
@@ -492,6 +519,9 @@ class LLMClient:
         raise last_exc
 
     async def close(self):
+        if getattr(self, "_uses_shared_internal_client", False):
+            logger.debug("Skipping LLMClient.close() for shared ModelFactory-managed client.")
+            return
         await self._internal_client.close()
 
     def switch_provider(self, provider: str):

@@ -25,7 +25,7 @@ class SubTask(BaseModel):
     on_failure: str = Field("RETRY", description="失败决策: RETRY | ABORT | REPLAN | REROUTE")
     requires_confirm: bool = Field(False, description="是否需要人工确认")
     mode: str = Field("ATOMIC", description="执行模式: ATOMIC | CONCURRENT")
-    timeout: int = Field(120, description="超时限制(秒)")
+    timeout: int = Field(1800, description="超时限制(秒)")
     sub_agent_mode: str = Field(
         "NORMAL",
         description=(

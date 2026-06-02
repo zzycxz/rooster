@@ -47,11 +47,9 @@ _DEFAULT_RULES: Dict[str, List[str]] = {
     # Generic web fetch / web search
     r"web.{0,10}fetch|web.{0,10}search|web.{0,10}read|网络搜索|抓取|爬取": [
         "Browser",
-        "Search",
     ],
     # Research / search tasks
-    r"search|find\s+info|look.?up|research|搜索|查找|查询|exa|linkup|搜一下|检索": [
-        "Search",
+    r"search|find\s+info|look.?up|research|搜索|查找|查询|搜一下|检索": [
         "Browser",
     ],
     # Email

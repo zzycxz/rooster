@@ -42,7 +42,7 @@ The current domain is determined solely by the current input — never by histor
       "on_failure": "RETRY | ABORT | REPLAN | REROUTE",
       "requires_confirm": false,
       "mode": "ATOMIC | CONCURRENT",
-      "timeout": 120,
+      "timeout": 1800,
       "sub_agent_mode": "NORMAL | ISOLATED | PARALLEL | SANDBOXED | RACE",
       "race_group": "",
       "owner": "AGENT | USER",
@@ -238,8 +238,8 @@ Each subtask may set `sub_agent_mode` to control how the Python executor isolate
 {"id": "ST3", "sub_agent_mode": "SANDBOXED", "tool": "code_exec", ...}
 
 # RACE: try two search strategies, take whichever succeeds first
-{"id": "ST1a", "sub_agent_mode": "RACE", "race_group": "fetch_race_1", "tool": "search_agent", ...}
-{"id": "ST1b", "sub_agent_mode": "RACE", "race_group": "fetch_race_1", "tool": "download_agent", ...}
+{"id": "ST1a", "sub_agent_mode": "RACE", "race_group": "fetch_race_1", "tool": "web_search", ...}
+{"id": "ST1b", "sub_agent_mode": "RACE", "race_group": "fetch_race_1", "tool": "web_fetch", ...}
 {"id": "ST2", "depends_on": ["ST1a", "ST1b"], ...}  ← downstream waits for whichever wins
 ```
 
@@ -296,8 +296,8 @@ Inspect the `status` field before treating any subtask as complete.
 
 | `suggested_route` | Target Domain | Target Tool        |
 |-------------------|---------------|--------------------|
-| `[DIRECT]`        | `RESOURCE`    | `search_agent`     |
-| `[REFRAME]`       | `RESOURCE`    | `download_agent`   |
+| `[DIRECT]`        | `RESOURCE`    | `web_search`       |
+| `[REFRAME]`       | `RESOURCE`    | `multimedia_download` |
 | `[TALK]`          | `COMMS`       | `dialogue_agent`   |
 
 - Preserve original `instruction`; only replace `domain` and `tool`.
@@ -346,13 +346,13 @@ Inspect the `status` field before treating any subtask as complete.
       Total search subtasks **must not exceed 10**.
    Treat violations as format errors — self-check and correct before outputting.
 
-9. **Timeout Policy** — Every subtask must set a reasonable `timeout` value (seconds) based on its domain and expected duration:
-   - UI operations: 180s (interface rendering may be slow)
-   - RESOURCE download/fetch: 600s (large files or slow servers)
-   - SYSTEM file operations: 120s
-   - COMMS send: 60s
+9. **Timeout Policy** — Every subtask must set a reasonable `timeout` value (seconds) based on its domain and expected duration. **Note: system enforces a minimum floor of 1800s — any value below will be auto-raised with a warning.**
+   - UI operations: 1800s (interface rendering may be slow)
+   - RESOURCE download/fetch: 1800s (large files or slow servers)
+   - SYSTEM file operations: 1800s
+   - COMMS send: 1800s
    - Infinite-wait scenarios (e.g., `wait_until` polling): `timeout: 0`
-   - Default: 120s when unspecified.
+   - Default: 1800s when unspecified.
 
 ---
 

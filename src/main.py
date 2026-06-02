@@ -34,13 +34,19 @@ load_dotenv(os.path.join(project_root, ".env"))
 del _env_local
 
 from launcher import RoosterLauncher
+from utils.logging_context import MissionContextFilter
 
 # 全局日志配置
 # Global logging configuration
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", stream=sys.stdout
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - [mission=%(mission_id)s] - %(message)s",
+    stream=sys.stdout,
 )
 logger = logging.getLogger("RoosterMain")
+_mission_filter = MissionContextFilter()
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(_mission_filter)
 
 # ── 文件日志 Handler（排查 FAILSAFE / Provider 故障专用）──────────────────────
 # 将 WARNING 及以上日志同步写入 rooster.log，不影响 stdout 输出。
@@ -50,7 +56,10 @@ os.makedirs(_log_dir, exist_ok=True)
 _log_file_path = os.path.join(_log_dir, "rooster.log")
 _file_handler = logging.FileHandler(_log_file_path, encoding="utf-8", mode="a")
 _file_handler.setLevel(logging.DEBUG)  # 文件捕获全量 DEBUG
-_file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+_file_handler.setFormatter(
+    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - [mission=%(mission_id)s] - %(message)s")
+)
+_file_handler.addFilter(_mission_filter)
 logging.getLogger().addHandler(_file_handler)
 logger.info(f"📋 日志文件: {_log_file_path}")
 

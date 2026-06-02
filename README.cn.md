@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/zzycxz/rooster/actions/workflows/ci.yml/badge.svg)](https://github.com/zzycxz/rooster/actions/workflows/ci.yml)
 
-> 版本: 0.3.7 | Python >= 3.12 | 许可: MIT
+> 版本: 0.5.0 | Python >= 3.12 | 许可: MIT
 
 ---
 
@@ -14,15 +14,18 @@ Rooster 是一个**多角色 Agent 框架**，能自主完成桌面操作、网�
 
 ### 核心特点
 
+- **CCP 能力约束驱动规划**: 六步规划协议 — 阻塞项检测、执行者标记（AGENT/USER）、置信度评级、交付物声明、可行性分析、DAG 拓扑构建。规划器在执行前显式声明能力边界与风险提示。
+- **工具级依赖注入 (RoosterContext)**: 统一的 `RoosterContext` dataclass 将 session、task、memory、llm_client、blackboard、config 注入每次工具调用。零破坏迁移 — 旧工具无需改动即可继续运行。
+- **Schema 校验自愈 (ToolCallValidator)**: 基于 Pydantic 的工具调用校验器，支持两条自动修复路径（JSON 语法修复 + Schema 结构修复）。无效参数在执行前由轻量路由模型自动订正，硬上限 2 次重试，永不死循环。
+- **渐进式历史压缩**: ReAct 执行循环中每 10 步触发一次局部语义蒸馏，保留最近 5 步原始上下文，彻底解决长任务后期的"硬截断降智"问题。
 - **多角色协作**: Router（分拣）→ Strategist（规划）→ Executor（执行）→ Auditor（审计）
 - **混合执行模式**: Solo（单轮快速）/ Mission（多步长任务）/ Schedule（定时任务）
+- **类型化控制流信号**: 原生 Python `EscalateSignal` / `AbortSignal` 替代魔法字符串解析，异常捕捉和堆栈回溯精确到类型。
+- **立体指标监控**: Prometheus 工具延迟直方图、子任务耗时、Provider 故障切换率、LLM 错误追踪。所有日志自动注入 `mission_id` 关联标记。
 - **视觉定位**: YOLO 模型驱动的桌面 UI 元素识别与操控
-- **混合动力浏览器**: httpx 静态抓取 + Playwright 动态渲染自动降级
-- **长期记忆**: 基于嵌入模型的语义记忆检索 + TTL 保留策略 + JSONL 导入导出
-- **流式响应**: WebSocket 实时推送 Agent 思考、工具调用、执行进度
 - **多 LLM Failover**: 智谱/小米/九天/OpenAI/Anthropic/Kimi/Qwen/云端/本地 10+ 供应商自动切换
 - **Gateway 安全**: API Key 认证 + HMAC 签名 + IP 速率限制 + 安全头 + 请求大小限制
-- **Dashboard UI**: 实时监控面板 — 11 个功能面板，中英双语，移动端适配
+- **Dashboard UI**: 实时监控面板 — 13 个功能面板，中英双语，移动端适配
 
 ---
 
@@ -234,6 +237,46 @@ Executor 完成后，交由独立 Auditor 进行最终裁决，五种处置：
 **附加层：对话摘要。**当 ReAct 循环中 token 超过 context limit 时，`_prune_history` 不再直接丢弃中间对话，而是用本地 LLM 压缩成 300 字摘要注入。配合 LTM 语义召回（每步按当前任务相关性检索而非固定 top 15），确保 LLM 在任何时刻都能看到完整上下文。
 
 
+### 7. CCP 能力约束驱动规划 — 规划器先声明边界，再动手执行
+
+v0.5.0 引入了 **CCP（Capability-Constrained Planning）规划协议**，强制 Strategist 在执行前显式声明能做什么、不能做什么。
+
+```
+Step 1: 阻塞项检测      — 识别缺失的凭据、资源或授权
+Step 2: 执行者标记      — 每个子任务标记为 AGENT（AI 独立完成）或 USER（需人类操作）
+Step 3: 置信度评级      — 每个子任务评估 HIGH / MEDIUM / LOW
+Step 4: 交付物声明      — 列出计划产出的具体成果
+Step 5: 可行性分析      — 明确"承诺"与"保证"的边界
+Step 6: DAG 拓扑构建    — 构建依赖图并检测循环
+```
+
+**USER 步骤路由**：标记为 `owner: USER` 的子任务（如"购买服务器""提供 API Key"）会暂停执行，通过已有的确认机制提示人类操作。USER 步骤不占用并发槽位，上游取消自动级联到下游依赖步骤 — 不会死等。
+
+**Pydantic 自修复**：整个规划管道被 `ValidationError` / `JSONDecodeError` 拦截包裹。大模型输出的残缺 JSON（Markdown 包裹、尾部逗号、中文引号）自动修复后重试，最终降级为安全默认值。
+
+### 8. 工具依赖注入 + Schema 自愈 — 零破坏的管道升级
+
+**RoosterContext 注入**（`src/toolset/context.py`）：`RoosterContext` dataclass 携带 `session_id`、`task_id`、`workspace_dir`、`memory_manager`、`llm_client`、`blackboard`、`config`、`security_policy` 注入每个工具的 `execute()` 调用。工具通过实现 `execute(self, args, ctx)` 来接入注入，同时保留旧的 `run(**kwargs)` 签名 — 调度器自动检测使用哪个。现有工具零改动。
+
+**ToolCallValidator**（`src/toolset/validation.py`）：工具执行前，参数先经过 Pydantic 校验器。两条自愈路径：
+- **JSON 语法修复**：修复缺少引号、尾部逗号、单引号等 JSON 格式问题
+- **Schema 结构修复**：`model_validate` 抛出 `ValidationError` 时，错误信息打包成 Prompt 发给路由模型（`temperature=0.1`）订正参数
+
+每条路径最多 2 次重试。预算耗尽后降级为 `SchemaValidationFailed` 错误，由 ReAct 循环自主处理。永不死循环。
+
+### 9. 工程加固 — 安全、可观测性与资源治理
+
+**安全默认值升级**：`ADVANCED_SECURITY` 默认为 `true`，`CONFIRMATION_BEHAVIOR` 默认为 `block`。危险操作不再静默放行，需显式确认。PI 扫描豁免清除 — `python_exec`、`terminal` 等高破坏力工具不再豁免注入扫描。
+
+**类型化控制流信号**（`src/utils/exceptions.py`）：`EscalateSignal` 和 `AbortSignal` 替代了 `raise Exception("__ESCALATE__: ...")` + `.replace()` 魔法字符串模式。异常捕捉现在类型安全，堆栈回溯精确。
+
+**立体指标监控**（`gateway/metrics.py`）：新增 Prometheus 指标 — `observe_tool_execution()`（工具延迟直方图 + 状态计数器）、`observe_subtask_execution()`（子任务耗时）、`observe_failover()`（Provider 故障切换率）、`observe_llm_error()`（LLM 错误追踪）。打破了此前仅监控 token 计数的盲区。
+
+**任务关联 ID**（`src/utils/logging_context.py`）：基于 `ContextVar` 的 `mission_id` 自动注入。`MissionRunner` 调用 `set_mission_id()` 后，该任务产生的所有日志均带有 `[mission=xxx]` 标记 — 横跨 Router、Strategist、Executor、Auditor。
+
+**资源治理**：`launcher.py` 的统一 `cleanup()` 退出钩子确保 Router、DistillationScheduler、ModelFactory 在进程退出时释放 HTTPX 连接池。裸 `except:` 全部收敛为 `except (json.JSONDecodeError, ValueError)`。
+
+
 ---
 
 ## 三、目录结构
@@ -287,6 +330,7 @@ rooster/
 │   │   ├── llm_client.py       #  LLM 客户端（多 Provider 轮转 + 冷却 + 退避）
 │   │   ├── prompt_builder.py   #   五层 System Prompt 组装器
 │   │   ├── tool_dispatch.py    #   工具调用提取与执行
+│   │   ├── routing_protocol.py #   路由协议定义
 │   │   └── runners/
 │   │       ├── solo_runner.py  #     单轮快速模式
 │   │       └── mission_runner.py#    多步任务模式
@@ -294,13 +338,15 @@ rooster/
 │   ├── toolset/                # 工具注册与定义（55 个工具，32 个暴露给 LLM）
 │   │   ├── base.py             #   BaseTool 基类（含 platform / kit / fc_hidden）
 │   │   ├── registry.py         #   全局工具注册表（自动发现 + schema 验证）
+│   │   ├── context.py          #   RoosterContext — 工具执行的统一 DI 容器
+│   │   ├── validation.py       #   ToolCallValidator — schema 自愈（JSON + 结构修复）
 │   │   └── definitions/        #   工具实现（22 个模块）
-│   │       ├── browser.py          #   浏览器（nav / fetch / act / batch_fetch）
+│   │       ├── browser_automation.py #   浏览器自动化（nav / read / click / act）
 │   │       ├── visual_control.py   #   桌面视觉操控（grounding_scan / read_screen / act）
 │   │       ├── file_system.py      #   文件系统（file_system_op 全能操作）
 │   │       ├── office.py           #   Office（excel_op / docx_write / pdf_op）
 │   │       ├── interpreter.py      #   Python 代码执行（E2B 沙箱 / 本地）
-│   │       ├── exa_search.py       #   搜索（4 级降级链）
+│   │       ├── web_search.py        #   搜索（Linkup / Exa / GLM / 7 路并发 / Playwright 5 级动态降级链）
 │   │       ├── subagent.py         #   子 Agent 编排
 │   │       ├── task_manager.py     #   任务管理
 │   │       ├── task_scheduler.py   #   定时任务（Windows schtasks / macOS launchd）
@@ -370,7 +416,7 @@ rooster/
 │   │
 │   └── utils/                  # 工具库
 │       ├── config/             #   配置体系
-│       │   ├── _base.py        #     环境变量读取工具
+│       │   ├── _base.py        #     环境变量读取工具（含拼写纠错）
 │       │   ├── _settings.py    #     组合 Settings
 │       │   ├── loader.py       #     配置加载器（已废弃，.env 为唯一配置源）
 │       │   ├── providers.py    #     LLM 供应商配置
@@ -381,15 +427,17 @@ rooster/
 │       ├── security/           #   安全模块
 │       │   ├── path_guard.py   #     路径守卫（防符号链接绕过）
 │       │   ├── state_guard.py  #     状态守卫
-│       │   ├── advanced_guard.py#    越狱检测
+│       │   ├── advanced_guard.py#    越狱检测（PI 扫描 — 无工具豁免）
 │       │   ├── input_guard.py  #     输入验证
 │       │   ├── secrets_mask.py #     日志脱敏
 │       │   └── tool_rate_limiter.py # 工具限速
+│       ├── exceptions.py       #   类型化控制流信号（EscalateSignal / AbortSignal）
+│       ├── logging_context.py  #   任务关联 ID（ContextVar 日志注入）
 │       ├── vision/             #   视觉引擎（YOLO）
 │       ├── browser/            #   浏览器工具（Playwright）
 │       └── audit/              #   审计工具
 │
-├── tests/                      # 测试套件（132 个测试）
+├── tests/                      # 测试套件（31 个测试文件）
 └── .rooster/                   # 运行时数据（gitignore）
     ├── SOUL.md                 #   Agent 灵魂文件
     ├── USER.md                 #   用户画像文件
@@ -492,12 +540,12 @@ Layer 5: Base prompt     — 角色 Prompt（strategist.md / executor.md 等）
 
 ### 工具系统
 
-55 个工具注册在案，32 暴露给 LLM 进行 Function Calling（23 个为内部/旧版保留）。按 Kit 分组：
+55 个工具注册在案，32 暴露给 LLM 进行 Function Calling（23 个为内部/旧版保留）。所有工具调用在执行前经过 `ToolCallValidator` 进行 Schema 自愈校验。工具可通过实现 `execute(self, args, ctx)` 接入 `RoosterContext` 依赖注入。按 Kit 分组：
 
 | Kit | 核心工具 | 能力 |
 |:---|:---|:---|
 | Browser | `browser_nav`, `browser_act`, `web_fetch`, `batch_web_fetch` | 网页浏览与抓取 |
-| Search | `exa_search`, `linkup_search` | 多引擎搜索（4 级降级链） |
+| Search | `web_search` | 多引擎搜索（Linkup / Exa / GLM / 7 路并发 / Playwright 5 级动态降级链） |
 | Vision | `desktop_grounding_scan`, `desktop_act`, `desktop_read_screen` | 桌面 UI 操控 |
 | FileSystem | `file_system_op` | 文件读写 / 列目录 / 搜索 / 下载 |
 | Office | `excel_op`, `office_docx_write`, `pdf_op` | Excel / Word / PDF |
@@ -586,11 +634,12 @@ Dashboard 的「初始配置」面板还支持：
 
 ## 六、Dashboard 面板
 
-Dashboard 是一个单页 Web 应用（Alpine.js + Tailwind），提供 11 个功能面板：
+Dashboard 是一个单页 Web 应用（Alpine.js + Tailwind），提供 13 个功能面板：
 
 | 面板 | 功能 |
 |:---|:---|
 | **指令交互** | Agent 对话界面 + Pipeline 实时可视化（Router→Strategist→Executor→Auditor 状态）+ 会话管理 + 图片粘贴 |
+| **下载器** | 全功能可视化下载管理器（AriaNg 集成 + aria2c 状态监控） |
 | **步骤追踪** | Agent 每一步执行的详细时间线（含工具参数 / 返回值），支持筛选和搜索 |
 | **运行日志** | 实时日志流（支持级别过滤 + 搜索 + 导出 + 堆栈展开） |
 | **错误列表** | 错误收集（含堆栈追踪 + 修复建议） |
@@ -601,6 +650,7 @@ Dashboard 是一个单页 Web 应用（Alpine.js + Tailwind），提供 11 个�
 | **系统配置** | .env 配置展示（按分类分组，密钥脱敏） |
 | **初始配置** | 10 供应商卡片 + Ollama 管理 + HF 模型浏览器 + 角色矩阵 + Failover 配置 + 危险操作区 |
 | **健康诊断** | 服务连通性检测 + CPU / 内存 / 磁盘 / 网络 / Top 进程 |
+| **定时任务** | Cron 任务列表 + 编辑器 + 执行历史 + 可视化面板 |
 
 ---
 
@@ -816,6 +866,7 @@ metadata:
 
 ```python
 from toolset.base import BaseTool
+from toolset.context import RoosterContext
 from pydantic import BaseModel
 
 class MyToolArgs(BaseModel):
@@ -827,6 +878,11 @@ class MyTool(BaseTool):
     kit = "custom"
     args_schema = MyToolArgs
 
+    # 推荐：使用 execute() 接入 RoosterContext 依赖注入
+    async def execute(self, args: MyToolArgs, ctx: RoosterContext):
+        return {"result": "done", "session": ctx.session_id}
+
+    # 兼容：run(**kwargs) 仍然可用
     async def run(self, **kwargs):
         return {"result": "done"}
 ```

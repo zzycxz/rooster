@@ -5,6 +5,8 @@ import platform
 import json
 import ctypes
 import logging
+
+from utils.config import settings
 from typing import Type, Optional
 from pydantic import BaseModel, Field
 from toolset.base import BaseTool
@@ -167,9 +169,9 @@ class MovieDownloaderTool(BaseTool):
             return "❌ 未提供影片名称。"
 
         try:
-            return await asyncio.wait_for(self._run_inner(title, quality), timeout=120)
+            return await asyncio.wait_for(self._run_inner(title, quality), timeout=settings.DOWNLOAD_TIMEOUT)
         except asyncio.TimeoutError:
-            return f"FAILED: movie_downloader timed out after 120s for '{title}'. The BT search sites may be unreachable. Try again or search manually."
+            return f"FAILED: movie_downloader timed out after {settings.DOWNLOAD_TIMEOUT}s for '{title}'. The BT search sites may be unreachable. Try again or search manually."
 
     async def _run_inner(self, title: str, quality: str) -> str:
 

@@ -19,6 +19,7 @@ from typing import List, Dict, Any, Optional
 
 from utils.config import settings
 from utils.audit import audit_manager
+from utils.exceptions import AbortSignal
 
 _logger = logging.getLogger(__name__)
 
@@ -297,16 +298,54 @@ async def execute_orchestrated_tool(
     )
 
     try:
-        # --- Step 2: Clean execution (with self-healing) ---
-        result = await _execute_tool_with_healing(tool, name, args, reflection_engine_getter)
+        # --- P2: Schema Validation-Driven Self-Healing ---
+        from toolset.validation import ToolCallValidator
+        validator = ToolCallValidator()
+        validated_model, error_msg = await validator.validate_and_heal(
+            tool, args, llm_client, session_history
+        )
+        if error_msg:
+            # If self-healing failed, return error to the main ReAct loop
+            return f'<tool_response name="{name}">[SchemaValidationFailed] {error_msg}</tool_response>'
+        
+        # Override args with validated ones if available
+        if validated_model is not None:
+            args = validated_model.model_dump()
 
-        # --- Advanced Security: prompt injection scan on tool output (default OFF) ---
+        # --- Context Injection (V14 P1) ---
+        from toolset.context import RoosterContext
+        ctx = RoosterContext(
+            session_id=config.session_key,
+            task_id=getattr(config, "task_id", run_id),
+            subtask_id=run_id,
+            workspace_dir=getattr(settings, "WORKSPACE_DIR", ""),
+            memory_manager=memory_manager,
+            llm_client=llm_client,
+            blackboard=None, # Will be populated if required by specific tools
+            config={"executor_model": getattr(config, "model", "")},
+            security_policy={"override": policy_override} if policy_override else {}
+        )
+
+        # --- Step 2: Clean execution (with self-healing) ---
+        result = await _execute_tool_with_healing(tool, name, args, reflection_engine_getter, ctx)
+
+        # --- Advanced Security: prompt injection scan on tool output (default ON since v13.1) ---
         try:
             from utils.security.advanced_guard import AdvancedGuard
 
             pi_report = AdvancedGuard.scan_tool_output(name, str(result))
             if pi_report.has_threats:
+                if pi_report.should_block:
+                    # [v13.1→v14.1-fix] Critical injection: hard abort
+                    _logger.warning(
+                        f"[Security] CRITICAL injection detected in tool '{name}' output, "
+                        f"raising AbortSignal. evidence={pi_report.threats[0].evidence!r}"
+                    )
+                    raise AbortSignal(pi_report.to_user_message())
+                # Non-critical: prepend warning but allow execution to continue
                 result = pi_report.to_warning_prefix() + str(result)
+        except AbortSignal:
+            raise  # Don't catch our own AbortSignal in the generic except below
         except Exception as _pi_err:
             _logger.debug(f"[AdvancedGuard] prompt injection scan skipped (degraded): {_pi_err}")
 
@@ -354,6 +393,8 @@ async def execute_orchestrated_tool(
         _auto_record_artifact(name, args, result, memory_manager)
 
         obs = f'<tool_response name="{name}">\n{final_obs_content}\n</tool_response>'
+    except AbortSignal:
+        raise  # Security abort must propagate, not be swallowed as a tool error
     except Exception as e:
         obs = f'<tool_response name="{name}">Execution Error: {str(e)}</tool_response>'
     finally:
@@ -366,15 +407,18 @@ async def execute_orchestrated_tool(
     return obs
 
 
-async def _execute_tool_with_healing(tool, name: str, args: dict, reflection_engine_getter) -> Any:
+async def _execute_tool_with_healing(tool, name: str, args: dict, reflection_engine_getter, ctx) -> Any:
     """Self-healing proxy for tool execution: on failure, ReflectionEngine repairs and retries."""
     from agents.reflection_engine import RepairBudgetExhausted
 
     async def retry_with_args(corrected_args: dict):
+        corrected_args["ctx"] = ctx
         return await tool.run(**corrected_args)
 
     try:
-        return await tool.run(**args)
+        args_with_ctx = args.copy()
+        args_with_ctx["ctx"] = ctx
+        return await tool.run(**args_with_ctx)
     except RepairBudgetExhausted as budget_err:
         _logger.error(f"Self-healing budget exhausted: {budget_err}")
         return f"[TOOL_HEAL_EXHAUSTED] {str(budget_err)}"

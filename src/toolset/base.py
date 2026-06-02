@@ -76,14 +76,30 @@ class Tool:
         if validation_error:
             return ToolResult.error(f"[InputValidation] {validation_error}")
 
-        if self.args_schema and hasattr(self, "execute"):
-            # Auto-inject parameter model validation
-            # 自动注入参数模型验证
+        if self.args_schema and hasattr(self, "execute") and "ctx" in kwargs:
+            # v14 Context-injected execution
+            try:
+                args_obj = self.args_schema(**{k: v for k, v in kwargs.items() if k != "ctx"})
+            except Exception as e:
+                return ToolResult.error(f"[ArgumentValidation] {e}")
+            return await self.execute(args_obj, kwargs["ctx"])
+        elif self.args_schema and hasattr(self, "execute"):
+            # Auto-inject parameter model validation (fallback for old runners without ctx)
             try:
                 args_obj = self.args_schema(**kwargs)
             except Exception as e:
                 return ToolResult.error(f"[ArgumentValidation] {e}")
-            return await self.execute(args_obj)
+            
+            # 兼容：如果 execute 不接收 ctx 或者我们在旧模式下，我们得兼容它
+            import inspect
+            sig = inspect.signature(self.execute)
+            if "ctx" in sig.parameters:
+                from toolset.context import RoosterContext
+                # Provide a dummy context if none provided by dispatcher
+                dummy_ctx = RoosterContext(session_id="dummy", task_id="dummy")
+                return await self.execute(args_obj, dummy_ctx)
+            else:
+                return await self.execute(args_obj)
 
         raise NotImplementedError("工具类必须实现 run() 或 execute() 方法。")
 

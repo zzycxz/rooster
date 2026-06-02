@@ -9,15 +9,40 @@ def _env(key: str, default: str = "") -> str:
 
 
 def _env_int(key: str, default: int = 0) -> int:
-    return int(os.getenv(key, str(default)))
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError(f"Invalid integer for environment variable {key}: {raw!r}") from exc
 
 
 def _env_float(key: str, default: float = 0.0) -> float:
-    return float(os.getenv(key, str(default)))
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ValueError(f"Invalid float for environment variable {key}: {raw!r}") from exc
 
 
 def _env_bool(key: str, default: bool = False) -> bool:
-    return os.getenv(key, str(default)).lower() == "true"
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    truthy = {"true", "1", "yes", "on"}
+    falsy = {"false", "0", "no", "off"}
+    if normalized in truthy:
+        return True
+    if normalized in falsy:
+        return False
+    raise ValueError(
+        f"Invalid boolean for environment variable {key}: {raw!r}. "
+        "Expected one of true/false/1/0/yes/no/on/off."
+    )
 
 
 def _env_list(key: str, default: str = "") -> List[str]:

@@ -4,7 +4,7 @@ English | [中文](README.cn.md)
 
 [![CI](https://github.com/zzycxz/rooster/actions/workflows/ci.yml/badge.svg)](https://github.com/zzycxz/rooster/actions/workflows/ci.yml)
 
-> Version: 0.3.7 | Python >= 3.12 | License: MIT
+> Version: 0.5.0 | Python >= 3.12 | License: MIT
 
 ---
 
@@ -14,15 +14,18 @@ Rooster is a **multi-role Agent framework** that autonomously handles complex ta
 
 ### Core Features
 
+- **CCP Capability-Constrained Planning**: Six-step planning protocol — blocker detection, owner labeling (AGENT/USER), confidence rating, deliverable declaration, feasibility analysis, DAG construction. Planner explicitly declares capability boundaries and risk notes before execution.
+- **Tool Dependency Injection (RoosterContext)**: Unified `RoosterContext` dataclass injects session, task, memory, LLM client, blackboard, and config into every tool call. Zero-breakage migration — old tools continue working unchanged.
+- **Schema Validation Self-Healing (ToolCallValidator)**: Pydantic-based tool call validator with two auto-healing paths (JSON syntax fix + schema structure repair). Invalid parameters are automatically corrected by a lightweight router model before execution, with a hard budget of 2 retries.
+- **Progressive History Compression**: Per-10-step semantic distillation during ReAct execution. Preserves the latest 5 raw steps while compressing older context, eliminating the "hard truncation degradation" that plagued long-running tasks.
 - **Multi-role collaboration**: Router (triage) → Strategist (planning) → Executor (execution) → Auditor (review)
 - **Hybrid execution modes**: Solo (single-turn quick) / Mission (multi-step long-running) / Schedule (timed tasks)
+- **Typed Signal Exceptions**: Native Python `EscalateSignal` / `AbortSignal` replace magic string parsing for control flow, enabling precise exception catching and stack traces.
+- **Structured Observability**: Prometheus histograms for tool latency, subtask duration, Provider failover rate, and LLM error tracking. Automatic `mission_id` correlation across all log entries.
 - **Visual grounding**: YOLO-driven desktop UI element detection and manipulation
-- **Hybrid browser**: httpx static scraping + Playwright dynamic rendering with automatic fallback
-- **Long-term memory**: Embedding-based semantic memory retrieval + TTL retention + JSONL import/export
-- **Streaming responses**: Real-time WebSocket push of Agent thoughts, tool calls, and execution progress
 - **Multi-LLM failover**: Zhipu / MiMo / Jiutian / OpenAI / Anthropic / Kimi / Qwen / Cloud / Local — 10+ provider auto-switching
 - **Gateway security**: API Key auth + HMAC signing + IP rate limiting + security headers + request size limits
-- **Dashboard UI**: Real-time monitoring — 11 panels, bilingual (ZH/EN), mobile-responsive
+- **Dashboard UI**: Real-time monitoring — 13 panels, bilingual (ZH/EN), mobile-responsive
 
 ---
 
@@ -236,6 +239,46 @@ After Executor completes, an independent Auditor renders the final verdict with 
 **Bonus: Conversation Summary** — when the ReAct loop hits the token limit, `_prune_history` compresses middle turns into a 300-char summary via local LLM instead of discarding them outright. Combined with LTM semantic recall (per-step relevance-based retrieval instead of fixed top-15), the LLM always sees complete context.
 
 
+### 7. CCP Capability-Constrained Planning — Planner Declares Boundaries Before Execution
+
+v0.5.0 introduces the **CCP (Capability-Constrained Planning) protocol**, a six-step planning discipline that forces the Strategist to explicitly declare what it can and cannot do before any execution begins.
+
+```
+Step 1: Blocker Detection       — Identify missing credentials, resources, or authorizations
+Step 2: Owner Labeling          — Mark each subtask as AGENT (AI-executable) or USER (requires human action)
+Step 3: Confidence Rating       — Rate HIGH / MEDIUM / LOW per subtask
+Step 4: Deliverable Declaration — List concrete artifacts the plan will produce
+Step 5: Feasibility Note        — State the boundary between "promised" and "guaranteed"
+Step 6: DAG Construction        — Build dependency graph with cycle detection
+```
+
+**USER step routing**: Subtasks marked `owner: USER` (e.g., "purchase a server", "provide API key") pause execution and prompt the human via the existing confirmation mechanism. They don't consume concurrency slots, and upstream cancellation automatically cascades to dependent downstream steps — no dead-wait loops.
+
+**Pydantic self-healing**: The entire planning pipeline is wrapped in `ValidationError` / `JSONDecodeError` interception. Malformed LLM JSON output is auto-repaired (Markdown wrapping, trailing commas, Chinese quotes) and retried through the model before falling back to a safe default.
+
+### 8. Tool Dependency Injection + Schema Self-Healing — Zero-Breakage Plumbing Upgrade
+
+**RoosterContext injection** (`src/toolset/context.py`): A `RoosterContext` dataclass carries `session_id`, `task_id`, `workspace_dir`, `memory_manager`, `llm_client`, `blackboard`, `config`, and `security_policy` into every tool's `execute()` call. Tools opt-in by implementing `execute(self, args, ctx)` alongside the legacy `run(**kwargs)` — the dispatcher auto-detects which signature to use. Existing tools require zero changes.
+
+**ToolCallValidator** (`src/toolset/validation.py`): Before any tool executes, its arguments pass through a Pydantic-based validator. Two self-healing paths kick in on failure:
+- **JSON syntax healing**: Fixes malformed JSON (missing quotes, trailing commas, single quotes) via lightweight LLM correction
+- **Schema structure healing**: When `model_validate` raises `ValidationError`, the error message is packaged into a prompt for the router model (`temperature=0.1`) to fix the parameters
+
+Each path allows up to 2 retries. After budget exhaustion, the call degrades to a `SchemaValidationFailed` error for the ReAct loop to handle autonomously. The system never infinite-loops.
+
+### 9. Engineering Hardening — Security, Observability, and Resource Governance
+
+**Security defaults upgraded**: `ADVANCED_SECURITY` defaults to `true`, `CONFIRMATION_BEHAVIOR` defaults to `block`. Dangerous operations require explicit user confirmation instead of silent pass-through. PI scan exemptions cleared — `python_exec`, `terminal`, and other high-impact tools are no longer exempt from Prompt Injection scanning.
+
+**Typed signal exceptions** (`src/utils/exceptions.py`): `EscalateSignal` and `AbortSignal` replace the fragile `raise Exception("__ESCALATE__: ...")` + `.replace()` magic-string pattern. Exception catching is now type-safe with precise stack traces.
+
+**Structured metrics** (`gateway/metrics.py`): New Prometheus instruments — `observe_tool_execution()` (tool latency histogram + status counter), `observe_subtask_execution()` (subtask duration), `observe_failover()` (Provider failover rate), `observe_llm_error()` (LLM error tracking). Breaks the previous blind spot of token-count-only monitoring.
+
+**Mission correlation ID** (`src/utils/logging_context.py`): `ContextVar`-based `mission_id` injection. Once `MissionRunner` calls `set_mission_id()`, all logs produced by that mission carry the `[mission=xxx]` tag — across Router, Strategist, Executor, and Auditor.
+
+**Resource governance**: Unified `cleanup()` shutdown hook in `launcher.py` ensures Router, DistillationScheduler, and ModelFactory release their HTTPX connection pools on process exit. Bare `except:` clauses eliminated in favor of targeted `except (json.JSONDecodeError, ValueError)`.
+
+
 ---
 
 ## 3. Directory Structure
@@ -289,6 +332,7 @@ rooster/
 │   │   ├── llm_client.py       #  LLM client (multi-provider rotation + cooldown + backoff)
 │   │   ├── prompt_builder.py   #   5-layer System Prompt builder
 │   │   ├── tool_dispatch.py    #   Tool call extraction & execution
+│   │   ├── routing_protocol.py #   Routing protocol definitions
 │   │   └── runners/
 │   │       ├── solo_runner.py  #     Single-turn quick mode
 │   │       └── mission_runner.py#    Multi-step mission mode
@@ -296,13 +340,15 @@ rooster/
 │   ├── toolset/                # Tool registry (55 tools, 32 exposed to LLM)
 │   │   ├── base.py             #   BaseTool base class (platform / kit / fc_hidden)
 │   │   ├── registry.py         #   Global tool registry (auto-discovery + schema validation)
+│   │   ├── context.py          #   RoosterContext — unified DI container for tool execution
+│   │   ├── validation.py       #   ToolCallValidator — schema self-healing (JSON + structure repair)
 │   │   └── definitions/        #   Tool implementations (22 modules)
-│   │       ├── browser.py          #   Browser (nav / fetch / act / batch_fetch)
+│   │       ├── browser_automation.py #   Browser automation (nav / read / click / act)
 │   │       ├── visual_control.py   #   Desktop visual control (grounding_scan / read_screen / act)
 │   │       ├── file_system.py      #   File system (file_system_op — read/write/list/search/mkdir)
 │   │       ├── office.py           #   Office (excel_op / docx_write / pdf_op)
 │   │       ├── interpreter.py      #   Python execution (E2B sandbox / local)
-│   │       ├── exa_search.py       #   Search (4-tier fallback chain)
+│   │       ├── web_search.py        #   Search (Linkup / Exa / GLM / 7-lane / Playwright 5-tier dynamic fallback)
 │   │       ├── subagent.py         #   SubAgent orchestration
 │   │       ├── task_manager.py     #   Task management
 │   │       ├── task_scheduler.py   #   Scheduled tasks (Windows schtasks / macOS launchd)
@@ -372,7 +418,7 @@ rooster/
 │   │
 │   └── utils/                  # Utilities
 │       ├── config/             #   Config system
-│       │   ├── _base.py        #     Env var reading helpers
+│       │   ├── _base.py        #     Env var reading helpers (with typo detection)
 │       │   ├── _settings.py    #     Composite Settings
 │       │   ├── loader.py       #     Config loader (deprecated — .env is the sole config source)
 │       │   ├── providers.py    #     LLM provider config
@@ -383,15 +429,17 @@ rooster/
 │       ├── security/           #   Security modules
 │       │   ├── path_guard.py   #     Path guard (symlink bypass prevention)
 │       │   ├── state_guard.py  #     State guard
-│       │   ├── advanced_guard.py#    Jailbreak detection
+│       │   ├── advanced_guard.py#    Jailbreak detection (PI scan — no tool exemptions)
 │       │   ├── input_guard.py  #     Input validation
 │       │   ├── secrets_mask.py #     Log secret masking
 │       │   └── tool_rate_limiter.py # Per-tool rate limiting
+│       ├── exceptions.py       #   Typed signal exceptions (EscalateSignal / AbortSignal)
+│       ├── logging_context.py  #   Mission correlation ID (ContextVar-based log injection)
 │       ├── vision/             #   Vision engine (YOLO)
 │       ├── browser/            #   Browser tools (Playwright)
 │       └── audit/              #   Audit tools
 │
-├── tests/                      # Test suite (176 tests)
+├── tests/                      # Test suite (31 test files)
 └── .rooster/                   # Runtime data (gitignored)
     ├── SOUL.md                 #   Agent soul file
     ├── USER.md                 #   User profile file
@@ -494,12 +542,12 @@ Multi-provider automatic failover, degrading by priority:
 
 ### Tool System
 
-55 tools registered, 32 exposed to LLM for Function Calling (23 are internal/legacy). Grouped by Kit:
+55 tools registered, 32 exposed to LLM for Function Calling (23 are internal/legacy). All tool calls pass through `ToolCallValidator` for schema auto-healing before execution. Tools can opt into `RoosterContext` dependency injection by implementing `execute(self, args, ctx)` alongside the legacy `run(**kwargs)`. Grouped by Kit:
 
 | Kit | Core Tools | Capabilities |
 |:---|:---|:---|
 | Browser | `browser_nav`, `browser_act`, `web_fetch`, `batch_web_fetch` | Web browsing & scraping |
-| Search | `exa_search`, `linkup_search` | Multi-engine search (4-tier fallback) |
+| Search | `web_search` | Multi-engine search (Linkup / Exa / GLM / 7-lane / Playwright 5-tier dynamic fallback) |
 | Vision | `desktop_grounding_scan`, `desktop_act`, `desktop_read_screen` | Desktop UI control |
 | FileSystem | `file_system_op` | File read/write/list/search/mkdir/download |
 | Office | `excel_op`, `office_docx_write`, `pdf_op` | Excel / Word / PDF |
@@ -832,6 +880,7 @@ Create a Python file under `src/toolset/definitions/`, inheriting `BaseTool`:
 
 ```python
 from toolset.base import BaseTool
+from toolset.context import RoosterContext
 from pydantic import BaseModel
 
 class MyToolArgs(BaseModel):
@@ -843,6 +892,11 @@ class MyTool(BaseTool):
     kit = "custom"
     args_schema = MyToolArgs
 
+    # New: use execute() for RoosterContext injection (preferred)
+    async def execute(self, args: MyToolArgs, ctx: RoosterContext):
+        return {"result": "done", "session": ctx.session_id}
+
+    # Legacy: run(**kwargs) still works for backward compatibility
     async def run(self, **kwargs):
         return {"result": "done"}
 ```

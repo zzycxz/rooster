@@ -6,32 +6,31 @@ metadata:
     emoji: "🔍"
     platform: ["any"]
     category: "search"
-    requires:
-      python_packages: ["httpx"]
-      bins: []
-      env_vars: ["SEARXNG_URL"]
 ---
 
 # Web Search — 网页搜索
 
-通过搜索引擎获取互联网上的海量信息。
+## 可用工具
 
-## 工具选择
+- **`web_search`** — 统一搜索入口，内置 5 级降级链（Linkup → Exa → GLM → 7路并发 → Playwright）
+  - `query` (必填): 搜索关键词
+  - `en_keywords` (可选): 英文关键词，用于中英混合搜索优化
+  - `domain_filter` (可选): 限定域名，如 `"gov.cn"`, `"openai.com"`（仅在用户明确要求或需要权威来源时使用）
+  - `time_range` (可选): 时间范围，`"day"`, `"week"`, `"month"`, `"year"`, `"any"`
+  - `deep_research` (可选): 设为 `true` 启用 Linkup 深度多轮研究
+- **`web_fetch`** — 精读单个网页全文，AI 摘要
+- **`batch_web_fetch`** — 批量读取多个 URL（最多 5 个）
 
-- **`exa_search`** — 首选入口，内置 4 级 fallback（Exa → Linkup → GLM → 7路并发）
-- **`linkup_search`** — 深度搜索（`depth='deep'`），适合需要多轮迭代的复杂问题
-- **`web_fetch`** — 精读单个网页，提取详情
-- **`batch_web_fetch`** — 同时读取多个 URL（最多 5 个）
+## Agentic 搜索策略
 
-## 典型使用场景
-
-- `exa_search(query="Python 3.12 新特性")` — 标准查询
-- `linkup_search(query="量子计算最新进展", depth="deep")` — 深度研究
-- `web_fetch(url="https://...", prompt="提取价格信息")` — 读取具体页面
-- `batch_web_fetch(urls=[...], prompt="对比各产品优缺点")` — 批量读取对比
+1. **首次搜索**：用简洁关键词 + `web_search`
+2. **结果不满意**：修改关键词、添加 `time_range` 重新搜索
+3. **看到高度相关标题**：必须用 `web_fetch` 提取全文交叉验证，不要仅依赖摘要
+4. **深度调研**：设置 `deep_research=true`，或多次搜索不同角度 + `batch_web_fetch` 对比
+5. **需要权威来源**：使用 `domain_filter="gov.cn"` 或 `domain_filter="edu"`
 
 ## 注意事项
 
-- 确保网络代理配置正确（默认 127.0.0.1:7897）
-- `exa_search` 结果已经过 LLM 重排序，优先使用
+- `web_search` 结果已过智能排序和 LLM 重排序，优先使用
 - 需要翻页时：使用 `browser_nav` + `browser_act(action="scroll")` 组合
+- 不要滥用 `domain_filter`，除非用户明确要求

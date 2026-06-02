@@ -1,9 +1,9 @@
 """
 src/utils/security/advanced_guard.py
 
-Round 7 — 高级安全防护模块（默认 OFF）
+Round 7 — 高级安全防护模块（默认 ON）
 
-通过环境变量 ADVANCED_SECURITY=true 启用全部防护。
+通过环境变量 ADVANCED_SECURITY=false 可整体关闭防护。
 各子检测器可独立开启：
   GUARD_JAILBREAK=true      # 用户输入越狱检测
   GUARD_PROMPT_INJECTION=true  # 工具返回内容注入检测
@@ -264,17 +264,8 @@ _PI_MEDIUM: List[re.Pattern] = [
     if p
 ]
 
-# 不做工具输出扫描的工具（代码工具，输出就是代码，误报率高）
-# Tools exempt from output scanning (code tools; output is code, high false-positive rate)
-_PI_EXEMPT_TOOLS = {
-    "python_interpreter",
-    "code_exec",
-    "terminal",
-    "shell_exec",
-    "run_script",
-    "execute_script",
-    "python_exec",
-}
+# [V13.1] 取消代码工具的扫描豁免，强制进行 mandatory scan 以防范利用 shell/interpreter 的注入
+_PI_EXEMPT_TOOLS = set()
 
 
 class PromptInjectionScanner:

@@ -22,6 +22,7 @@ from typing import Type
 from pydantic import BaseModel, Field
 from toolset.base import BaseTool, ToolResult
 from agents.executor import _stream_with_chunk_timeout
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ def _subagent_result_path(agent_id: str) -> str:
 
 class SubAgentSpawnArgs(BaseModel):
     task: str = Field(..., description="子 Agent 要完成的完整任务描述（独立 Context，不继承主对话历史）")
-    timeout_seconds: int = Field(120, description="子任务最大执行时间（秒），超时后强制终止")
+    timeout_seconds: int = Field(None, description="子任务最大执行时间（秒），超时后强制终止。默认取 settings.SUBAGENT_TOOL_TIMEOUT")
     model_hint: str = Field("", description="可选：指定子 Agent 使用的 LLM（如 'cloud', 'local'），空=继承主 Agent")
     wait_for_result: bool = Field(True, description="True=同步等待结果返回；False=后台异步执行，立即返回 agent_id")
     spawn_depth: int = Field(0, description="当前递归深度，由主 Agent 传递，0=顶层")
@@ -83,6 +84,9 @@ class SubAgentSpawnTool(BaseTool):
 
         agent_id = f"sub_{uuid.uuid4().hex[:8]}"
         os.makedirs(_SUBAGENT_DIR, exist_ok=True)
+
+        # Resolve timeout: arg > settings > fallback
+        timeout_sec = args.timeout_seconds or settings.SUBAGENT_TOOL_TIMEOUT
 
         # Initialize result file (PENDING state)
         # 初始化结果文件（PENDING 状态）
@@ -136,7 +140,7 @@ class SubAgentSpawnTool(BaseTool):
 
         try:
             if args.wait_for_result:
-                result_text = await asyncio.wait_for(_run_inline(), timeout=args.timeout_seconds)
+                result_text = await asyncio.wait_for(_run_inline(), timeout=timeout_sec)
                 result_data.update(
                     {
                         "status": "DONE",
@@ -153,7 +157,7 @@ class SubAgentSpawnTool(BaseTool):
                 # 后台执行
                 async def _background():
                     try:
-                        result_text = await asyncio.wait_for(_run_inline(), timeout=args.timeout_seconds)
+                        result_text = await asyncio.wait_for(_run_inline(), timeout=timeout_sec)
                         result_data.update(
                             {
                                 "status": "DONE",
@@ -175,7 +179,7 @@ class SubAgentSpawnTool(BaseTool):
             result_data.update({"status": "FAILED", "error": "Timeout"})
             with open(_subagent_result_path(agent_id), "w", encoding="utf-8") as f:
                 json.dump(result_data, f, ensure_ascii=False, indent=2)
-            return ToolResult.error(f"⏰ SubAgent {agent_id} timed out after {args.timeout_seconds}s.")
+            return ToolResult.error(f"⏰ SubAgent {agent_id} timed out after {timeout_sec}s.")
         except Exception as e:
             result_data.update({"status": "FAILED", "error": str(e)})
             with open(_subagent_result_path(agent_id), "w", encoding="utf-8") as f:

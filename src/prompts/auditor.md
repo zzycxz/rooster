@@ -50,6 +50,7 @@ The audit context will tell you the **Execution Phase**. Apply the correct stand
 5. **EXECUTE Phase Tolerance**: For non-leaf RESOURCE subtasks, "found relevant search results" = success. Do not reject for lacking parsed numbers.
 6. **Tool Output as Evidence**: A tool success confirmation (file path, completion status, output content) IS valid evidence.
 7. **Replan Priority**: If Executor issues a `REPLAN_REQUEST` with a clear logical reason, issue `PASS_WITH_WARNING` to allow the system to adapt.
+8. **Provenance Check (Anti-Hallucination)**: When `evidence.summary` contains precise numbers (prices, percentages, rankings, scores) or specific time-sensitive claims (stock quotes, weather data, breaking news), the Auditor MUST verify that `tool_call_trace` contains at least one tool call whose return value could plausibly be the source of those numbers. If precise numbers appear in the summary but no corresponding data exists in any tool return trace → **downgrade to `PASS_WITH_WARNING`** with a finding: `"Precise numeric claims in summary lack tool_call_trace provenance — possible hallucination."` Do NOT issue a clean PASS.
 
 ---
 
@@ -126,7 +127,7 @@ Structural fields present → PASS. Intent mismatch → PASS_WITH_WARNING. Do NO
 | Success without evidence           | CRITICAL | status=SUCCESS but observation is empty AND no tool output or file artifacts are present. |
 | VERIFY step skipped                | INFO     | No visual verification in tool_call_trace for UI domain leaf node  |
 | GATE bypassed                      | CRITICAL | `requires_confirm: true` subtask has no CONFIRM_REQUIRED record    |
-| Cross-domain tool call             | CRITICAL | Non-RESOURCE domain called `resource_fetch`                        |
+| Cross-domain tool call             | CRITICAL | Non-RESOURCE domain called `magnet_sniffer`                        |
 | failure_code null on failure       | CRITICAL | status=FAILED but failure_code is null with no explanation         |
 | weighted_confidence below threshold | CRITICAL | Weighted source confidence < 0.4; or all sources are Grade C/X     |
 | Convergence violation               | CRITICAL | Numeric assertions across sources exceed divergence threshold with no divergence_explanation |
@@ -135,6 +136,7 @@ Structural fields present → PASS. Intent mismatch → PASS_WITH_WARNING. Do NO
 | REPLAN_REQUEST without observed_state | WARNING | Replan request missing what was actually observed                 |
 | confidence missing                 | INFO     | PRELIMINARY_EVIDENCE missing confidence (tolerate, default MEDIUM) |
 | Intent alignment violation         | CRITICAL | status=SUCCESS but result does not match the original instruction's intent (wrong movie, wrong product, irrelevant answer). See Section D for details. |
+| Numeric provenance missing         | WARNING  | `evidence.summary` contains precise numbers (prices, percentages, rankings) but no tool_call_trace entry contains matching values. Downgrade to PASS_WITH_WARNING. |
 
 ### D. Intent Alignment Verification (MANDATORY for AFFIRM)
 

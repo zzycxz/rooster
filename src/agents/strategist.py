@@ -357,7 +357,7 @@ class Strategist:
                                                             "requires_confirm": task_data.get(
                                                                 "requires_confirm", False
                                                             ),
-                                                            "timeout": task_data.get("timeout", 120),
+                                                            "timeout": task_data.get("timeout", settings.SUBTASK_MIN_TIMEOUT),
                                                             "owner": task_data.get("owner", "AGENT"),
                                                             "confidence": task_data.get("confidence", "HIGH"),
                                                             "risk_note": task_data.get("risk_note", ""),
@@ -412,7 +412,7 @@ class Strategist:
                                     "tool": t_obj.get("tool", "generic_tool"),
                                     "on_failure": t_obj.get("on_failure", "RETRY"),
                                     "requires_confirm": t_obj.get("requires_confirm", False),
-                                    "timeout": t_obj.get("timeout", 120),
+                                    "timeout": t_obj.get("timeout", settings.SUBTASK_MIN_TIMEOUT),
                                     "owner": t_obj.get("owner", "AGENT"),
                                     "confidence": t_obj.get("confidence", "HIGH"),
                                     "risk_note": t_obj.get("risk_note", ""),

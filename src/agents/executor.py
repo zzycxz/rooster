@@ -20,6 +20,7 @@ from utils.audit import audit_manager
 from utils.config import settings
 from memory.visual_context import VisualContextBuffer
 from models.vision_strategy import UIACache
+from utils.exceptions import EscalateSignal, AbortSignal
 
 executor_logger = logging.getLogger(__name__)
 
@@ -627,7 +628,7 @@ class AgentExecutor:
                                 f"[STUCK] Agent repeating identical tool calls "
                                 f"{_STUCK_THRESHOLD * _stuck_break_count} times. Forcing ESCALATE."
                             )
-                            raise Exception("__ESCALATE__: 智能体陷入死循环，连续重复调用相同工具失败，申请重规划。")
+                            raise EscalateSignal("智能体陷入死循环，连续重复调用相同工具失败，申请重规划。")
                         elif _stuck_break_count >= 2:
                             executor_logger.error(
                                 f"[STUCK] Agent repeating identical tool calls "

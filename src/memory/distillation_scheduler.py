@@ -52,6 +52,10 @@ class DistillationScheduler:
         self._running = False
         self._wake.set()
 
+    @property
+    def llm_client(self):
+        return self._llm_client
+
     async def distill_now(self, session_id: str) -> bool:
         """手动蒸馏单个 session。返回是否成功。"""
         session = self._session_store.get_session(session_id)

@@ -1,233 +1,676 @@
-import asyncio
+import os
+import json
 import logging
-import re
 import time
-import httpx
+import asyncio
+import re
 import urllib.request
 import urllib.parse
-from bs4 import BeautifulSoup
-from typing import List, Dict, Optional, Type
+from typing import Type, Dict, Optional
 from pydantic import BaseModel, Field
-from toolset.base import BaseTool
-from utils.browser.manager import BrowserManager, HTMLCleaner, ID_INJECTION_JS, html_to_markdown
+from bs4 import BeautifulSoup
+import httpx
 from utils.config import settings
+from utils.browser.manager import BrowserManager
+from toolset.base import BaseTool
 
-# --- Constants and utility functions ---
-# --- 常量与工具函数 ---
-# --- Parameter models ---
-# --- 参数模型 ---
+logger = logging.getLogger(__name__)
 
+class WebSearchArgs(BaseModel):
+    query: str = Field(description="The search query or topic to research.")
+    en_keywords: str = Field("", description="Optional English keywords for mixed-language optimization and local reranking.")
+    domain_filter: Optional[str] = Field(None, description="Optional domain constraint (e.g. 'github.com').")
+    time_range: Optional[str] = Field("any", description="Time range: 'day', 'week', 'month', 'year', 'any'.")
+    deep_research: bool = Field(False, description="Set True for deep iteration research (actively triggers Linkup).")
 
-class BrowserBaseArgs(BaseModel):
-    pass
+def get_exa_active() -> bool:
+    try:
+        path = getattr(settings, "SEARCH_STATUS_FILE", ".rooster/search_status.json")
+        if not os.path.exists(path): return True
+        with open(path, "r") as f:
+            data = json.load(f)
+            return data.get("exa_active", True)
+    except Exception:
+        return True
 
+def disable_exa():
+    try:
+        path = getattr(settings, "SEARCH_STATUS_FILE", ".rooster/search_status.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        data = {}
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                data = json.load(f)
+        data["exa_active"] = False
+        with open(path, "w") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
 
-class BrowserNavArgs(BaseModel):
-    url: str = Field(description="URL")
+_MONTHLY_QUOTA = 1000
 
+def _get_exa_usage() -> int:
+    try:
+        path = getattr(settings, "SEARCH_STATUS_FILE", ".rooster/search_status.json")
+        if not os.path.exists(path):
+            return 0
+        with open(path, "r") as f:
+            data = json.load(f)
+        return data.get("exa_monthly_usage", 0)
+    except Exception:
+        return 0
 
-class BrowserActionArgs(BaseModel):
-    index: int = Field(description="ID", default=0)
+def _increment_exa_usage():
+    try:
+        path = getattr(settings, "SEARCH_STATUS_FILE", ".rooster/search_status.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        data = {}
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                data = json.load(f)
+        data["exa_monthly_usage"] = data.get("exa_monthly_usage", 0) + 1
+        with open(path, "w") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
 
+def get_mcp_status() -> bool:
+    try:
+        path = getattr(settings, "SEARCH_STATUS_FILE", ".rooster/search_status.json")
+        if not os.path.exists(path):
+            return True
+        with open(path, "r") as f:
+            data = json.load(f)
+        return data.get("glm_plan_search_active", True)
+    except Exception:
+        return True
 
-class BrowserSearchArgs(BaseModel):
-    query: str = Field(description="The search query in your primary language (e.g., Chinese).")
-    en_keywords: str = Field(
-        description="Optional: Relevant English keywords for the query to help filter international results better.",
-        default="",
-    )
-
-
-class BrowserScrollArgs(BaseModel):
-    direction: str = Field(description="Dir", default="down")
-    amount: int = Field(description="Amount", default=800)
-
-
-class BrowserTypeArgs(BaseModel):
-    index: int = Field(description="The data-rooster-id of the input element to type into.")
-    text: str = Field(description="The text to type into the input field.")
-    clear: bool = Field(description="Whether to clear the field before typing.", default=True)
-
-
-class WebFetchArgs(BaseModel):
-    url: str = Field(description="The URL to fetch content from.")
-    prompt: str = Field(
-        description="A question or instruction about the page content. The fetched content will be summarized against this prompt."
-    )
-    mode: str = Field(description="Output mode: 'summary' (AI analyzed) or 'raw' (pruned markdown)", default="summary")
-
-
-class BatchWebFetchArgs(BaseModel):
-    urls: List[str] = Field(description="List of URLs to fetch concurrently (max 5).")
-    prompt: str = Field(
-        description="A question or instruction applied to ALL pages. Each page is summarized against this prompt."
-    )
-    mode: str = Field(description="Output mode: 'summary' (AI analyzed) or 'raw' (pruned markdown)", default="summary")
-
-
-class BrowserExtractLinksArgs(BaseModel):
-    keyword: str = Field(
-        description="Filter links by this keyword in their text or surrounding context (optional).", default=""
-    )
-
-
-class BrowserPaginationArgs(BaseModel):
-    pass
-
-
-# --- Tool definitions ---
-# --- 工具定义 ---
-
-
-class BrowserBaseTool(BaseTool):
-    async def _get_processed_content(self, page) -> str:
-        """读取、清理并截断页面内容，防止爆上下文"""
-        if page is None:
-            return "Error: Browser page is not initialized."
-        await page.evaluate(ID_INJECTION_JS, ["button", "a", "input", "select"])
-        html = await page.content()
-        cleaned = HTMLCleaner.clean(html)
-        # Dynamic truncation to align with context window quota
-        # 动态截断以对齐上下文窗口配额
-        from utils.config import settings
-
-        limit = settings.OBSERVATION_CHAR_LIMIT
-        return cleaned[:limit] + (f" ... [Content Truncated to {limit}]" if len(cleaned) > limit else "")
-
-
-class BrowserNavTool(BrowserBaseTool):
-    name: str = "browser_nav"
-    kit: str = "Browser"
-    description: str = "导航到 URL。"
-    domain: str = "recon"
-    args_schema: Type[BaseModel] = BrowserNavArgs
-
-    async def run(self, **kwargs) -> str:
-        url = kwargs.get("url")
-        if not url:
-            return "Error: Missing 'url'."
-        manager = await BrowserManager.get_instance()
-        page = await manager.get_page()
-        try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            return await self._get_processed_content(page)
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-
-class BrowserReadTool(BrowserBaseTool):
-    name: str = "browser_read"
-    kit: str = "Browser"
-    description: str = "读取当前页面内容。"
-    domain: str = "recon"
-    fc_hidden: bool = True  # [Round 9] browser_nav/browser_click/browser_scroll 已返回页面内容，此工具对 LLM 冗余
-    args_schema: Type[BaseModel] = BrowserBaseArgs
-
-    async def run(self, **kwargs) -> str:
-        manager = await BrowserManager.get_instance()
-        page = await manager.get_page()
-        return await self._get_processed_content(page)
-
-
-class BrowserClickTool(BrowserBaseTool):
-    name: str = "browser_click"
-    kit: str = "Browser"
-    fc_hidden: bool = True  # [Round 10] Use browser_act(action="click", index=...) instead
-    description: str = "点击。输入 ID。"
-    domain: str = "recon"
-    args_schema: Type[BaseModel] = BrowserActionArgs
-
-    async def run(self, **kwargs) -> str:
-        manager = await BrowserManager.get_instance()
-        page = await manager.get_page()
-        index = kwargs.get("index", 0)
-        element = page.locator(f'[data-rooster-id="{index}"]')
-        if await element.count() == 0:
-            await page.evaluate(ID_INJECTION_JS, ["button", "a"])
-        await element.scroll_into_view_if_needed()
-        await element.click(timeout=10000)
-        await asyncio.sleep(1.5)
-        return await self._get_processed_content(page)
-
-
-class BrowserTypeTool(BrowserBaseTool):
-    name: str = "browser_type"
-    kit: str = "Browser"
-    fc_hidden: bool = True  # [Round 10] Use browser_act(action="type", index=..., text=...) instead
-    description: str = (
-        "在浏览器输入框中输入文字。通过 data-rooster-id 定位输入框，"
-        "支持先清空再输入。适用于表单填写、搜索框输入等场景。"
-    )
-    domain: str = "recon"
-    args_schema: Type[BaseModel] = BrowserTypeArgs
-
-    async def run(self, **kwargs) -> str:
-        manager = await BrowserManager.get_instance()
-        page = await manager.get_page()
-        index = kwargs.get("index", 0)
-        text = kwargs.get("text", "")
-        clear = kwargs.get("clear", True)
-
-        if not text:
-            return "Error: Missing 'text'."
-
-        element = page.locator(f'[data-rooster-id="{index}"]')
-        if await element.count() == 0:
-            # Inject IDs and retry
-            # 注入 ID 后重试
-            await page.evaluate(ID_INJECTION_JS, ["input", "textarea", "select"])
-            element = page.locator(f'[data-rooster-id="{index}"]')
-            if await element.count() == 0:
-                return f"Error: Element with data-rooster-id={index} not found."
-
-        try:
-            await element.scroll_into_view_if_needed()
-            if clear:
-                await element.fill("")
-            await element.fill(text)
-            await asyncio.sleep(0.5)
-            return f"Successfully typed '{text}' into element {index}.\n" + await self._get_processed_content(page)
-        except Exception:
-            # When fill fails, fall back to per-keystroke input
-            # fill 失败时降级为逐字符输入
-            try:
-                if clear:
-                    await element.press("Control+a")
-                    await element.press("Backspace")
-                await element.type(text, delay=50)
-                await asyncio.sleep(0.5)
-                return f"Typed '{text}' into element {index} (keystroke mode).\n" + await self._get_processed_content(
-                    page
-                )
-            except Exception as e2:
-                return f"Error typing into element {index}: {str(e2)}"
-
+def set_mcp_status(active: bool):
+    try:
+        path = getattr(settings, "SEARCH_STATUS_FILE", ".rooster/search_status.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        data = {}
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                data = json.load(f)
+        data["glm_plan_search_active"] = active
+        with open(path, "w") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
 
 class WebSearchTool(BaseTool):
     name: str = "web_search"
-    kit: str = "Browser"
-    fc_hidden: bool = False  # executor prompt 首选 web_search，必须在 FC 中可用
+    kit: str = "System"
+    fc_hidden: bool = False
     description: str = (
-        "Search the web. Returns results with titles, URLs, and brief snippets. "
-        "Use this tool when you need to find information, look up facts, or discover URLs. "
-        "This is the FIRST choice for any research task. "
-        "To read the full content of a search result, use web_fetch with the URL."
+        "Primary search tool with 5-tier dynamic fallback. "
+        "Use domain_filter only if strictly requested by the user."
     )
     domain: str = "recon"
-    args_schema: Type[BaseModel] = BrowserSearchArgs
+    args_schema: Type[BaseModel] = WebSearchArgs
 
-    # Static session-level sliding window circuit breaker state machine
-    # 静态会话级滑动窗口熔断器状态机
+    _search_cache: Dict[str, tuple] = {}
     _circuit_breaker: Dict[str, dict] = {
         "Tavily": {"failures": 0, "status": "PENDING"},
         "SearXNG": {"failures": 0, "status": "PENDING"},
     }
     _SEARXNG_COOLDOWN: float = 120.0
-
-    # Search result cache (supports async LLM rerank background warm-write)
-    # 搜索结果缓存 (支持异步大模型 Rerank 后台温热写入)
-    _search_cache: Dict[str, tuple] = {}
     _SEARCH_CACHE_TTL: int = 600  # 10 分钟
+
+    def _check_exa_quota(self) -> bool:
+        return get_exa_active()
+        
+    def _mark_exa_exhausted(self):
+        disable_exa()
+
+    async def _fallback(self, query: str) -> str:
+        """Linkup 降级入口：返回错误字符串触发 run() 中的下一级降级"""
+        return "Error: Linkup fallback requested."
+
+    async def _fallback_to_common_search(self, query: str) -> str:
+        """GLM 降级入口：返回错误字符串触发 run() 中的 7 路并发兜底"""
+        return "Error: GLM fallback to common search requested."
+
+    def _is_valid_result(self, res: str) -> bool:
+        if not res or len(res.strip()) == 0:
+            return False
+        error_signatures = ["Error:", "HTTP 401", "HTTP 429", "Authentication failed"]
+        if any(sig in res for sig in error_signatures):
+            return False
+        return True
+
+    async def run(self, **kwargs) -> str:
+        query = kwargs.get("query")
+        en_keywords = kwargs.get("en_keywords", "")
+        deep_research = kwargs.get("deep_research", False)
+        
+        if not query:
+            return "Error: No search query provided."
+
+        # Tier 1: Linkup
+        if deep_research and os.getenv("LINKUP_KEY"):
+            try:
+                res = await self._run_linkup(kwargs)
+                if self._is_valid_result(res): return res
+            except asyncio.TimeoutError:
+                logger.warning("[WebSearch] Linkup timeout.")
+            except Exception as e:
+                logger.warning(f"[WebSearch] Linkup failed: {e}")
+
+        # Tier 2: Exa
+        if os.getenv("EXA_KEY") and self._check_exa_quota():
+            try:
+                res = await self._run_exa(kwargs)
+                if self._is_valid_result(res): return res
+            except asyncio.TimeoutError:
+                logger.warning("[WebSearch] Exa timeout.")
+            except Exception as e:
+                if "429" in str(e) or "quota" in str(e).lower():
+                    self._mark_exa_exhausted()
+                logger.warning(f"[WebSearch] Exa failed: {e}")
+
+        # Tier 3: GLM
+        if os.getenv("ZHIPU_KEY"):
+            try:
+                res = await self._run_glm(kwargs)
+                if self._is_valid_result(res): return res
+            except Exception as e:
+                logger.warning(f"[WebSearch] GLM search failed: {e}")
+
+        # Tier 4 & 5: 7路并发兜底
+        try:
+            return await self._seven_lane_search(query, en_keywords)
+        except Exception as e:
+            logger.error(f"[WebSearch] 7-lane fallback crashed: {e}")
+            return f"搜索系统异常: {e}"
+
+    async def _run_linkup(self, kwargs: dict) -> str:
+        query = kwargs.get("query")
+        if not query:
+            return "Error: No search query provided."
+
+        api_key = os.getenv("LINKUP_KEY", "")
+        if not api_key:
+            return "Error: LINKUP_KEY is not set. Add it to .env.local to enable Linkup search."
+
+        depth = kwargs.get("depth", "standard")
+        output_type = kwargs.get("output_type", "searchResults")
+        max_results = min(max(kwargs.get("max_results", 5), 1), 10)
+        include_domains = kwargs.get("include_domains")
+        exclude_domains = kwargs.get("exclude_domains")
+        from_date = kwargs.get("from_date")
+        to_date = kwargs.get("to_date")
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "q": query,
+            "depth": depth,
+            "outputType": output_type,
+            "maxResults": max_results,
+        }
+
+        if include_domains:
+            payload["includeDomains"] = [d.strip() for d in include_domains.split(",")]
+        if exclude_domains:
+            payload["excludeDomains"] = [d.strip() for d in exclude_domains.split(",")]
+        if from_date:
+            payload["fromDate"] = from_date
+        if to_date:
+            payload["toDate"] = to_date
+
+        try:
+            timeout = 30.0 if depth == "deep" else 15.0
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(
+                    "https://api.linkup.so/v1/search",
+                    headers=headers,
+                    json=payload,
+                )
+
+                if resp.status_code == 401:
+                    return "Error: Invalid LINKUP_KEY. Please check your API key."
+                if resp.status_code == 429:
+                    logger.warning("[LinkupSearch] Rate limited (429), falling back.")
+                    return await self._fallback(query)
+                if resp.status_code != 200:
+                    err_text = resp.text[:300]
+                    logger.error(f"[LinkupSearch] HTTP {resp.status_code}: {err_text}")
+                    return await self._fallback(query)
+
+                data = resp.json()
+
+                # sourcedAnswer mode: return the answer with sources
+                if output_type == "sourcedAnswer":
+                    answer = data.get("answer", "")
+                    sources = data.get("sources", [])
+                    if not answer and not sources:
+                        return await self._fallback(query)
+
+                    parts = []
+                    if answer:
+                        parts.append(answer)
+                    if sources:
+                        parts.append("\n**Sources:**")
+                        for i, s in enumerate(sources, 1):
+                            name = s.get("name", "Untitled")
+                            url = s.get("url", "")
+                            snippet = s.get("snippet", "")
+                            entry = f"[{i}] [{name}]({url})"
+                            if snippet:
+                                entry += f"\n   {snippet[:200]}"
+                            parts.append(entry)
+
+                    logger.info(f"[LinkupSearch] sourcedAnswer success. Sources: {len(sources)}")
+                    return "\n".join(parts) if parts else await self._fallback(query)
+
+                # searchResults mode: return structured links
+                results = data.get("results", [])
+                if not results:
+                    return await self._fallback(query)
+
+                logger.info(f"[LinkupSearch] Success ({len(results)} results, depth={depth})")
+
+                items = []
+                for i, r in enumerate(results, 1):
+                    name = r.get("name", "Untitled")
+                    url = r.get("url", "")
+                    content = r.get("content", "")
+
+                    if content:
+                        entry = f"- {name}\n  {url}\n  {content}"
+                    else:
+                        entry = f"- {name}\n  {url}"
+                    items.append(entry)
+
+                return f"Search results for: {query}\n\n" + "\n\n".join(items)
+
+        except httpx.RequestError as e:
+            logger.error(f"[LinkupSearch] Network error: {e}")
+            return await self._fallback(query)
+        except Exception as e:
+            logger.error(f"[LinkupSearch] Error: {e}")
+            return await self._fallback(query)
+
+    async def _run_exa(self, kwargs: dict) -> str:
+        query = kwargs.get("query")
+        if not query:
+            return "Error: No search query provided."
+
+        api_key = os.getenv("EXA_KEY", "")
+        if not api_key:
+            logger.info("[ExaSearch] EXA_KEY not set, falling back.")
+            return "Error: Quota exhausted or fallback requested."
+
+        if not get_exa_active():
+            logger.warning("[ExaSearch] Monthly quota exhausted, falling back to GLM/web search.")
+            return "Error: Quota exhausted or fallback requested."
+
+        num_results = min(max(int(kwargs.get("num_results", 5)), 1), 10)
+        use_autoprompt = kwargs.get("use_autoprompt", True)
+        search_type = kwargs.get("type", "auto")
+        category = kwargs.get("category")
+        start_published_date = kwargs.get("start_published_date")
+        include_domains = kwargs.get("include_domains")
+        exclude_domains = kwargs.get("exclude_domains")
+
+        headers = {
+            "x-api-key": api_key,
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "query": query,
+            "numResults": num_results,
+            "type": search_type,
+            "useAutoprompt": use_autoprompt,
+            "contents": {
+                "text": {"maxCharacters": 3000},
+                "summary": {"maxCharacters": 500},
+            },
+        }
+
+        if category:
+            payload["category"] = category
+        if start_published_date:
+            payload["startPublishedDate"] = start_published_date
+        if include_domains:
+            payload["includeDomains"] = [d.strip() for d in include_domains.split(",")]
+        if exclude_domains:
+            payload["excludeDomains"] = [d.strip() for d in exclude_domains.split(",")]
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    "https://api.exa.ai/search",
+                    headers=headers,
+                    json=payload,
+                )
+
+                if resp.status_code == 401:
+                    logger.warning("[ExaSearch] Invalid EXA_KEY (401), falling back.")
+                    return "Error: Quota exhausted or fallback requested."
+                if resp.status_code == 429:
+                    logger.warning("[ExaSearch] Rate limited (429), falling back.")
+                    return "Error: Quota exhausted or fallback requested."
+                if resp.status_code != 200:
+                    err_text = resp.text[:300]
+                    logger.error(f"[ExaSearch] HTTP {resp.status_code}: {err_text}")
+                    return "Error: Quota exhausted or fallback requested."
+
+                data = resp.json()
+                results = data.get("results", [])
+                if not results:
+                    logger.info("[ExaSearch] No results from Exa, trying fallback.")
+                    return "Error: Quota exhausted or fallback requested."
+
+                _increment_exa_usage()
+                usage = _get_exa_usage()
+                logger.info(f"[ExaSearch] Success ({len(results)} results). Monthly usage: {usage}/{_MONTHLY_QUOTA}")
+
+                items = []
+                for i, r in enumerate(results, 1):
+                    title = r.get("title", "Untitled")
+                    url = r.get("url", "")
+                    summary = r.get("summary", "")
+                    text = r.get("text", "")
+                    published = r.get("publishedDate", "")
+
+                    # 优先用 summary，再用 text 全文（调研报告需要充实内容）
+                    content = summary or text or ""
+                    parts = [f"- {title}\n  {url}"]
+                    if published:
+                        parts.append(f"  Date: {published[:10]}")
+                    if content:
+                        parts.append(f"  {content}")
+                    items.append("\n".join(parts))
+
+                header = f"Search results for: {query}"
+                if usage > _MONTHLY_QUOTA * 0.8:
+                    header += f"  (Exa monthly usage: {usage}/{_MONTHLY_QUOTA})"
+                return header + "\n\n" + "\n\n".join(items)
+
+        except httpx.RequestError as e:
+            logger.error(f"[ExaSearch] Network error: {repr(e)}")
+            return "Error: Quota exhausted or fallback requested."
+        except Exception as e:
+            logger.error(f"[ExaSearch] Error: {repr(e)}")
+            return "Error: Quota exhausted or fallback requested."
+
+    async def _run_glm(self, kwargs: dict) -> str:
+        query = kwargs.get("query")
+        if not query:
+            return "Error: No search query provided."
+
+        domain_filter = kwargs.get("domain_filter")
+        recency_filter = kwargs.get("recency_filter", "noLimit")
+        content_size = kwargs.get("content_size", "medium")
+
+        # ----------------- 1. Pre-flight quota self-check -----------------
+        # ----------------- 🎯 1. 运行前状态自检 (Pre-flight Quota Check) -----------------
+        if not get_mcp_status():
+            logger.warning(
+                "⚠️ [GLMPlanSearch] Previously marked as [quota exceeded/billing issue], triggering pre-healing route, seamlessly downgrading to standard polling search..."
+            )
+            logger.warning(
+                "⚠️ [GLMPlanSearch] 探测到先前已标记为【额度超限/欠费】，触发预先自愈路由，无缝降级至普通轮询搜索..."
+            )
+            return await self._fallback_to_common_search(query)
+
+        # Prefer ZHIPU_MCP_SEARCH_KEY; fall back to global ZHIPU_KEY if absent
+        # 优先读取 ZHIPU_MCP_SEARCH_KEY，如无则回退使用全局 ZHIPU_KEY
+        api_key = os.getenv("ZHIPU_MCP_SEARCH_KEY") or os.getenv("ZHIPU_KEY")
+        if not api_key:
+            return (
+                "Error: Zhipu API Key is not set.\n"
+                "Please configure 'ZHIPU_MCP_SEARCH_KEY' or 'ZHIPU_KEY' in your '.env.local' file."
+            )
+
+        # Strip possible Bearer prefix or whitespace to ensure clean credentials
+        # 剥离可能存在的 Bearer 前缀或空格，确保证书纯净
+        api_key = api_key.strip()
+        if api_key.lower().startswith("bearer "):
+            api_key = api_key[7:].strip()
+
+        # Assemble global auth headers for both SSE and POST paths
+        # 组装全局鉴权头与流式要求头，确保 SSE 和 POST 双路鉴权彻底打通
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+
+        # Establish MCP SSE long connection and subscribe to get the dedicated sessionId POST endpoint
+        # 建立标准的 MCP SSE 长连接，订阅并获取专属的 sessionId POST 端点
+        sse_url = f"https://open.bigmodel.cn/api/mcp/web_search_prime/sse?Authorization={api_key}"
+        post_url = None
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                async with client.stream("GET", sse_url, headers=headers) as response:
+                    if response.status_code != 200:
+                        # 401/403 errors usually indicate credential or quota issues; trigger mark & downgrade
+                        # 401/403 异常，往往是证书或额度问题，触发标记降级
+                        if response.status_code in (401, 403, 429):
+                            logger.error(
+                                f"❌ [GLMPlanSearch] SSE handshake failed (HTTP {response.status_code}). Marking and downgrading to standard search..."
+                            )
+                            logger.error(
+                                f"❌ [GLMPlanSearch] SSE 握手响应失败 (HTTP {response.status_code})。做好标记并降级切换普通搜索..."
+                            )
+                            set_mcp_status(False)
+                            return await self._fallback_to_common_search(query)
+                        return f"Error: Failed to handshake with Zhipu MCP SSE server: {response.status_code}"
+
+                    done_handshake = asyncio.Event()
+                    output_chunks = []
+                    error_container = []
+
+                    # Declare a single-lifetime aiter_text() stream reading task
+                    # 声明单一、唯一生命周期的 aiter_text() 流读取任务
+                    async def read_stream():
+                        nonlocal post_url
+                        buffer = ""
+                        try:
+                            # Pure text append channel until stream naturally closes
+                            # 100% 物理必然通畅的纯文本追加通道，直到流自然关闭
+                            async for chunk in response.aiter_text():
+                                output_chunks.append(chunk)
+                                buffer += chunk
+
+                                # Sniff and capture POST endpoint
+                                # 嗅探并捕获 POST endpoint
+                                if not post_url:
+                                    for line in buffer.splitlines():
+                                        line = line.strip()
+                                        if line.startswith("data:"):
+                                            endpoint_path = line[5:].strip()
+                                            post_url = f"https://open.bigmodel.cn{endpoint_path}"
+                                            done_handshake.set()
+                                            break
+                        except Exception as e:
+                            error_container.append(f"Stream reading error: {e}")
+                        finally:
+                            done_handshake.set()  # Fallback to prevent deadlock
+                            done_handshake.set()  # 兜底防止死锁
+
+                    # Start background stream reading task
+                    # 启动后台流监听 Task
+                    read_task = asyncio.create_task(read_stream())
+
+                    # 等待握手完成以捕获 POST 路径，加入 10 秒超时防护
+                    try:
+                        await asyncio.wait_for(done_handshake.wait(), timeout=10.0)
+                    except asyncio.TimeoutError:
+                        read_task.cancel()
+                        try:
+                            await read_task
+                        except asyncio.CancelledError:
+                            pass
+                        return "Error: Handshake timeout waiting for Zhipu MCP SSE endpoint."
+
+                    if not post_url:
+                        read_task.cancel()
+                        try:
+                            await read_task
+                        except asyncio.CancelledError:
+                            pass
+                        return f"Error: Failed to obtain valid session post endpoint. Details: {os.linesep.join(error_container)}"
+
+                    # Assemble parameters for POST delivery, strip any redundant undefined params
+                    # 组装参数并准备投递 POST，清洗一切冗余未定义参数
+                    arguments = {"search_query": query}
+                    if recency_filter and recency_filter != "noLimit":
+                        arguments["search_recency_filter"] = recency_filter
+                    if domain_filter:
+                        arguments["search_domain_filter"] = domain_filter
+                    if content_size and content_size != "medium":
+                        arguments["content_size"] = content_size
+
+                    payload = {
+                        "jsonrpc": "2.0",
+                        "method": "tools/call",
+                        "params": {"name": "web_search_prime", "arguments": arguments},
+                        "id": 1,
+                    }
+
+                    # ----------------- 2. Network delivery and response check (POST Send Check) -----------------
+                    # ----------------- 🎯 2. 网络投递与响应检测 (POST Send Check) -----------------
+                    try:
+                        async with httpx.AsyncClient(timeout=15.0) as client_post:
+                            post_resp = await client_post.post(post_url, headers=headers, json=payload)
+                            if post_resp.status_code not in (200, 202):
+                                set_mcp_status(False)
+                                logger.error(
+                                    f"[GLMPlanSearch] POST delivery failed (HTTP {post_resp.status_code}). Falling back..."
+                                )
+                                read_task.cancel()
+                                try:
+                                    await read_task
+                                except asyncio.CancelledError:
+                                    pass
+                                return await self._fallback_to_common_search(query)
+                    except Exception as post_err:
+                        error_container.append(f"Failed to post tools/call request: {post_err}")
+
+                    # If POST raised a network-level exception, cancel stream and return error
+                    if error_container:
+                        read_task.cancel()
+                        try:
+                            await read_task
+                        except asyncio.CancelledError:
+                            pass
+                        return "\n".join(error_container)
+
+                    # If POST succeeded, wait for background read_task to finish (max 20s timeout)
+                    # 若 POST 成功，平和地等待后台 read_task 自然读到流尽头（或者最大 20 秒超时）
+                    try:
+                        await asyncio.wait_for(read_task, timeout=20.0)
+                    except asyncio.TimeoutError:
+                        # On timeout, try to salvage received data instead of reporting error
+                        # 超时也尝试去抢救已接收数据，这里不直接报错
+                        pass
+
+                    # ----------------- 3. In-stream deep feature matching and parsing -----------------
+                    # ----------------- 🎯 3. 运行中事件流深度特征匹配与解析 -----------------
+                    full_text = "".join(output_chunks)
+
+                    # Check raw data for specific errors (detect quota exhaustion patterns)
+                    # 首先检测返回的原始数据中是否包含特定报错（捕获 Quota 耗尽特征）
+                    for line in full_text.splitlines():
+                        line = line.strip()
+                        if line.startswith("data:") and "/message?sessionId=" not in line:
+                            json_str = line[5:].strip()
+                            try:
+                                resp_data = json.loads(json_str)
+                                if "error" in resp_data:
+                                    err_msg = resp_data["error"].get("message", resp_data["error"])
+                                    err_lower = str(err_msg).lower()
+                                    # Smart intercept quota insufficient, rate-limit and other error keywords
+                                    # 智能拦截额度不足、频控等报错关键字
+                                    if any(
+                                        k in err_lower
+                                        for k in [
+                                            "quota",
+                                            "limit",
+                                            "insufficient",
+                                            "credit",
+                                            "balance",
+                                            "key not found",
+                                            "unauthorized",
+                                        ]
+                                    ):
+                                        logger.error(
+                                            f"❌ [GLMPlanSearch] Detected Zhipu MCP quota exhaustion or auth anomaly: '{err_msg}'. Marking invalid and downgrading to standard search..."
+                                        )
+                                        logger.error(
+                                            f"❌ [GLMPlanSearch] 探测到智谱 MCP 额度耗尽或授权异常: '{err_msg}'。标记失效并降级切换普通搜索..."
+                                        )
+                                        set_mcp_status(False)
+                                        return await self._fallback_to_common_search(query)
+                            except Exception:
+                                pass
+
+                    # Regex rescue for webpage metadata extraction and rendering
+                    # 物理正则抢救网页元数据并渲染
+                    pattern = re.compile(
+                        r'\\*"title\\*"\s*:\s*\\*"([^"]+?)\\*"\s*,\s*\\*"link\\*"\s*:\s*\\*"([^"]+?)\\*"\s*,\s*\\*"content\\*"\s*:\s*\\*"([^"]+?)\\*"'
+                    )
+                    matches = pattern.findall(full_text)
+
+                    markdown_items = []
+                    for idx, (title, link, content) in enumerate(matches, 1):
+                        title = title.replace('\\"', '"').replace("\\/", "/").replace("\\\\", "\\")
+                        link = link.replace('\\"', '"').replace("\\/", "/").replace("\\\\", "\\")
+                        content = content.replace('\\"', '"').replace("\\/", "/").replace("\\\\", "\\")
+
+                        markdown_items.append(f"- {title}\n  {link}\n  {content}")
+
+                    if markdown_items:
+                        return "\n\n".join(markdown_items)
+
+                    # Fallback: try standard JSON parsing
+                    # 回退尝试普通 JSON 解析
+                    output_texts = []
+                    for line in full_text.splitlines():
+                        line = line.strip()
+                        if line.startswith("data:") and "/message?sessionId=" not in line:
+                            json_str = line[5:].strip()
+                            try:
+                                resp_data = json.loads(json_str)
+                                result = resp_data.get("result", {})
+                                for item in result.get("content", []):
+                                    if item.get("type") == "text":
+                                        output_texts.append(item.get("text", ""))
+                            except Exception:
+                                pass
+
+                    if output_texts:
+                        return "\n\n".join(output_texts)
+
+                    # ----------------- 4. Timeout or no-result self-healing downgrade -----------------
+                    # ----------------- 🎯 4. 超时或无结果自愈降级 -----------------
+                    # If no valid search results found (e.g. network black swan), downgrade to standard search
+                    # 如果走到这里还没有拿到任何有效搜索结果（例如发生网络黑天鹅事件导致无返回），
+                    # 我们不要给用户返回冷冰冰的 "No search results"，而是直接降级跑普通搜索，提供 100% 极致体验！
+                    logger.warning(
+                        "⚠️ [GLMPlanSearch] No valid search results from stream, triggering self-healing fallback to standard search..."
+                    )
+                    logger.warning("⚠️ [GLMPlanSearch] 未能在流中获取到有效搜索结果，触发自愈兜底普通搜索...")
+                    return await self._fallback_to_common_search(query)
+
+        except httpx.RequestError as exc:
+            logger.error(f"🌩️ [GLMPlanSearch] Network error: {exc}. Attempting downgrade to standard search...")
+            logger.error(f"🌩️ [GLMPlanSearch] 网络异常: {exc}。尝试降级切换普通搜索...")
+            return await self._fallback_to_common_search(query)
+        except Exception as e:
+            logger.error(f"❌ [GLMPlanSearch] Unknown runtime error: {e}. Attempting downgrade to standard search...")
+            logger.error(f"❌ [GLMPlanSearch] 运行未知异常: {e}。尝试降级切换普通搜索...")
+            return await self._fallback_to_common_search(query)
 
     def _preflight_check(self, name: str, key_val: str) -> bool:
         """零配置空值自动感知与激活判定"""
@@ -259,24 +702,6 @@ class WebSearchTool(BaseTool):
                     f"当前会话已停用该通道，自动降级至 0-Key 免密 HTML 赛道。"
                 )
 
-    async def run(self, **kwargs) -> str:
-        query = kwargs.get("query")
-        en_keywords = kwargs.get("en_keywords", "")
-        if not query:
-            return "Error: No query provided."
-
-        # 串行优先走 Exa 降级链，失败再走 7 路并发
-        try:
-            from toolset.definitions.exa_search import ExaSearchTool
-
-            exa = ExaSearchTool()
-            exa_result = await exa.run(query=query)
-            if exa_result and not exa_result.startswith("Error:"):
-                return exa_result
-        except Exception as e:
-            logging.debug(f"[web_search] Exa chain failed, falling back to 7-lane: {e}")
-
-        return await self._seven_lane_search(query, en_keywords)
 
     async def _seven_lane_search(self, query: str, en_keywords: str) -> str:
         """7 路并发搜索逻辑"""
@@ -899,395 +1324,3 @@ class WebSearchTool(BaseTool):
         except Exception:
             return []
 
-
-class BrowserScrollTool(BrowserBaseTool):
-    name: str = "browser_scroll"
-    kit: str = "Browser"
-    fc_hidden: bool = True  # [Round 10] Use browser_act(action="scroll", direction=..., amount=...) instead
-    description: str = "滚动。"
-    domain: str = "recon"
-    args_schema: Type[BaseModel] = BrowserScrollArgs
-
-    async def run(self, **kwargs) -> str:
-        manager = await BrowserManager.get_instance()
-        page = await manager.get_page()
-        px = kwargs.get("amount", 800) if kwargs.get("direction", "down") == "down" else -kwargs.get("amount", 800)
-        await page.mouse.wheel(0, px)
-        await asyncio.sleep(0.5)
-        return await self._get_processed_content(page)
-
-
-class WebFetchTool(BaseTool):
-    name: str = "web_fetch"
-    kit: str = "Browser"
-    description: str = (
-        "Fetch a web page and extract information using a prompt. "
-        "Downloads the page, converts HTML to clean Markdown, then uses a fast AI model "
-        "to summarize or answer questions about the content. Results cached 15 minutes. "
-        "Use this to READ web page content (e.g. articles, documentation, GitHub pages). "
-        "Do NOT use this for file downloads — use download_file or multimedia_download instead."
-    )
-    domain: str = "recon"
-    args_schema: Type[BaseModel] = WebFetchArgs
-
-    _cache: Dict[str, tuple] = {}
-    _CACHE_TTL: int = 900  # 15 minutes
-    _CACHE_MAX_SIZE: int = 200  # 缓存上限
-
-    async def run(self, **kwargs) -> str:
-        url = kwargs.get("url")
-        prompt = kwargs.get("prompt")
-        mode = kwargs.get("mode", "summary")
-
-        if not url or not prompt:
-            return "Error: Both 'url' and 'prompt' are required."
-
-        # Check cache
-        cache_key = f"{url}::{prompt}::{mode}"
-        now = time.time()
-        if cache_key in self.__class__._cache:
-            cached_result, cached_time = self.__class__._cache[cache_key]
-            if now - cached_time < self.__class__._CACHE_TTL:
-                logging.info(f"📦 web_fetch cache hit: {url}")
-                return cached_result
-
-        # Step 1: Smart Fetch
-        try:
-            manager = await BrowserManager.get_instance()
-            raw_html, fetch_method = await manager.smart_fetch(url)
-            logging.info(f"🌐 [WebFetch] Fetched {url} via {fetch_method}")
-        except Exception as e:
-            return f"Error fetching URL: {str(e)}"
-
-        # Step 2: Smart content extraction pipeline (PruningContentFilter + Table + Citation)
-        # Step 2: 智能内容提取管线 (PruningContentFilter + Table + Citation)
-        from utils.browser.manager import semantic_prune_markdown
-        from utils.browser.pruner import MarkdownPruner
-
-        # First extract scent links from raw HTML (all links)
-        # 先从原始 HTML 中提取 scent links（全量链接）
-        full_soup = BeautifulSoup(raw_html, "html.parser")
-        all_links_md = []
-        for a in full_soup.find_all("a", href=True):
-            text = a.get_text(strip=True)
-            url = a["href"]
-            if text and url.startswith("http"):
-                all_links_md.append(f"[{text}]({url})")
-        scent_links = MarkdownPruner.extract_scent_links("\n".join(all_links_md))
-
-        # New pipeline: PruningContentFilter → Table → markdownify → Citation
-        # 新管线：PruningContentFilter → Table → markdownify → Citation
-        markdown_content = html_to_markdown(raw_html)
-        pruned_content = semantic_prune_markdown(markdown_content)
-
-        # Step 3: Actionable Output
-        if mode == "raw":
-            result = f"### [RAW CONTENT] {url}\n\n{pruned_content}"
-            if scent_links:
-                result += "\n\n### 🔮 Recommended Next Hits\n" + "\n".join(scent_links)
-            return result
-
-        # Mode summary
-        try:
-            from agents.llm_client import LLMClient
-
-            llm = LLMClient(provider=settings.FAST_MODEL_PROVIDER, model=settings.FAST_MODEL_NAME, lightweight=True)
-
-            messages = [
-                {
-                    "role": "system",
-                    "content": "You are a precise web information extractor. Answer based ONLY on the content. Be concise.",
-                },
-                {"role": "user", "content": f"Content from {url}:\n\n{pruned_content}\n\nQuestion: {prompt}"},
-            ]
-
-            response = await asyncio.wait_for(
-                llm.chat_non_stream(messages),
-                timeout=getattr(settings, "LLM_CALL_TIMEOUT", 120.0),
-            )
-            result = response.content
-
-            if scent_links:
-                result += "\n\n### 🔮 Recommended Next Hits\n" + "\n".join(scent_links)
-
-            # Cache
-            self.__class__._cache[cache_key] = (result, now)
-            self._prune_cache()
-            return result
-
-        except Exception as e:
-            logging.error(f"web_fetch summarize failed: {e}")
-            return f"Note: Summarization failed. Pruned content:\n{pruned_content[:3000]}"
-
-    def _prune_cache(self):
-        """Remove expired entries and enforce size cap."""
-        now = time.time()
-        # Remove expired entries
-        # 删除过期条目
-        stale_keys = [k for k, (_, t) in self.__class__._cache.items() if now - t > self.__class__._CACHE_TTL]
-        for k in stale_keys:
-            del self.__class__._cache[k]
-        # When over limit, remove oldest entries
-        # 超出上限时删除最旧的条目
-        if len(self.__class__._cache) > self.__class__._CACHE_MAX_SIZE:
-            sorted_keys = sorted(self.__class__._cache.keys(), key=lambda k: self.__class__._cache[k][1])
-            for k in sorted_keys[: len(self.__class__._cache) - self.__class__._CACHE_MAX_SIZE]:
-                del self.__class__._cache[k]
-
-
-class BatchWebFetchTool(BaseTool):
-    """并发获取多个 URL — 最多 5 个，共享同一个 prompt"""
-
-    name: str = "batch_web_fetch"
-    kit: str = "Browser"
-    description: str = (
-        "Fetch multiple web pages concurrently (max 5 URLs) and summarize each against the same prompt. "
-        "Use this instead of calling web_fetch multiple times when you need to compare or extract info from several pages. "
-        "Much faster than sequential web_fetch calls."
-    )
-    domain: str = "recon"
-    args_schema: Type[BaseModel] = BatchWebFetchArgs
-
-    _MAX_CONCURRENCY: int = 3
-
-    async def run(self, **kwargs) -> str:
-        urls = kwargs.get("urls", [])
-        prompt = kwargs.get("prompt", "")
-        mode = kwargs.get("mode", "summary")
-
-        if not urls:
-            return "Error: 'urls' list is required."
-        if not prompt:
-            return "Error: 'prompt' is required."
-
-        urls = urls[:5]  # 硬上限 5 个
-
-        # Reuse WebFetchTool instance (shared cache)
-        # 复用 WebFetchTool 实例（共享缓存）
-        fetch_tool = WebFetchTool()
-        semaphore = asyncio.Semaphore(self._MAX_CONCURRENCY)
-
-        async def fetch_one(url: str, idx: int) -> str:
-            async with semaphore:
-                try:
-                    result = await fetch_tool.run(url=url, prompt=prompt, mode=mode)
-                    return f"### [{idx + 1}/{len(urls)}] {url}\n\n{result}"
-                except Exception as e:
-                    return f"### [{idx + 1}/{len(urls)}] {url}\n\nError: {e}"
-
-        tasks = [fetch_one(url, i) for i, url in enumerate(urls)]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        output = [f"## Batch Fetch Results ({len(urls)} pages)\n"]
-        for i, r in enumerate(results):
-            if isinstance(r, Exception):
-                output.append(f"### [{i + 1}/{len(urls)}] {urls[i]}\n\nError: {r}")
-            else:
-                output.append(r)
-
-        return "\n\n---\n\n".join(output)
-
-
-class BrowserExtractLinksTool(BrowserBaseTool):
-    name: str = "browser_explore_links"
-    kit: str = "Browser"
-    description: str = "Extract and filter promising links from the current page. Helps the agent decide where to 'click' or 'peek' next."
-    domain: str = "recon"
-    fc_hidden: bool = True  # [Round 9] browser_nav/click/scroll 返回的处理后内容已包含链接；此工具仅在需要提取全部原始 href 时内部使用
-    args_schema: Type[BaseModel] = BrowserExtractLinksArgs
-
-    async def run(self, **kwargs) -> str:
-        keyword = kwargs.get("keyword", "").lower()
-        manager = await BrowserManager.get_instance()
-        page = await manager.get_page()
-
-        # We need a custom JS to get links with their context
-        js_code = """
-        () => {
-            const results = [];
-            const links = document.querySelectorAll('a');
-            links.forEach(a => {
-                const text = a.innerText.trim();
-                const href = a.href;
-                if (text && href && href.startsWith('http')) {
-                    // Extract surrounding text for context (scent of information)
-                    const parent = a.parentElement;
-                    const context = parent ? parent.innerText.trim().substring(0, 100) : "";
-                    results.append({ text, href, context });
-                }
-            });
-            return results;
-        }
-        """
-        # Note: Need to fix the JS results.append (should be push)
-        js_code = js_code.replace("results.append", "results.push")
-
-        try:
-            links = await page.evaluate(js_code)
-
-            # Filter by keyword if provided
-            if keyword:
-                links = [l for l in links if keyword in l["text"].lower() or keyword in l["context"].lower()]
-
-            # Limit to 20 links for brevity
-            links = links[:20]
-
-            if not links:
-                return "No matching links found on the current page."
-
-            output = ["### 🧬 Found promising links:"]
-            for i, l in enumerate(links):
-                output.append(f"[{i}] **{l['text']}**\n  URL: {l['href']}\n  Context: {l['context']}...")
-
-            return "\n\n".join(output)
-        except Exception as e:
-            return f"Error extracting links: {str(e)}"
-
-
-class BrowserPaginationTool(BrowserBaseTool):
-    name: str = "browser_next_page"
-    kit: str = "Browser"
-    fc_hidden: bool = (
-        True  # [Round 10] Use browser_act(action="click") with the Next button element ID after desktop_grounding_scan
-    )
-    description: str = "Automatically find and click the 'Next' page button on search engines or lists. Returns the next set of results."
-    domain: str = "recon"
-    args_schema: Type[BaseModel] = BrowserPaginationArgs
-
-    async def run(self, **kwargs) -> str:
-        manager = await BrowserManager.get_instance()
-        page = await manager.get_page()
-
-        # Heuristic JS to find the "Next" button
-        js_code = """
-        () => {
-            const nextPatterns = [
-                'next', 'Next', '下一页', '>', '»', '更多', 'More', 'more',
-                '[aria-label*="Next"]', 'a.next', 'a.pn-next', 'a.n', 'button.next'
-            ];
-
-            for (let pattern of nextPatterns) {
-                // Try as selector first
-                try {
-                    const el = document.querySelector(pattern);
-                    if (el && el.offsetParent !== null) {
-                        el.click();
-                        return "SUCCESS: Clicked matching selector: " + pattern;
-                    }
-                } catch(e) {}
-
-                // Try as text content
-                const elements = document.querySelectorAll('a, button, span');
-                for (let el of elements) {
-                    if (el.innerText.includes(pattern) && el.offsetParent !== null) {
-                        el.click();
-                        return "SUCCESS: Clicked element with text: " + pattern;
-                    }
-                }
-            }
-            return "FAILED: Could not find a recognizable 'Next' button or link.";
-        }
-        """
-
-        try:
-            result = await page.evaluate(js_code)
-            if "SUCCESS" in result:
-                await asyncio.sleep(2.0)  # Wait for page load
-                return f"{result}\n\n[New Page Content]:\n" + await self._get_processed_content(page)
-            return result
-        except Exception as e:
-            return f"Error during pagination: {str(e)}"
-
-
-# ---------------------------------------------------------------------------
-# [Round 10] browser_act — unified browser interaction macro
-# Replaces: browser_click, browser_scroll, browser_type
-# ---------------------------------------------------------------------------
-
-
-class BrowserActArgs(BaseModel):
-    action: str = Field(
-        description="Action type: 'click' (click element by ID), 'scroll' (scroll page), 'type' (type text into input)"
-    )
-    index: Optional[int] = Field(
-        default=None, description="[click / type] data-rooster-id of the element to interact with"
-    )
-    text: Optional[str] = Field(default=None, description="[type] Text to type into the input element")
-    clear: Optional[bool] = Field(
-        default=True, description="[type] Whether to clear the field before typing (default: True)"
-    )
-    direction: Optional[str] = Field(default="down", description="[scroll] Scroll direction: 'up' or 'down'")
-    amount: Optional[int] = Field(default=800, description="[scroll] Scroll distance in pixels (default: 800)")
-
-
-class BrowserActTool(BrowserBaseTool):
-    """[Round 10] Unified browser interaction macro: click, scroll, or type in one tool."""
-
-    name: str = "browser_act"
-    kit: str = "Browser"
-    description: str = (
-        "Unified browser interaction tool. Use action='click' to click an element by its data-rooster-id, "
-        "action='scroll' to scroll the page up/down, or action='type' to type text into an input field. "
-        "All actions return the updated page content after the interaction."
-    )
-    domain: str = "recon"
-    args_schema: Type[BaseModel] = BrowserActArgs
-
-    async def run(self, **kwargs) -> str:
-        action = kwargs.get("action", "").lower()
-        manager = await BrowserManager.get_instance()
-        page = await manager.get_page()
-
-        if action == "click":
-            index = kwargs.get("index", 0)
-            element = page.locator(f'[data-rooster-id="{index}"]')
-            if await element.count() == 0:
-                await page.evaluate(ID_INJECTION_JS, ["button", "a"])
-            await element.scroll_into_view_if_needed()
-            await element.click(timeout=10000)
-            await asyncio.sleep(1.5)
-            return await self._get_processed_content(page)
-
-        elif action == "scroll":
-            direction = kwargs.get("direction", "down")
-            amount = kwargs.get("amount", 800)
-            px = amount if direction == "down" else -amount
-            await page.mouse.wheel(0, px)
-            await asyncio.sleep(0.5)
-            return await self._get_processed_content(page)
-
-        elif action == "type":
-            index = kwargs.get("index", 0)
-            text = kwargs.get("text", "")
-            clear = kwargs.get("clear", True)
-            if not text:
-                return "Error: 'text' is required for action='type'."
-            element = page.locator(f'[data-rooster-id="{index}"]')
-            if await element.count() == 0:
-                await page.evaluate(ID_INJECTION_JS, ["input", "textarea", "select"])
-                element = page.locator(f'[data-rooster-id="{index}"]')
-                if await element.count() == 0:
-                    return f"Error: Element with data-rooster-id={index} not found."
-            try:
-                await element.scroll_into_view_if_needed()
-                if clear:
-                    await element.fill("")
-                await element.fill(text)
-                await asyncio.sleep(0.5)
-                return f"Typed '{text}' into element {index}.\n" + await self._get_processed_content(page)
-            except Exception:
-                try:
-                    if clear:
-                        await element.press("Control+a")
-                        await element.press("Backspace")
-                    await element.type(text, delay=50)
-                    await asyncio.sleep(0.5)
-                    return (
-                        f"Typed '{text}' into element {index} (keystroke mode).\n"
-                        + await self._get_processed_content(page)
-                    )
-                except Exception as e2:
-                    return f"Error typing into element {index}: {str(e2)}"
-
-        else:
-            return f"Error: Unknown action '{action}'. Valid actions: click, scroll, type."

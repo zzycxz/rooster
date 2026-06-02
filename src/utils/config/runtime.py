@@ -81,6 +81,9 @@ class RuntimeConfig:
     EVOLUTION_TIMEOUT: float = _env_float("EVOLUTION_TIMEOUT", 120.0)  # 进化引擎后台分析超时时间（正常 10-30s，120s 给 4 倍余量）
     LLM_CALL_TIMEOUT: float = _env_float("LLM_CALL_TIMEOUT", 120.0)  # 通用 LLM 调用安全网（裸 chat_non_stream 的兜底超时）
     FEISHU_API_TIMEOUT: float = _env_float("FEISHU_API_TIMEOUT", 30.0)  # 飞书 SDK API 调用超时（正常 1-3s，30s 给充足余量）
+    DOWNLOAD_TIMEOUT: int = _env_int("DOWNLOAD_TIMEOUT", 300)  # 多媒体/资源下载超时（秒）
+    SUBAGENT_TOOL_TIMEOUT: int = _env_int("SUBAGENT_TOOL_TIMEOUT", 120)  # SubAgent 工具级别的执行超时上限（秒）
+    MEMORY_INIT_TIMEOUT: int = _env_int("MEMORY_INIT_TIMEOUT", 120)  # 启动时记忆系统初始化超时（秒）
 
     # --- File permissions ---
     _raw_paths = os.getenv("ALLOWED_PATHS")
@@ -118,7 +121,7 @@ class RuntimeConfig:
     #   log    → log warning and continue (default, non-blocking)
     #   block  → 返回错误，要求用户确认后重试
     #   block  → return error, require user confirmation before retry
-    CONFIRMATION_BEHAVIOR: str = _env("CONFIRMATION_BEHAVIOR", "log")
+    CONFIRMATION_BEHAVIOR: str = _env("CONFIRMATION_BEHAVIOR", "block")
     # 工具限速 JSON，格式: {"tool_name": [capacity, refill_rate_per_sec], ...}
     # Tool rate-limit JSON, format: {"tool_name": [capacity, refill_rate_per_sec], ...}
     # 例: {"email_send": [1, 0.016], "web_fetch": [5, 0.5]}
@@ -131,10 +134,10 @@ class RuntimeConfig:
     # Blocked domains (comma-separated), empty means no restriction
     BLOCKED_URL_DOMAINS: str = _env("BLOCKED_URL_DOMAINS", "")
 
-    # --- Advanced Security (Round 7, default OFF) ---
+    # --- Advanced Security (Round 7, default ON) ---
     # 主开关：启用全部高级防护（越狱检测 + 工具注入检测 + Skill 投毒检测）
     # Master switch: enable all advanced protection (jailbreak + tool injection + skill poison detection)
-    ADVANCED_SECURITY: str = _env("ADVANCED_SECURITY", "false")
+    ADVANCED_SECURITY: str = _env("ADVANCED_SECURITY", "true")
     # 专项开关（优先级高于主开关）：单独控制各子模块
     # Per-feature switches (override master switch): individually control sub-modules
     GUARD_JAILBREAK: str = _env("GUARD_JAILBREAK", "")  # true/false/""(跟随主开关)
@@ -163,3 +166,14 @@ class RuntimeConfig:
     TOOL_ROUTER_RULES_JSON: str = _env("TOOL_ROUTER_RULES_JSON", "")
 
     # NOTE: LLM_API_TIMEOUT and WAIT_CONFIRM_TIMEOUT are defined above (L70/L76).
+
+    # --- Executor-first gateway migration flags (Phase 0, default OFF) ---
+    # 启用 Edge Gateway 模式（Phase 1）：前置确定性规则，LLM triage 降为兜底
+    # Enable Edge Gateway mode (Phase 1): deterministic rules first, LLM triage becomes fallback
+    ENABLE_EDGE_GATEWAY: bool = _env_bool("ENABLE_EDGE_GATEWAY", False)
+    # 启用 ExecutorEntry 模式（Phase 2）：DIRECT 路径直达 Executor，不经过 MissionRunner
+    # Enable ExecutorEntry mode (Phase 2): DIRECT path goes straight to Executor, bypasses MissionRunner
+    ENABLE_EXECUTOR_ENTRY: bool = _env_bool("ENABLE_EXECUTOR_ENTRY", False)
+    # 是否保留 LLM triage 作为兜底（默认 True = 保留现有行为；Phase 5 可关闭）
+    # Keep LLM triage as fallback (default True = keep current behavior; can be turned off in Phase 5)
+    ENABLE_ROUTER_LLM_FALLBACK: bool = _env_bool("ENABLE_ROUTER_LLM_FALLBACK", True)

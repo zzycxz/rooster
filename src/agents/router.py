@@ -9,16 +9,20 @@
 import asyncio
 import logging
 import os
+import time
 from typing import Any
 
 from agents.llm_client import LLMClient
 from agents.runners.solo_runner import SoloRunner
 from agents.runners.mission_runner import MissionRunner
 from agents.prompt_builder import PromptBuilder
+from agents.routing_protocol import RouteDecision, RouteTarget
 from gateway.event_handler import AgentEventHandler
+from gateway.metrics import metrics
 from memory.manager import MemoryManager
 from toolset.registry import global_tool_registry
 from utils.config import settings
+from utils.logging_context import reset_mission_id, set_mission_id
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +68,6 @@ class Router:
 
         self.event_handler = event_handler or AgentEventHandler(broadcast_callback=dummy_broadcast)
 
-        # Short-circuit router (cached)
-        from .short_circuit import ShortCircuitRouter
-
-        self._short_circuit = ShortCircuitRouter()
-
         # 初始化 Runner
         # Initialize Runners
         self.solo_runner = SoloRunner(
@@ -88,8 +87,24 @@ class Router:
             orchestrator=self.orchestrator,
         )
 
+    async def close(self):
+        await self.llm_client.close()
+        await self._triage_llm.close()
+
     async def handle_inbound(self, msg: Any, channel: Any):
         """处理所有入口指令：分拣 → 路由 → 进化。"""  # Handle all inbound commands: sort → route → evolve
+        from evolution.engine import EvolutionEngine
+        from agents.reframer import Reframer
+
+        # [v13.3-fix] Set correlation ID at the top level so all downstream logs inherit it
+        _mission_token = set_mission_id(getattr(msg, "session_id", "router"))
+        try:
+            await self._handle_inbound_inner(msg, channel)
+        finally:
+            reset_mission_id(_mission_token)
+
+    async def _handle_inbound_inner(self, msg: Any, channel: Any):
+        """Actual inbound logic, separated to allow try/finally correlation ID cleanup."""
         from evolution.engine import EvolutionEngine
         from agents.reframer import Reframer
 
@@ -102,7 +117,7 @@ class Router:
             _evo_client = self.llm_client
         evolution_engine = EvolutionEngine(llm_client=_evo_client)
 
-        # 1a. Advanced Security: jailbreak detection (default OFF, enabled via ADVANCED_SECURITY=true)
+        # 1a. Advanced Security: jailbreak detection (default ON, can be disabled via ADVANCED_SECURITY=false)
         try:
             from utils.security.advanced_guard import AdvancedGuard
 
@@ -116,8 +131,10 @@ class Router:
         except Exception as _ag_err:
             logger.debug(f"[AdvancedGuard] jailbreak check skipped (degraded): {_ag_err}")
 
-        # 1b. Triage
-        triage_state = await self._triage_via_llm(msg.text)
+        # 1b. Triage (with latency tracking)
+        _triage_start = time.time()
+        triage_state, llm_used = await self._triage_via_llm(msg.text)
+        _triage_duration = time.time() - _triage_start
 
         # 动态事件处理器（支持流式打字机）
         # Dynamic event handler (supports streaming typewriter)
@@ -153,11 +170,13 @@ class Router:
 
         # 2. BLOCK — 兜底：如果是下载类请求被误拦截，降级为 REFRAME
         # 2. BLOCK — fallback: if download request misjudged as BLOCK, degrade to REFRAME
+        _preprocessors: list[str] = []
         if triage_state == "[BLOCK]":
             _download_kw = ["下载", "download", "install", "安装", "迅雷", "磁力", "torrent", "bt下载"]
             if any(kw in msg.text.lower() for kw in _download_kw):
                 logger.warning(f"下载请求被误判为 BLOCK，自动降级至 REFRAME: {msg.text}")
                 triage_state = "[REFRAME]"
+                _preprocessors.append("download_redirect")
             else:
                 logger.warning(f"安全策略拦截: {msg.text}")
                 await channel.send_message(
@@ -173,6 +192,38 @@ class Router:
             if any(kw in msg.text.lower() for kw in _download_kw):
                 logger.info(f"下载请求被分诊为 DIRECT，强制走 REFRAME: {msg.text}")
                 triage_state = "[REFRAME]"
+                _preprocessors.append("download_redirect")
+
+        # 1c. Build RouteDecision and emit metrics (after all post-triage adjustments)
+        _TRIAGE_TO_TARGET = {
+            "[TALK]": RouteTarget.TALK,
+            "[DIRECT]": RouteTarget.MISSION,   # currently still routes through MissionRunner
+            "[REFRAME]": RouteTarget.MISSION,   # currently still routes through MissionRunner
+            "[BLOCK]": RouteTarget.BLOCK,
+            "[SCHEDULE]": RouteTarget.SCHEDULE,
+        }
+        _route_decision = RouteDecision(
+            target=_TRIAGE_TO_TARGET.get(triage_state, RouteTarget.MISSION),
+            confidence=1.0,
+            reason=f"triage={triage_state}",
+            llm_used=llm_used,
+            requires_tools=(triage_state in ("[DIRECT]", "[REFRAME]")),
+            preprocessors=_preprocessors,
+        )
+        # 标记 reframe 前置处理（Phase 1 Edge Gateway 会把这条从隐式分支改成显式 pipeline）
+        # Mark reframe preprocessing (Phase 1 Edge Gateway will make this an explicit pipeline step)
+        if triage_state == "[REFRAME]" or getattr(settings, "ENABLE_REFRAMER", False):
+            _route_decision.preprocessors.append("reframe")
+        metrics.observe_route_decision(
+            target=_route_decision.target.value,
+            llm_used=llm_used,
+            duration_s=_triage_duration,
+        )
+        logger.info(
+            f"[RouteDecision] target={_route_decision.target.value} "
+            f"llm_used={llm_used} duration={_triage_duration:.3f}s "
+            f"reason={_route_decision.reason}"
+        )
 
         # 3. TALK → SoloRunner
         if triage_state == "[TALK]":
@@ -235,10 +286,6 @@ class Router:
             logger.info("[Router] 歧义拦截，已向用户发出问询，等待下一轮澄清回复。")
             return  # 不进入 MissionRunner，等待用户下一条消息
 
-        # ⚡ 智能直通车 (Short-Circuit Execution) 拦截器
-        if await self._short_circuit.try_handle(reframed_text, channel, msg.sender_id):
-            return
-
         is_direct = (triage_state == "[DIRECT]")
         await self.mission_runner.run(msg, channel, reframed_text, dynamic_event_handler, is_direct=is_direct)
         self._fire_and_forget(evolution_engine.on_turn_complete(msg.session_id, msg.text, "Mission Completed", []))
@@ -252,8 +299,9 @@ class Router:
             if not t.cancelled() and t.exception() else None
         )
 
-    async def _triage_via_llm(self, text: str) -> str:
-        """三路智能分诊判定。"""  # Three-way intelligent triage determination
+    async def _triage_via_llm(self, text: str) -> tuple[str, bool]:
+        """三路智能分诊判定。返回 (triage_state, llm_used)。"""
+        # Three-way intelligent triage. Returns (triage_state, llm_used).
         if len(text) < 5 and any(
             k in text.lower()
             for k in [
@@ -268,7 +316,7 @@ class Router:
                 "谢谢",
             ]
         ):
-            return "[TALK]"
+            return "[TALK]", False  # keyword fast-path, no LLM
         try:
             triage_llm = self._triage_llm
             prompt_path = os.path.join(os.path.dirname(__file__), "..", "prompts", "router_triage.md")
@@ -292,17 +340,17 @@ class Router:
             )
             verdict = response.content.upper()
             if "[TALK]" in verdict:
-                return "[TALK]"
+                return "[TALK]", True
             if "[SCHEDULE]" in verdict:
-                return "[SCHEDULE]"
+                return "[SCHEDULE]", True
             if "[REFRAME]" in verdict:
-                return "[REFRAME]"
+                return "[REFRAME]", True
             if "[BLOCK]" in verdict:
-                return "[BLOCK]"
-            return "[DIRECT]"
+                return "[BLOCK]", True
+            return "[DIRECT]", True
         except Exception as e:
             logger.warning(f"分诊故障 ({e})，使用关键词兜底分诊。")
-            return self._triage_by_keyword(text)
+            return self._triage_by_keyword(text), False  # keyword fallback
 
     _DOWNLOAD_KW = [
         "下载",

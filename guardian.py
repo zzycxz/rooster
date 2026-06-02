@@ -637,7 +637,6 @@ class Guardian:
 
             env = {**os.environ, "PYTHONIOENCODING": "utf-8", "ROOSTER_GUARDIAN_MODE": "true"}
             popen_kwargs: Dict[str, Any] = dict(
-                stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 encoding="utf-8",
@@ -663,19 +662,14 @@ class Guardian:
 
             self._write_status_json()
 
-            # Relay stdout / collect stderr in background threads
+            # Collect stderr in background thread (stdout is attached to terminal)
             stderr_lines: List[str] = []
-            t_out = threading.Thread(
-                target=self._relay_stream, args=(self._child.stdout, sys.stdout, None), daemon=True
-            )
             t_err = threading.Thread(
                 target=self._relay_stream, args=(self._child.stderr, sys.stderr, stderr_lines), daemon=True
             )
-            t_out.start()
             t_err.start()
 
             self._child.wait()
-            t_out.join(timeout=5)
             t_err.join(timeout=5)
 
             exit_code = self._child.returncode
