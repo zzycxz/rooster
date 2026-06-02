@@ -195,8 +195,8 @@ class Router:
         # 1c. Build RouteDecision and emit metrics (after all post-triage adjustments)
         _TRIAGE_TO_TARGET = {
             "[TALK]": RouteTarget.TALK,
-            "[DIRECT]": RouteTarget.MISSION,   # currently still routes through MissionRunner
-            "[REFRAME]": RouteTarget.MISSION,   # currently still routes through MissionRunner
+            "[DIRECT]": RouteTarget.MISSION,  # currently still routes through MissionRunner
+            "[REFRAME]": RouteTarget.MISSION,  # currently still routes through MissionRunner
             "[BLOCK]": RouteTarget.BLOCK,
             "[SCHEDULE]": RouteTarget.SCHEDULE,
         }
@@ -284,7 +284,7 @@ class Router:
             logger.info("[Router] 歧义拦截，已向用户发出问询，等待下一轮澄清回复。")
             return  # 不进入 MissionRunner，等待用户下一条消息
 
-        is_direct = (triage_state == "[DIRECT]")
+        is_direct = triage_state == "[DIRECT]"
         await self.mission_runner.run(msg, channel, reframed_text, dynamic_event_handler, is_direct=is_direct)
         self._fire_and_forget(evolution_engine.on_turn_complete(msg.session_id, msg.text, "Mission Completed", []))
 
@@ -293,8 +293,11 @@ class Router:
         """启动后台任务，异常记录到日志而非静默丢弃。"""  # Start background task, log exceptions instead of silently discarding
         task = asyncio.create_task(coro)
         task.add_done_callback(
-            lambda t: logger.error(f"Background task failed: {t.exception()}")
-            if not t.cancelled() and t.exception() else None
+            lambda t: (
+                logger.error(f"Background task failed: {t.exception()}")
+                if not t.cancelled() and t.exception()
+                else None
+            )
         )
 
     async def _triage_via_llm(self, text: str) -> tuple[str, bool]:
@@ -453,6 +456,7 @@ class Router:
     def _triage_by_keyword(self, text: str) -> str:
         """LLM 不可用时的关键词兜底分诊。"""  # Keyword fallback triage when LLM is unavailable
         import re as _re
+
         t = text.lower()
         if any(k in t for k in self._SCHEDULE_KW):
             return "[SCHEDULE]"

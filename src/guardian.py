@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 _CHECKPOINT_DIR = os.path.join(".rooster", "checkpoints")
 _HEARTBEAT_TIMEOUT_S = 180
 
+
 async def _heartbeat_loop():
     """
     [V12 B5.2] 守护进程轮询逻辑。
@@ -50,6 +51,7 @@ async def _heartbeat_loop():
 
         await asyncio.sleep(30)
 
+
 def start_guardian_task() -> Optional[asyncio.Task]:
     """
     启动守护监控任务（后台运行）。
@@ -60,6 +62,7 @@ def start_guardian_task() -> Optional[asyncio.Task]:
     except RuntimeError:
         logger.warning("No running event loop. Guardian cannot be started.")
         return None
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

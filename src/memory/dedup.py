@@ -205,6 +205,7 @@ class MemoryDeduplicator:
     async def _llm_call(self, prompt: str) -> str:
         """统一 LLM 调用（支持 chat_non_stream 和 chat_stream）"""
         from utils.config import settings as _s
+
         _timeout = getattr(_s, "LLM_CALL_TIMEOUT", 120.0)
 
         if hasattr(self.llm_client, "chat_non_stream"):
@@ -310,6 +311,7 @@ class MemoryAuditor:
 
         try:
             from utils.config import settings as _s
+
             _timeout = getattr(_s, "LLM_CALL_TIMEOUT", 120.0)
 
             if hasattr(self.llm_client, "chat_non_stream"):

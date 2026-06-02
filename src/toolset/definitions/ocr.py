@@ -48,9 +48,7 @@ class OcrExtractTool(BaseTool):
             # Run blocking OCR inference in thread pool
             # 在线程池中运行阻塞的 OCR 推理
             result = await asyncio.wait_for(
-                asyncio.get_running_loop().run_in_executor(
-                    None, self._extract, str(p), language, output_format
-                ),
+                asyncio.get_running_loop().run_in_executor(None, self._extract, str(p), language, output_format),
                 timeout=60.0,
             )
             return result

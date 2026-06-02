@@ -84,6 +84,7 @@ class Reframer:
                 # 处理 Markdown 代码块包裹的情况
                 # Handle Markdown code block wrapping
                 import re
+
                 match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL | re.IGNORECASE)
                 if match:
                     content = match.group(1).strip()

@@ -68,7 +68,13 @@ class RouteDecision:
 
     @classmethod
     def mission(cls, reason: str = "", llm_used: bool = False, **kw) -> RouteDecision:
-        return cls(target=RouteTarget.MISSION, reason=reason or "complex multi-step task", llm_used=llm_used, requires_tools=True, **kw)
+        return cls(
+            target=RouteTarget.MISSION,
+            reason=reason or "complex multi-step task",
+            llm_used=llm_used,
+            requires_tools=True,
+            **kw,
+        )
 
     @classmethod
     def block(cls, reason: str = "safety policy", llm_used: bool = False, **kw) -> RouteDecision:

@@ -59,7 +59,9 @@ class MissionRunner:
         self.audit_llm = LLMClient(provider=settings.AUDITOR_MODEL_MODE, model=settings.AUDITOR_MODEL_NAME)
         self.exec_llm = LLMClient(provider=settings.EXECUTOR_MODEL_MODE, model=settings.EXECUTOR_MODEL_NAME)
 
-        self.strategist = Strategist(self.strat_llm, memory_manager=self.memory_manager, tool_registry=self.tool_registry)
+        self.strategist = Strategist(
+            self.strat_llm, memory_manager=self.memory_manager, tool_registry=self.tool_registry
+        )
         self.auditor = Auditor(self.audit_llm)
 
     # ------------------------------------------------------------------
@@ -92,7 +94,11 @@ class MissionRunner:
         return os.path.join(_CHECKPOINT_DIR, f"{session_id[:16]}_{goal_hash}.json")
 
     def _save_checkpoint(
-        self, session_id: str, plan: MissionPlan, completed_ids: Set[str], reports: Dict[str, Report],
+        self,
+        session_id: str,
+        plan: MissionPlan,
+        completed_ids: Set[str],
+        reports: Dict[str, Report],
         subtask_metrics: Optional[Dict[str, dict]] = None,
     ) -> None:
         if not getattr(settings, "CHECKPOINT_ENABLED", False):
@@ -168,13 +174,16 @@ class MissionRunner:
         try:
             os.makedirs(_CHECKPOINT_DIR, exist_ok=True)
             with open(heartbeat_path, "w", encoding="utf-8") as f:
-                json.dump({
-                    "task_id": task_id,
-                    "running_subtask": running_subtask,
-                    "completed": completed,
-                    "total": total,
-                    "timestamp": time.time(),
-                }, f)
+                json.dump(
+                    {
+                        "task_id": task_id,
+                        "running_subtask": running_subtask,
+                        "completed": completed,
+                        "total": total,
+                        "timestamp": time.time(),
+                    },
+                    f,
+                )
         except Exception as e:
             logger.debug(f"Failed to write heartbeat: {e}")
 
@@ -263,7 +272,12 @@ class MissionRunner:
             run.input_data = None
 
     async def run(
-        self, msg: Any, channel: Any, reframed_text: str, dynamic_event_handler: AgentEventHandler, is_direct: bool = False
+        self,
+        msg: Any,
+        channel: Any,
+        reframed_text: str,
+        dynamic_event_handler: AgentEventHandler,
+        is_direct: bool = False,
     ) -> None:
         """执行多步任务编排。"""  # Execute multi-step task orchestration
         archiver = VaultArchiver(settings.EVIDENCE_ROOT, msg.session_id)
@@ -321,14 +335,17 @@ class MissionRunner:
 
             if is_direct:
                 import uuid
+
                 st = SubTask(
                     id=f"ST_{uuid.uuid4().hex[:6]}",
                     instruction=reframed_text,
-                    domain="SYSTEM",   # generic domain — lets tool_router pick the right kit
+                    domain="SYSTEM",  # generic domain — lets tool_router pick the right kit
                     tool="generic_tool",
                 )
+
                 async def mock_plan_stream():
                     yield st
+
                 plan_iterator = mock_plan_stream()
             else:
                 plan_iterator = self.strategist.plan_stream(reframed_text, images=images)
@@ -475,8 +492,10 @@ class MissionRunner:
                         "retries": 0,
                     }
                     self._save_checkpoint(
-                        msg.session_id, current_mission_plan,
-                        completed_task_ids, executed_tasks,
+                        msg.session_id,
+                        current_mission_plan,
+                        completed_task_ids,
+                        executed_tasks,
                         subtask_metrics=_subtask_metrics,
                     )
                 else:
@@ -502,16 +521,11 @@ class MissionRunner:
 
                 try:
                     # 等待任意一个依赖完成，超时设为 20 秒用于进度播报
-                    await asyncio.wait_for(
-                        asyncio.wait(wait_tasks, return_when=asyncio.FIRST_COMPLETED),
-                        timeout=20.0
-                    )
+                    await asyncio.wait_for(asyncio.wait(wait_tasks, return_when=asyncio.FIRST_COMPLETED), timeout=20.0)
                 except asyncio.TimeoutError:
                     elapsed_s = int(asyncio.get_running_loop().time() - _dep_wait_start)
                     if elapsed_s > _DEP_WAIT_TIMEOUT:
-                        raise EscalateSignal(
-                            f"[{st.id}] 依赖等待超时 ({_DEP_WAIT_TIMEOUT}s)，未就绪依赖: {missing}"
-                        )
+                        raise EscalateSignal(f"[{st.id}] 依赖等待超时 ({_DEP_WAIT_TIMEOUT}s)，未就绪依赖: {missing}")
                     await channel.send_message(
                         to=msg.sender_id,
                         text=f"⏳ [{st.id}] 等待上游步骤 {missing} 完成（已等 {elapsed_s}s）...",
@@ -534,7 +548,7 @@ class MissionRunner:
                         digest = summarize_dependency_observation(
                             observation=dep_report.observation,
                             task_id=dep_id,
-                            run_dir=getattr(settings, "WORKSPACE_DIR", ".rooster/runs")
+                            run_dir=getattr(settings, "WORKSPACE_DIR", ".rooster/runs"),
                         )
                         dep_results.append(f"[{dep_id}]\n{digest.to_prompt_string()}")
 
@@ -693,7 +707,6 @@ class MissionRunner:
                 )
                 report = None
                 try:
-
                     # 合并前置任务结果和审计修正指令
                     context_parts = []
                     if dep_results:
@@ -704,13 +717,12 @@ class MissionRunner:
                     # 让 Executor 知道上次做了什么、哪里出错，才能定向修复。
                     if current_retry > 0 and _retry_history:
                         tool_outputs = [
-                            m.get("content", "")
-                            for m in _retry_history
-                            if m.get("role") == "tool" and m.get("content")
+                            m.get("content", "") for m in _retry_history if m.get("role") == "tool" and m.get("content")
                         ]
                         if tool_outputs:
                             combined_tool_output = "\n---\n".join(
-                                o[:500] for o in tool_outputs[-5:]  # 最多取最后 5 条，每条截断 500 字符
+                                o[:500]
+                                for o in tool_outputs[-5:]  # 最多取最后 5 条，每条截断 500 字符
                             )
                             context_parts.append(f"上次执行工具输出（供纠错参考）：\n{combined_tool_output}")
                     combined_context = "\n\n".join(context_parts) if context_parts else ""
@@ -752,7 +764,7 @@ class MissionRunner:
                         )
 
                     if len(config.history) > len(history):
-                        _retry_history.extend(config.history[len(history):])
+                        _retry_history.extend(config.history[len(history) :])
 
                     # Propagate provider info (may differ from initial if failover occurred)
                     if report and not report.provider_used:
@@ -928,7 +940,11 @@ class MissionRunner:
                         if report.observation:
                             # [V12 B4.2] 置信度判定 (Confidence Labeling)
                             _obs_lower = report.observation.lower()
-                            status = "tentative" if any(kw in _obs_lower for kw in ["error", "failed", "fallback", "未找到", "妥协"]) else "confirmed"
+                            status = (
+                                "tentative"
+                                if any(kw in _obs_lower for kw in ["error", "failed", "fallback", "未找到", "妥协"])
+                                else "confirmed"
+                            )
 
                             await blackboard.post_fact(
                                 key=f"{st.id}_result",
@@ -954,7 +970,11 @@ class MissionRunner:
                         state_guard.release_locks(st.id)
                         return
 
-                    elif verdict is not None and verdict.verdict == AuditVerdictType.REMAND and current_retry < retry_limit:
+                    elif (
+                        verdict is not None
+                        and verdict.verdict == AuditVerdictType.REMAND
+                        and current_retry < retry_limit
+                    ):
                         current_retry += 1
                         previous_audit_cmd = verdict.command
                         await channel.send_message(
@@ -977,7 +997,9 @@ class MissionRunner:
 
                         if "report" in locals() and report is not None:
                             duration_s = round(time.time() - _st_start_time, 3)
-                            metrics.observe_subtask_execution(duration_s, status=str(report.status or "unknown").lower())
+                            metrics.observe_subtask_execution(
+                                duration_s, status=str(report.status or "unknown").lower()
+                            )
                     except Exception:
                         pass
 
@@ -987,11 +1009,14 @@ class MissionRunner:
             while True:
                 # [Graceful Shutdown] 检测 SIGTERM/SIGINT 信号，保存 checkpoint 后干净退出
                 from main import shutdown_requested
+
                 if shutdown_requested:
                     logger.info("🛑 收到 shutdown 信号，保存 checkpoint 后退出")
                     self._save_checkpoint(
-                        msg.session_id, current_mission_plan,
-                        completed_task_ids, executed_tasks,
+                        msg.session_id,
+                        current_mission_plan,
+                        completed_task_ids,
+                        executed_tasks,
                         subtask_metrics=_subtask_metrics,
                     )
                     await channel.send_message(

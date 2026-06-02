@@ -11,6 +11,7 @@ from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class WebFetchArgs(BaseModel):
     url: str = Field(description="The URL to fetch content from.")
     prompt: str = Field(
@@ -18,12 +19,14 @@ class WebFetchArgs(BaseModel):
     )
     mode: str = Field(description="Output mode: 'summary' (AI analyzed) or 'raw' (pruned markdown)", default="summary")
 
+
 class BatchWebFetchArgs(BaseModel):
     urls: List[str] = Field(description="List of URLs to fetch concurrently (max 5).")
     prompt: str = Field(
         description="A question or instruction applied to ALL pages. Each page is summarized against this prompt."
     )
     mode: str = Field(description="Output mode: 'summary' (AI analyzed) or 'raw' (pruned markdown)", default="summary")
+
 
 class WebFetchTool(BaseTool):
     name: str = "web_fetch"
@@ -140,6 +143,7 @@ class WebFetchTool(BaseTool):
             for k in sorted_keys[: len(self.__class__._cache) - self.__class__._CACHE_MAX_SIZE]:
                 del self.__class__._cache[k]
 
+
 class BatchWebFetchTool(BaseTool):
     """并发获取多个 URL — 最多 5 个，共享同一个 prompt"""
 
@@ -191,4 +195,3 @@ class BatchWebFetchTool(BaseTool):
                 output.append(r)
 
         return "\n\n---\n\n".join(output)
-

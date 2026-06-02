@@ -6,14 +6,15 @@ from typing import List
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class DependencyObservationDigest:
-    status: str             # SUCCESS / FAILED
-    artifact_paths: List[str] # 落盘的 .stdout.log / .stderr.log 路径
-    summary: str            # exit_code, exception 摘要
+    status: str  # SUCCESS / FAILED
+    artifact_paths: List[str]  # 落盘的 .stdout.log / .stderr.log 路径
+    summary: str  # exit_code, exception 摘要
     diagnostics: List[str]  # 提取的 traceback 块、命中的 error 行
-    preview: str            # stderr tail 等高度提纯预览
-    retrieval_hint: str     # 提示模型去读取文件的指令
+    preview: str  # stderr tail 等高度提纯预览
+    retrieval_hint: str  # 提示模型去读取文件的指令
 
     def to_prompt_string(self) -> str:
         """格式化为适合作为下游提示词的字符串"""
@@ -48,10 +49,7 @@ class DependencyObservationDigest:
 
 
 def summarize_dependency_observation(
-    observation: str,
-    task_id: str,
-    run_dir: str,
-    token_budget: int = 2000
+    observation: str, task_id: str, run_dir: str, token_budget: int = 2000
 ) -> DependencyObservationDigest:
     """
     Codex 风格：将过长的 observation 对象化，落盘并生成诊断索引。
@@ -69,7 +67,7 @@ def summarize_dependency_observation(
             summary="Output fits in budget.",
             diagnostics=[],
             preview=observation,
-            retrieval_hint=""
+            retrieval_hint="",
         )
 
     # 1. 如果超出预算，自动落盘
@@ -103,7 +101,7 @@ def summarize_dependency_observation(
                 traceback_lines.append(line)
             else:
                 traceback_lines.append(line)
-                in_traceback = False # Exception details is usually the last line of a traceback block
+                in_traceback = False  # Exception details is usually the last line of a traceback block
 
     if traceback_lines:
         diagnostics.append("\n".join(traceback_lines))
@@ -139,5 +137,5 @@ def summarize_dependency_observation(
         summary="\n".join(summary) if summary else "Large output generated. See preview.",
         diagnostics=diagnostics,
         preview=preview,
-        retrieval_hint=retrieval_hint
+        retrieval_hint=retrieval_hint,
     )

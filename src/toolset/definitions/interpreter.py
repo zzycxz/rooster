@@ -75,6 +75,7 @@ class PythonInterpreterTool(BaseTool):
                 # e2b-code-interpreter 包未安装 (pip install e2b-code-interpreter)
                 if allow_local:
                     import logging as _logging
+
                     _logging.getLogger(__name__).warning(
                         "[Interpreter] e2b-code-interpreter SDK not installed, "
                         "auto-fallback to local kernel (INTERPRETER_ALLOW_LOCAL=true). "
@@ -92,15 +93,13 @@ class PythonInterpreterTool(BaseTool):
                     # SDK 已安装但 E2B_API_KEY 未在 .env.local 中配置
                     if allow_local:
                         import logging as _logging
+
                         _logging.getLogger(__name__).info(
                             "[Interpreter] E2B_API_KEY not set in .env.local, auto-fallback to local kernel."
                         )
                         kernel = "local"
                     else:
-                        return (
-                            "Error: E2B_API_KEY is not configured. "
-                            "Add it to .env.local or switch to kernel='local'."
-                        )
+                        return "Error: E2B_API_KEY is not configured. Add it to .env.local or switch to kernel='local'."
                 else:
                     return await self._run_e2b(code)
 
@@ -183,7 +182,6 @@ class PythonInterpreterTool(BaseTool):
                 return result
             finally:
                 sbx.kill()
-
 
         try:
             return await asyncio.wait_for(asyncio.to_thread(execute_sync), timeout=timeout_sec)

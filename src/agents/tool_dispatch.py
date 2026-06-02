@@ -300,10 +300,9 @@ async def execute_orchestrated_tool(
     try:
         # --- P2: Schema Validation-Driven Self-Healing ---
         from toolset.validation import ToolCallValidator
+
         validator = ToolCallValidator()
-        validated_model, error_msg = await validator.validate_and_heal(
-            tool, args, llm_client, session_history
-        )
+        validated_model, error_msg = await validator.validate_and_heal(tool, args, llm_client, session_history)
         if error_msg:
             # If self-healing failed, return error to the main ReAct loop
             return f'<tool_response name="{name}">[SchemaValidationFailed] {error_msg}</tool_response>'
@@ -314,6 +313,7 @@ async def execute_orchestrated_tool(
 
         # --- Context Injection (V14 P1) ---
         from toolset.context import RoosterContext
+
         ctx = RoosterContext(
             session_id=config.session_key,
             task_id=getattr(config, "task_id", run_id),
@@ -321,9 +321,9 @@ async def execute_orchestrated_tool(
             workspace_dir=getattr(settings, "WORKSPACE_DIR", ""),
             memory_manager=memory_manager,
             llm_client=llm_client,
-            blackboard=None, # Will be populated if required by specific tools
+            blackboard=None,  # Will be populated if required by specific tools
             config={"executor_model": getattr(config, "model", "")},
-            security_policy={"override": policy_override} if policy_override else {}
+            security_policy={"override": policy_override} if policy_override else {},
         )
 
         # --- Step 2: Clean execution (with self-healing) ---

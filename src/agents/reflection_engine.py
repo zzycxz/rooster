@@ -190,6 +190,7 @@ class ReflectionEngine:
         # Instead, find the first occurrence of a path-like token after the last ": ".
         error_str = str(error)
         import re as _re
+
         # 1. Try quoted absolute paths: 'C:\...' or "/..." (most common CPython format)
         path_match = _re.search(r"'([A-Za-z]:[^']+)'|\"([A-Za-z]:[^\"]+)\"|'(/[^']+)'|\"(/[^\"]+)\"", error_str)
         if path_match:

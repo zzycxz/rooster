@@ -68,10 +68,12 @@ logger.info(f"📋 日志文件: {_log_file_path}")
 # 检测到后主动保存 checkpoint 再退出，而非被暴力 kill 导致数据丢失。
 shutdown_requested = False
 
+
 def _handle_graceful_shutdown(signum, frame):
     global shutdown_requested
     shutdown_requested = True
     logger.warning(f"📡 收到 shutdown 信号 ({signum})，等待当前步骤完成后保存 checkpoint...")
+
 
 signal.signal(signal.SIGTERM, _handle_graceful_shutdown)
 signal.signal(signal.SIGINT, _handle_graceful_shutdown)
@@ -100,12 +102,14 @@ logging.getLogger("torch").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("pkg_resources").setLevel(logging.WARNING)
 
+
 class MuteSpecificLogsFilter(logging.Filter):
     def filter(self, record):
         msg = str(record.msg)
         if "LOAD REPORT" in msg or "UNEXPECTED" in msg:
             return False
         return True
+
 
 _mute_filter = MuteSpecificLogsFilter()
 logging.getLogger("sentence_transformers").addFilter(_mute_filter)

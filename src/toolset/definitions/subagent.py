@@ -40,7 +40,9 @@ def _subagent_result_path(agent_id: str) -> str:
 
 class SubAgentSpawnArgs(BaseModel):
     task: str = Field(..., description="子 Agent 要完成的完整任务描述（独立 Context，不继承主对话历史）")
-    timeout_seconds: int = Field(None, description="子任务最大执行时间（秒），超时后强制终止。默认取 settings.SUBAGENT_TOOL_TIMEOUT")
+    timeout_seconds: int = Field(
+        None, description="子任务最大执行时间（秒），超时后强制终止。默认取 settings.SUBAGENT_TOOL_TIMEOUT"
+    )
     model_hint: str = Field("", description="可选：指定子 Agent 使用的 LLM（如 'cloud', 'local'），空=继承主 Agent")
     wait_for_result: bool = Field(True, description="True=同步等待结果返回；False=后台异步执行，立即返回 agent_id")
     spawn_depth: int = Field(0, description="当前递归深度，由主 Agent 传递，0=顶层")

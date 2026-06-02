@@ -16,22 +16,28 @@ from toolset.base import BaseTool
 
 logger = logging.getLogger(__name__)
 
+
 class WebSearchArgs(BaseModel):
     query: str = Field(description="The search query or topic to research.")
-    en_keywords: str = Field("", description="Optional English keywords for mixed-language optimization and local reranking.")
+    en_keywords: str = Field(
+        "", description="Optional English keywords for mixed-language optimization and local reranking."
+    )
     domain_filter: Optional[str] = Field(None, description="Optional domain constraint (e.g. 'github.com').")
     time_range: Optional[str] = Field("any", description="Time range: 'day', 'week', 'month', 'year', 'any'.")
     deep_research: bool = Field(False, description="Set True for deep iteration research (actively triggers Linkup).")
 
+
 def get_exa_active() -> bool:
     try:
         path = getattr(settings, "SEARCH_STATUS_FILE", ".rooster/search_status.json")
-        if not os.path.exists(path): return True
+        if not os.path.exists(path):
+            return True
         with open(path, "r") as f:
             data = json.load(f)
             return data.get("exa_active", True)
     except Exception:
         return True
+
 
 def disable_exa():
     try:
@@ -47,7 +53,9 @@ def disable_exa():
     except Exception:
         pass
 
+
 _MONTHLY_QUOTA = 1000
+
 
 def _get_exa_usage() -> int:
     try:
@@ -59,6 +67,7 @@ def _get_exa_usage() -> int:
         return data.get("exa_monthly_usage", 0)
     except Exception:
         return 0
+
 
 def _increment_exa_usage():
     try:
@@ -74,6 +83,7 @@ def _increment_exa_usage():
     except Exception:
         pass
 
+
 def get_mcp_status() -> bool:
     try:
         path = getattr(settings, "SEARCH_STATUS_FILE", ".rooster/search_status.json")
@@ -84,6 +94,7 @@ def get_mcp_status() -> bool:
         return data.get("glm_plan_search_active", True)
     except Exception:
         return True
+
 
 def set_mcp_status(active: bool):
     try:
@@ -99,13 +110,13 @@ def set_mcp_status(active: bool):
     except Exception:
         pass
 
+
 class WebSearchTool(BaseTool):
     name: str = "web_search"
     kit: str = "System"
     fc_hidden: bool = False
     description: str = (
-        "Primary search tool with 5-tier dynamic fallback. "
-        "Use domain_filter only if strictly requested by the user."
+        "Primary search tool with 5-tier dynamic fallback. Use domain_filter only if strictly requested by the user."
     )
     domain: str = "recon"
     args_schema: Type[BaseModel] = WebSearchArgs
@@ -152,7 +163,8 @@ class WebSearchTool(BaseTool):
         if deep_research and os.getenv("LINKUP_KEY"):
             try:
                 res = await self._run_linkup(kwargs)
-                if self._is_valid_result(res): return res
+                if self._is_valid_result(res):
+                    return res
             except asyncio.TimeoutError:
                 logger.warning("[WebSearch] Linkup timeout.")
             except Exception as e:
@@ -162,7 +174,8 @@ class WebSearchTool(BaseTool):
         if os.getenv("EXA_KEY") and self._check_exa_quota():
             try:
                 res = await self._run_exa(kwargs)
-                if self._is_valid_result(res): return res
+                if self._is_valid_result(res):
+                    return res
             except asyncio.TimeoutError:
                 logger.warning("[WebSearch] Exa timeout.")
             except Exception as e:
@@ -174,7 +187,8 @@ class WebSearchTool(BaseTool):
         if os.getenv("ZHIPU_KEY"):
             try:
                 res = await self._run_glm(kwargs)
-                if self._is_valid_result(res): return res
+                if self._is_valid_result(res):
+                    return res
             except Exception as e:
                 logger.warning(f"[WebSearch] GLM search failed: {e}")
 
@@ -701,7 +715,6 @@ class WebSearchTool(BaseTool):
                     f"🌩️ [Circuit Breaker] {name} 通道连续 3 次抛出异常。拉响熔断警报！"
                     f"当前会话已停用该通道，自动降级至 0-Key 免密 HTML 赛道。"
                 )
-
 
     async def _seven_lane_search(self, query: str, en_keywords: str) -> str:
         """7 路并发搜索逻辑"""
@@ -1323,4 +1336,3 @@ class WebSearchTool(BaseTool):
             return results
         except Exception:
             return []
-

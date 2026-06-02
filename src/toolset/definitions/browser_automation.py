@@ -7,31 +7,39 @@ from utils.browser.manager import BrowserManager, HTMLCleaner, ID_INJECTION_JS
 
 logger = logging.getLogger(__name__)
 
+
 class BrowserBaseArgs(BaseModel):
     pass
+
 
 class BrowserNavArgs(BaseModel):
     url: str = Field(description="URL")
 
+
 class BrowserActionArgs(BaseModel):
     index: int = Field(description="ID", default=0)
+
 
 class BrowserScrollArgs(BaseModel):
     direction: str = Field(description="Dir", default="down")
     amount: int = Field(description="Amount", default=800)
+
 
 class BrowserTypeArgs(BaseModel):
     index: int = Field(description="The data-rooster-id of the input element to type into.")
     text: str = Field(description="The text to type into the input field.")
     clear: bool = Field(description="Whether to clear the field before typing.", default=True)
 
+
 class BrowserExtractLinksArgs(BaseModel):
     keyword: str = Field(
         description="Filter links by this keyword in their text or surrounding context (optional).", default=""
     )
 
+
 class BrowserPaginationArgs(BaseModel):
     pass
+
 
 class BrowserActArgs(BaseModel):
     action: str = Field(
@@ -47,6 +55,7 @@ class BrowserActArgs(BaseModel):
     direction: Optional[str] = Field(default="down", description="[scroll] Scroll direction: 'up' or 'down'")
     amount: Optional[int] = Field(default=800, description="[scroll] Scroll distance in pixels")
 
+
 class BrowserBaseTool(BaseTool):
     async def _get_processed_content(self, page) -> str:
         """读取、清理并截断页面内容，防止爆上下文"""
@@ -61,6 +70,7 @@ class BrowserBaseTool(BaseTool):
 
         limit = settings.OBSERVATION_CHAR_LIMIT
         return cleaned[:limit] + (f" ... [Content Truncated to {limit}]" if len(cleaned) > limit else "")
+
 
 class BrowserNavTool(BrowserBaseTool):
     name: str = "browser_nav"
@@ -81,6 +91,7 @@ class BrowserNavTool(BrowserBaseTool):
         except Exception as e:
             return f"Error: {str(e)}"
 
+
 class BrowserReadTool(BrowserBaseTool):
     name: str = "browser_read"
     kit: str = "Browser"
@@ -93,6 +104,7 @@ class BrowserReadTool(BrowserBaseTool):
         manager = await BrowserManager.get_instance()
         page = await manager.get_page()
         return await self._get_processed_content(page)
+
 
 class BrowserClickTool(BrowserBaseTool):
     name: str = "browser_click"
@@ -113,6 +125,7 @@ class BrowserClickTool(BrowserBaseTool):
         await element.click(timeout=10000)
         await asyncio.sleep(1.5)
         return await self._get_processed_content(page)
+
 
 class BrowserTypeTool(BrowserBaseTool):
     name: str = "browser_type"
@@ -166,6 +179,7 @@ class BrowserTypeTool(BrowserBaseTool):
             except Exception as e2:
                 return f"Error typing into element {index}: {str(e2)}"
 
+
 class BrowserScrollTool(BrowserBaseTool):
     name: str = "browser_scroll"
     kit: str = "Browser"
@@ -181,6 +195,7 @@ class BrowserScrollTool(BrowserBaseTool):
         await page.mouse.wheel(0, px)
         await asyncio.sleep(0.5)
         return await self._get_processed_content(page)
+
 
 class BrowserExtractLinksTool(BrowserBaseTool):
     name: str = "browser_explore_links"
@@ -237,6 +252,7 @@ class BrowserExtractLinksTool(BrowserBaseTool):
         except Exception as e:
             return f"Error extracting links: {str(e)}"
 
+
 class BrowserPaginationTool(BrowserBaseTool):
     name: str = "browser_next_page"
     kit: str = "Browser"
@@ -290,6 +306,7 @@ class BrowserPaginationTool(BrowserBaseTool):
             return result
         except Exception as e:
             return f"Error during pagination: {str(e)}"
+
 
 class BrowserActTool(BrowserBaseTool):
     """[Round 10] Unified browser interaction macro: click, scroll, or type in one tool."""
@@ -362,4 +379,3 @@ class BrowserActTool(BrowserBaseTool):
 
         else:
             return f"Error: Unknown action '{action}'. Valid actions: click, scroll, type."
-

@@ -4,9 +4,7 @@ from toolset.base import BaseTool
 
 
 class GenericToolArgs(BaseModel):
-    instruction: str = Field(
-        description="The original user instruction or task description to execute."
-    )
+    instruction: str = Field(description="The original user instruction or task description to execute.")
     query: str = Field(
         "",
         description="Alternative: a search query or question to answer.",

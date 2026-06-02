@@ -50,8 +50,8 @@ class SubTask(BaseModel):
     confidence: str = Field("HIGH", description="HIGH | MEDIUM | LOW")
     risk_note: str = Field("", description="风险提示，如'结果不可保证'")
 
-    @model_validator(mode='after')
-    def validate_subtask_logic(self) -> 'SubTask':
+    @model_validator(mode="after")
+    def validate_subtask_logic(self) -> "SubTask":
         # 1. 用户操作指引校验 / USER instruction validation
         if self.owner == "USER" and len(self.instruction.strip()) < 5:
             raise ValueError("当 owner 为 USER 时，instruction 必须提供清晰、详细的用户操作指引。")
@@ -91,8 +91,8 @@ class MissionPlan(BaseModel):
     deliverables: List[str] = Field(default_factory=list, description="预期交付物列表")
     feasibility_note: str = Field("", description="可行性说明")
 
-    @model_validator(mode='after')
-    def validate_mission_plan(self) -> 'MissionPlan':
+    @model_validator(mode="after")
+    def validate_mission_plan(self) -> "MissionPlan":
         # 1. 悲观置信度说明关联校验 / Low confidence note requirement
         if any(st.confidence == "LOW" for st in self.subtasks):
             if not self.feasibility_note or not self.feasibility_note.strip():

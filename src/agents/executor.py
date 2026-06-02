@@ -24,6 +24,7 @@ from utils.exceptions import EscalateSignal
 
 executor_logger = logging.getLogger(__name__)
 
+
 async def _stream_with_chunk_timeout(generator, chunk_timeout: float):
     """Wait for each chunk from the generator with a timeout."""
     try:
@@ -274,6 +275,7 @@ class AgentExecutor:
 
             # [V12 B3.1] System Prompt Caching
             import hashlib
+
             ltm_hash = hashlib.md5(ltm_block.encode()).hexdigest()[:8] if ltm_block else "empty"
 
             if _cached_system_prompt is None or ltm_hash != _cached_ltm_hash:
@@ -313,9 +315,11 @@ class AgentExecutor:
                 mid_msgs = session_history[2:-10]
                 if mid_msgs:
                     summary = await self._summarize_mid_history(mid_msgs)
-                    session_history = session_history[:2] + [
-                        {"role": "user", "content": f"[系统提示：历史执行摘要]\n{summary}", "_internal": True}
-                    ] + session_history[-10:]
+                    session_history = (
+                        session_history[:2]
+                        + [{"role": "user", "content": f"[系统提示：历史执行摘要]\n{summary}", "_internal": True}]
+                        + session_history[-10:]
+                    )
 
             session_history = await self._prune_history(session_history, max_total_tokens=context_limit)
 
@@ -500,7 +504,9 @@ class AgentExecutor:
                     try:
                         if net_retry > 0:
                             await self.event_handler.emit_assistant_delta(
-                                session_key=config.session_key, client_run_id=run_id, text="Thinking..." if step > 1 else ""
+                                session_key=config.session_key,
+                                client_run_id=run_id,
+                                text="Thinking..." if step > 1 else "",
                             )
                             _buffer = ""
                             in_think = False
@@ -610,9 +616,7 @@ class AgentExecutor:
                     ui_msg = f"\n> ⚙️ **正在执行底层工具**: {tool_names}...\n\n"
                     # Emit to UI without creating a new message bubble (append to current assistant text)
                     await self.event_handler.emit_assistant_delta(
-                        session_key=config.session_key,
-                        client_run_id=run_id,
-                        text=ui_msg
+                        session_key=config.session_key, client_run_id=run_id, text=ui_msg
                     )
 
                 # --- Stuck detection: break if same tool+args repeated consecutively ---
@@ -771,7 +775,11 @@ class AgentExecutor:
                     # [V12 B4.2] 置信度判定 (Confidence Labeling)
                     # 如果结果中包含失败、回退或正则表达式提取错误，则标为可疑 (tentative)
                     _obs_lower = combined_obs.lower()
-                    status = "tentative" if any(kw in _obs_lower for kw in ["error", "failed", "fallback", "未找到", "妥协"]) else "confirmed"
+                    status = (
+                        "tentative"
+                        if any(kw in _obs_lower for kw in ["error", "failed", "fallback", "未找到", "妥协"])
+                        else "confirmed"
+                    )
 
                     # Truncate to avoid blackboard bloat; peers only need the gist.
                     await config.blackboard.post_fact(
@@ -1226,8 +1234,8 @@ class AgentExecutor:
         # 兜底规则提取
         rule_summary_lines = []
         for m in messages:
-            content = m.get('content') or ""
-            role = m.get('role', 'unknown')
+            content = m.get("content") or ""
+            role = m.get("role", "unknown")
             if role == "tool" and len(content) > 200:
                 content = content[:200] + "..."
             elif role == "assistant" and len(content) > 100:

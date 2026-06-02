@@ -168,6 +168,7 @@ class SoulLoader:
         """调用 LLM 执行精简并原子写回文件。"""
         try:
             from utils.config import settings as _s
+
             _timeout = getattr(_s, "LLM_CALL_TIMEOUT", 120.0)
 
             if hasattr(self._llm_client, "chat_non_stream"):

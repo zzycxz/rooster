@@ -185,13 +185,19 @@ class Strategist:
                     if attempt < MAX_RETRIES:
                         err_msg = str(parse_err)
                         if isinstance(parse_err, ValidationError):
-                            err_msg = "Pydantic Schema Error:\n" + "\n".join([f"- {err['loc']}: {err['msg']}" for err in parse_err.errors()])
-                        logger.warning(f"⚠️ [Strategist] 解析失败触发 LLM 自修复 (Attempt {attempt+1}/{MAX_RETRIES}):\n{err_msg}")
+                            err_msg = "Pydantic Schema Error:\n" + "\n".join(
+                                [f"- {err['loc']}: {err['msg']}" for err in parse_err.errors()]
+                            )
+                        logger.warning(
+                            f"⚠️ [Strategist] 解析失败触发 LLM 自修复 (Attempt {attempt + 1}/{MAX_RETRIES}):\n{err_msg}"
+                        )
                         messages.append({"role": "assistant", "content": raw_plan})
-                        messages.append({
-                            "role": "user",
-                            "content": f"The JSON validation failed with these errors:\n{err_msg}\nPlease strictly follow the schema and output ONLY valid JSON."
-                        })
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": f"The JSON validation failed with these errors:\n{err_msg}\nPlease strictly follow the schema and output ONLY valid JSON.",
+                            }
+                        )
                         continue
                     else:
                         raise parse_err
@@ -307,71 +313,73 @@ class Strategist:
                 ),
                 chunk_timeout=getattr(settings, "LLM_STREAM_CHUNK_TIMEOUT", 30.0),
             ):
-                    if delta.content:
-                        full_content += delta.content
+                if delta.content:
+                    full_content += delta.content
 
-                        # 使用正则灵活匹配 "subtasks" 的键名及后面的冒号（兼容所有空格抖动）
-                        # Flexibly match "subtasks" key name and colon with regex (tolerant of whitespace jitter)
-                        match = re.search(r'"subtasks"\s*:\s*(.*)', full_content, re.DOTALL | re.IGNORECASE)
-                        if match:
-                            try:
-                                # 提取 subtasks 数组之后的部分
-                                # Extract the part after subtasks array
-                                subtasks_part = match.group(1)
+                    # 使用正则灵活匹配 "subtasks" 的键名及后面的冒号（兼容所有空格抖动）
+                    # Flexibly match "subtasks" key name and colon with regex (tolerant of whitespace jitter)
+                    match = re.search(r'"subtasks"\s*:\s*(.*)', full_content, re.DOTALL | re.IGNORECASE)
+                    if match:
+                        try:
+                            # 提取 subtasks 数组之后的部分
+                            # Extract the part after subtasks array
+                            subtasks_part = match.group(1)
 
-                                # 查找完整的 JSON 对象 { ... }
-                                # Find complete JSON object { ... }
-                                depth = 0
-                                start_idx = -1
-                                for i, char in enumerate(subtasks_part):
-                                    if char == "{":
-                                        if depth == 0:
-                                            start_idx = i
-                                        depth += 1
-                                    elif char == "}":
-                                        depth -= 1
-                                        if depth == 0 and start_idx != -1:
-                                            obj_str = subtasks_part[start_idx : i + 1].strip()
-                                            try:
-                                                task_data = json.loads(obj_str)
-                                                # --- Pydantic 宽容构造 [DAY 5 NEW] ---
-                                                # --- Pydantic tolerant construction [DAY 5 NEW] ---
-                                                t_id = task_data.get("id", f"ST{len(yielded_ids) + 1}")
-                                                instr = task_data.get("instruction", "").strip()
+                            # 查找完整的 JSON 对象 { ... }
+                            # Find complete JSON object { ... }
+                            depth = 0
+                            start_idx = -1
+                            for i, char in enumerate(subtasks_part):
+                                if char == "{":
+                                    if depth == 0:
+                                        start_idx = i
+                                    depth += 1
+                                elif char == "}":
+                                    depth -= 1
+                                    if depth == 0 and start_idx != -1:
+                                        obj_str = subtasks_part[start_idx : i + 1].strip()
+                                        try:
+                                            task_data = json.loads(obj_str)
+                                            # --- Pydantic 宽容构造 [DAY 5 NEW] ---
+                                            # --- Pydantic tolerant construction [DAY 5 NEW] ---
+                                            t_id = task_data.get("id", f"ST{len(yielded_ids) + 1}")
+                                            instr = task_data.get("instruction", "").strip()
 
-                                                # 严格校验：ID 存在、未重复、且指令不是占位符
-                                                # Strict validation: ID exists, not duplicate, instruction not a placeholder
-                                                if t_id not in yielded_ids and instr and len(instr) > 5:
-                                                    # [V10.0] phase 由 DAG 拓扑推导，忽略 LLM 输出
-                                                    task_data.pop("phase", None)
-                                                    task_data.update(
-                                                        {
-                                                            "id": t_id,
-                                                            "instruction": instr,
-                                                            "domain": "UI"
-                                                            if task_data.get("domain") == "COMBAT"
-                                                            else task_data.get("domain", "SYSTEM"),
-                                                            "tool": task_data.get("tool", "system_tool"),
-                                                            "depends_on": task_data.get("depends_on", []),
-                                                            "on_failure": task_data.get("on_failure", "RETRY"),
-                                                            "requires_confirm": task_data.get(
-                                                                "requires_confirm", False
-                                                            ),
-                                                            "timeout": task_data.get("timeout", settings.SUBTASK_MIN_TIMEOUT),
-                                                            "owner": task_data.get("owner", "AGENT"),
-                                                            "confidence": task_data.get("confidence", "HIGH"),
-                                                            "risk_note": task_data.get("risk_note", ""),
-                                                        }
-                                                    )
-                                                    yield SubTask(**task_data)
-                                                    yielded_ids.add(t_id)
-                                            except Exception as te:
-                                                logger.debug(f"⚠️ [Strategist] 解析单个子任务失败: {te}")
-                                                continue
-                            except Exception:
-                                continue
+                                            # 严格校验：ID 存在、未重复、且指令不是占位符
+                                            # Strict validation: ID exists, not duplicate, instruction not a placeholder
+                                            if t_id not in yielded_ids and instr and len(instr) > 5:
+                                                # [V10.0] phase 由 DAG 拓扑推导，忽略 LLM 输出
+                                                task_data.pop("phase", None)
+                                                task_data.update(
+                                                    {
+                                                        "id": t_id,
+                                                        "instruction": instr,
+                                                        "domain": "UI"
+                                                        if task_data.get("domain") == "COMBAT"
+                                                        else task_data.get("domain", "SYSTEM"),
+                                                        "tool": task_data.get("tool", "system_tool"),
+                                                        "depends_on": task_data.get("depends_on", []),
+                                                        "on_failure": task_data.get("on_failure", "RETRY"),
+                                                        "requires_confirm": task_data.get("requires_confirm", False),
+                                                        "timeout": task_data.get(
+                                                            "timeout", settings.SUBTASK_MIN_TIMEOUT
+                                                        ),
+                                                        "owner": task_data.get("owner", "AGENT"),
+                                                        "confidence": task_data.get("confidence", "HIGH"),
+                                                        "risk_note": task_data.get("risk_note", ""),
+                                                    }
+                                                )
+                                                yield SubTask(**task_data)
+                                                yielded_ids.add(t_id)
+                                        except Exception as te:
+                                            logger.debug(f"⚠️ [Strategist] 解析单个子任务失败: {te}")
+                                            continue
+                        except Exception:
+                            continue
         except asyncio.TimeoutError:
-            logger.error(f"❌ [Strategist] plan_stream() 流中断：超过 {getattr(settings, 'LLM_STREAM_CHUNK_TIMEOUT', 30):.0f}s 无新 chunk，降级 FAILSAFE")
+            logger.error(
+                f"❌ [Strategist] plan_stream() 流中断：超过 {getattr(settings, 'LLM_STREAM_CHUNK_TIMEOUT', 30):.0f}s 无新 chunk，降级 FAILSAFE"
+            )
         except Exception as e:
             logger.error(f"❌ [Strategist] 流式规划异常: {e}")
 
@@ -447,7 +455,9 @@ class Strategist:
                         "deliverables": plan_data.get("deliverables", []),
                         "feasibility_note": plan_data.get("feasibility_note", ""),
                     }
-                    logger.info(f"📋 [Strategist] 元数据提取成功: blockers={len(self._last_plan_meta['blockers'])}, deliverables={len(self._last_plan_meta['deliverables'])}")
+                    logger.info(
+                        f"📋 [Strategist] 元数据提取成功: blockers={len(self._last_plan_meta['blockers'])}, deliverables={len(self._last_plan_meta['deliverables'])}"
+                    )
             except Exception as meta_err:
                 logger.warning(f"⚠️ [Strategist] 元数据提取失败，使用空默认值: {meta_err}")
 
@@ -586,13 +596,19 @@ class Strategist:
                     return plan
                 except ValidationError as ve:
                     if attempt < MAX_RETRIES:
-                        err_msg = "Pydantic Schema Error:\n" + "\n".join([f"- {err['loc']}: {err['msg']}" for err in ve.errors()])
-                        logger.warning(f"⚠️ [Strategist] replan 校验失败触发自修复 (Attempt {attempt+1}/{MAX_RETRIES}):\n{err_msg}")
+                        err_msg = "Pydantic Schema Error:\n" + "\n".join(
+                            [f"- {err['loc']}: {err['msg']}" for err in ve.errors()]
+                        )
+                        logger.warning(
+                            f"⚠️ [Strategist] replan 校验失败触发自修复 (Attempt {attempt + 1}/{MAX_RETRIES}):\n{err_msg}"
+                        )
                         messages.append({"role": "assistant", "content": raw_content})
-                        messages.append({
-                            "role": "user",
-                            "content": f"The JSON validation failed with these errors:\n{err_msg}\nPlease strictly follow the schema and output ONLY valid JSON."
-                        })
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": f"The JSON validation failed with these errors:\n{err_msg}\nPlease strictly follow the schema and output ONLY valid JSON.",
+                            }
+                        )
                         continue
                     else:
                         raise ve

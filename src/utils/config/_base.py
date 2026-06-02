@@ -40,8 +40,7 @@ def _env_bool(key: str, default: bool = False) -> bool:
     if normalized in falsy:
         return False
     raise ValueError(
-        f"Invalid boolean for environment variable {key}: {raw!r}. "
-        "Expected one of true/false/1/0/yes/no/on/off."
+        f"Invalid boolean for environment variable {key}: {raw!r}. Expected one of true/false/1/0/yes/no/on/off."
     )
 
 

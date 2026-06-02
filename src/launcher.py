@@ -159,8 +159,10 @@ class RoosterLauncher:
 
             async def _init_feishu():
                 try:
+
                     def _load_and_create():
                         from channels.feishu import FeishuChannel
+
                         return FeishuChannel(channel_id="feishu")
 
                     feishu_channel = await asyncio.to_thread(_load_and_create)
@@ -176,6 +178,7 @@ class RoosterLauncher:
             async def _init_mem():
                 try:
                     from agents.router import Router
+
                     router = Router.get_instance()
                     await asyncio.wait_for(
                         router.memory_manager.initialize_async(),
@@ -215,6 +218,7 @@ class RoosterLauncher:
                     distill_model = ""  # 使用 provider 默认模型
 
                 from agents.router import Router
+
                 _router = Router.get_instance()
                 self._distill_scheduler = DistillationScheduler(
                     memory_manager=_router.memory_manager,
@@ -268,6 +272,7 @@ class RoosterLauncher:
         # Router 清理
         try:
             from agents.router import Router
+
             router = getattr(Router, "_instance", None)
             if router is not None and hasattr(router, "close"):
                 await router.close()

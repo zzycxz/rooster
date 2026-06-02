@@ -92,9 +92,11 @@ class Tool:
 
             # 兼容：如果 execute 不接收 ctx 或者我们在旧模式下，我们得兼容它
             import inspect
+
             sig = inspect.signature(self.execute)
             if "ctx" in sig.parameters:
                 from toolset.context import RoosterContext
+
                 # Provide a dummy context if none provided by dispatcher
                 dummy_ctx = RoosterContext(session_id="dummy", task_id="dummy")
                 return await self.execute(args_obj, dummy_ctx)

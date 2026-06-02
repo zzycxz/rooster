@@ -81,7 +81,6 @@ class FeishuChannel(BaseChannel):
 
     def _executor_thread(self):
         try:
-
             # 1. 物理创建并激活子线程私有 Loop
             # 1. Physically create and activate thread-private Loop
             new_loop = asyncio.new_event_loop()
@@ -139,7 +138,7 @@ class FeishuChannel(BaseChannel):
         if getattr(self, "ws_client", None) is not None:
             logger.info("FeishuChannel stopped (WebSocket thread is daemon — will exit with process).")
 
-    def _do_recv_message_v2(self, data: 'P2ImMessageReceiveV1') -> None:
+    def _do_recv_message_v2(self, data: "P2ImMessageReceiveV1") -> None:
         """适配 SDK 2.2.3 回调签名的标准处理器"""  # Standard handler adapted for SDK 2.2.3 callback signature
         msg_event = data.event.message
         sender_id = data.event.sender.sender_id.open_id
@@ -260,11 +259,12 @@ class FeishuChannel(BaseChannel):
             # Only send minimal hint, don't interfere with final answer
             content = json.dumps({"text": f"🔍 Rooster 正在使用工具: `{tool_name}`..."})
 
-
         request = (
             im.CreateMessageRequest.builder()
             .receive_id_type("open_id")
-            .request_body(im.CreateMessageRequestBody.builder().receive_id(to).msg_type("text").content(content).build())
+            .request_body(
+                im.CreateMessageRequestBody.builder().receive_id(to).msg_type("text").content(content).build()
+            )
             .build()
         )
 
@@ -321,7 +321,6 @@ class FeishuChannel(BaseChannel):
         try:
             file_name = os.path.basename(file_path)
             with open(file_path, "rb") as f:
-
                 upload_request = (
                     im.CreateFileRequest.builder()
                     .request_body(
@@ -371,7 +370,6 @@ class FeishuChannel(BaseChannel):
             return False
         try:
             with open(image_path, "rb") as f:
-
                 upload_request = (
                     im.CreateImageRequest.builder()
                     .request_body(im.CreateImageRequestBody.builder().image_type("message").image(f).build())
@@ -412,7 +410,6 @@ class FeishuChannel(BaseChannel):
     async def send_post(self, to: str, title: str, content_list: list, **kwargs):
         """[Premium] 发送飞书富文本消息"""
         try:
-
             post_content = {"zh_cn": {"title": title, "content": content_list}}
             request = (
                 im.CreateMessageRequest.builder()

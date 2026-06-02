@@ -369,7 +369,9 @@ class LLMClient:
                 provider_default_model = await self._prepare_provider(current_p)
                 # Only honour caller_model on the preferred provider.
                 # On failover providers the model name is likely incompatible, so use their default.
-                model = caller_model if (current_p == self.preferred_provider and caller_model) else provider_default_model
+                model = (
+                    caller_model if (current_p == self.preferred_provider and caller_model) else provider_default_model
+                )
 
                 # Strip reasoning_content from assistant messages when sending to providers
                 # that don't support it (everyone except MiMo).  MiMo *requires* it to be
@@ -470,7 +472,9 @@ class LLMClient:
                     except Exception:
                         pass
                 provider_default_model = await self._prepare_provider(current_p)
-                model = caller_model if (current_p == self.preferred_provider and caller_model) else provider_default_model
+                model = (
+                    caller_model if (current_p == self.preferred_provider and caller_model) else provider_default_model
+                )
                 send_messages = (
                     _inline_system_for_mimo(messages)
                     if current_p == "mimo"

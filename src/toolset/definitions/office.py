@@ -707,12 +707,13 @@ class PptxOpArgs(BaseModel):
         )
     )
     theme: str = Field(
-        default="business",
-        description="主题风格：'business'（深蓝商务）、'minimal'（白色简约）、'dark'（深色科技）"
+        default="business", description="主题风格：'business'（深蓝商务）、'minimal'（白色简约）、'dark'（深色科技）"
     )
     title: str = Field(default="", description="演示文稿全局标题（可选，用于首页封面）")
     author: str = Field(default="", description="作者署名（可选）")
-    template_path: Optional[str] = Field(default=None, description="自定义 PPTX 模板文件的绝对路径。如果提供，将以此文件为底板生成内容。")
+    template_path: Optional[str] = Field(
+        default=None, description="自定义 PPTX 模板文件的绝对路径。如果提供，将以此文件为底板生成内容。"
+    )
 
 
 class PptxOpTool(BaseTool):
@@ -733,26 +734,26 @@ class PptxOpTool(BaseTool):
     # --- Theme definitions ---
     THEMES = {
         "business": {
-            "bg": (0x1F, 0x3D, 0x7A),        # 深海蓝背景
-            "title_color": (0xFF, 0xFF, 0xFF), # 白色标题
+            "bg": (0x1F, 0x3D, 0x7A),  # 深海蓝背景
+            "title_color": (0xFF, 0xFF, 0xFF),  # 白色标题
             "body_color": (0xCC, 0xDD, 0xFF),  # 浅蓝正文
-            "accent": (0xFF, 0xC0, 0x00),      # 金色强调
+            "accent": (0xFF, 0xC0, 0x00),  # 金色强调
             "title_font_size": 36,
             "body_font_size": 20,
         },
         "minimal": {
-            "bg": (0xFF, 0xFF, 0xFF),          # 白色背景
-            "title_color": (0x1A, 0x1A, 0x2E), # 深蓝标题
+            "bg": (0xFF, 0xFF, 0xFF),  # 白色背景
+            "title_color": (0x1A, 0x1A, 0x2E),  # 深蓝标题
             "body_color": (0x33, 0x33, 0x33),  # 深灰正文
-            "accent": (0x00, 0x78, 0xD4),      # 蓝色强调
+            "accent": (0x00, 0x78, 0xD4),  # 蓝色强调
             "title_font_size": 38,
             "body_font_size": 20,
         },
         "dark": {
-            "bg": (0x0D, 0x0D, 0x1A),          # 极深蓝背景
+            "bg": (0x0D, 0x0D, 0x1A),  # 极深蓝背景
             "title_color": (0x00, 0xFF, 0xCC),  # 青绿标题
-            "body_color": (0xE0, 0xE0, 0xE0),   # 浅灰正文
-            "accent": (0xFF, 0x6B, 0x35),       # 橙色强调
+            "body_color": (0xE0, 0xE0, 0xE0),  # 浅灰正文
+            "accent": (0xFF, 0x6B, 0x35),  # 橙色强调
             "title_font_size": 36,
             "body_font_size": 20,
         },
@@ -804,12 +805,20 @@ class PptxOpTool(BaseTool):
             def rgb(color_tuple):
                 return RGBColor(*color_tuple)
 
-            def add_textbox(slide, text, left, top, width, height,
-                            font_size=20, bold=False, color=(255, 255, 255),
-                            align=PP_ALIGN.LEFT, word_wrap=True):
-                txBox = slide.shapes.add_textbox(
-                    Inches(left), Inches(top), Inches(width), Inches(height)
-                )
+            def add_textbox(
+                slide,
+                text,
+                left,
+                top,
+                width,
+                height,
+                font_size=20,
+                bold=False,
+                color=(255, 255, 255),
+                align=PP_ALIGN.LEFT,
+                word_wrap=True,
+            ):
+                txBox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
                 tf = txBox.text_frame
                 tf.word_wrap = word_wrap
                 p = tf.paragraphs[0]
@@ -878,8 +887,10 @@ class PptxOpTool(BaseTool):
                     # 顶部色条
                     accent_bar = slide.shapes.add_shape(
                         1,  # MSO_SHAPE_TYPE.RECTANGLE
-                        Inches(0), Inches(0),
-                        prs.slide_width, Inches(0.08)
+                        Inches(0),
+                        Inches(0),
+                        prs.slide_width,
+                        Inches(0.08),
                     )
                     accent_bar.fill.solid()
                     accent_bar.fill.fore_color.rgb = rgb(theme["accent"])
@@ -887,21 +898,31 @@ class PptxOpTool(BaseTool):
 
                 # 标题
                 add_textbox(
-                    slide, title_text,
-                    left=0.4, top=0.3, width=12.5, height=1.2,
+                    slide,
+                    title_text,
+                    left=0.4,
+                    top=0.3,
+                    width=12.5,
+                    height=1.2,
                     font_size=theme["title_font_size"],
-                    bold=True, color=theme["title_color"] if not use_template else (0,0,0),
-                    align=PP_ALIGN.LEFT
+                    bold=True,
+                    color=theme["title_color"] if not use_template else (0, 0, 0),
+                    align=PP_ALIGN.LEFT,
                 )
 
                 # 副标题
                 if subtitle_text:
                     add_textbox(
-                        slide, subtitle_text,
-                        left=0.4, top=1.4, width=12.5, height=0.6,
+                        slide,
+                        subtitle_text,
+                        left=0.4,
+                        top=1.4,
+                        width=12.5,
+                        height=0.6,
                         font_size=theme["body_font_size"] - 2,
-                        bold=False, color=theme["accent"] if not use_template else (50,50,50),
-                        align=PP_ALIGN.LEFT
+                        bold=False,
+                        color=theme["accent"] if not use_template else (50, 50, 50),
+                        align=PP_ALIGN.LEFT,
                     )
 
                 # 要点列表
@@ -909,8 +930,7 @@ class PptxOpTool(BaseTool):
                     top_start = 2.1 if subtitle_text else 1.8
                     bullet_height = min(4.8, len(bullets) * 0.65 + 0.3)
                     txBox = slide.shapes.add_textbox(
-                        Inches(0.5), Inches(top_start),
-                        Inches(12.3), Inches(bullet_height)
+                        Inches(0.5), Inches(top_start), Inches(12.3), Inches(bullet_height)
                     )
                     tf = txBox.text_frame
                     tf.word_wrap = True
@@ -951,26 +971,36 @@ class PptxOpTool(BaseTool):
                     if not use_template:
                         set_slide_bg(cover_slide, theme["bg"])
                         # 装饰色块
-                        deco = cover_slide.shapes.add_shape(
-                            1, Inches(0), Inches(2.8), prs.slide_width, Inches(0.12)
-                        )
+                        deco = cover_slide.shapes.add_shape(1, Inches(0), Inches(2.8), prs.slide_width, Inches(0.12))
                         deco.fill.solid()
                         deco.fill.fore_color.rgb = rgb(theme["accent"])
                         deco.line.fill.background()
 
                     # 主标题
                     add_textbox(
-                        cover_slide, prs_title,
-                        left=0.8, top=1.5, width=11.5, height=1.8,
-                        font_size=44, bold=True,
-                        color=theme["title_color"] if not use_template else (0,0,0), align=PP_ALIGN.CENTER
+                        cover_slide,
+                        prs_title,
+                        left=0.8,
+                        top=1.5,
+                        width=11.5,
+                        height=1.8,
+                        font_size=44,
+                        bold=True,
+                        color=theme["title_color"] if not use_template else (0, 0, 0),
+                        align=PP_ALIGN.CENTER,
                     )
                     if author:
                         add_textbox(
-                            cover_slide, author,
-                            left=0.8, top=3.2, width=11.5, height=0.6,
-                            font_size=18, bold=False,
-                            color=theme["body_color"] if not use_template else (50,50,50), align=PP_ALIGN.CENTER
+                            cover_slide,
+                            author,
+                            left=0.8,
+                            top=3.2,
+                            width=11.5,
+                            height=0.6,
+                            font_size=18,
+                            bold=False,
+                            color=theme["body_color"] if not use_template else (50, 50, 50),
+                            align=PP_ALIGN.CENTER,
                         )
 
             # --- 解析 Markdown 幻灯片 ---

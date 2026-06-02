@@ -8,6 +8,7 @@ from utils.config import settings
 
 _logger = logging.getLogger(__name__)
 
+
 class ToolCallValidator:
     """
     LLM 工具调用的 Schema 校验 + 自愈 (Validation-Driven Self-Healing)。
@@ -55,17 +56,15 @@ class ToolCallValidator:
 
             # 3. 自愈: 将错误回传给 LLM 修复
             for attempt in range(self.MAX_HEAL_RETRIES):
-                healed_args = await self._heal_schema(
-                    tool, raw_args, error_detail, llm_client
-                )
+                healed_args = await self._heal_schema(tool, raw_args, error_detail, llm_client)
                 if healed_args is not None:
                     try:
                         validated = schema.model_validate(healed_args)
-                        _logger.info(f"[ToolValidator] '{tool.name}' healed successfully on attempt {attempt+1}.")
+                        _logger.info(f"[ToolValidator] '{tool.name}' healed successfully on attempt {attempt + 1}.")
                         return validated, None
                     except ValidationError as e2:
                         error_detail = self._format_validation_error(e2, tool.name)
-                        _logger.debug(f"[ToolValidator] Healing attempt {attempt+1} failed: {error_detail}")
+                        _logger.debug(f"[ToolValidator] Healing attempt {attempt + 1} failed: {error_detail}")
                         continue
                 else:
                     break
@@ -80,7 +79,9 @@ class ToolCallValidator:
             lines.append(f"  - Parameter '{loc}': {err['msg']} (expected {err.get('type', 'unknown')})")
         return f"Tool '{tool_name}' parameter validation failed:\n" + "\n".join(lines)
 
-    async def _heal_json_parse(self, tool: BaseTool, raw_string: str, error_msg: str, llm_client: Any) -> Optional[Dict]:
+    async def _heal_json_parse(
+        self, tool: BaseTool, raw_string: str, error_msg: str, llm_client: Any
+    ) -> Optional[Dict]:
         """专门修复纯 JSON 语法错误"""
         prompt = (
             f"You attempted to call the tool '{tool.name}', but your JSON arguments are malformed.\n"
@@ -111,7 +112,7 @@ class ToolCallValidator:
             resp = await llm_client.chat_non_stream(
                 messages=[{"role": "user", "content": prompt}],
                 model=getattr(settings, "ROUTER_MODEL_NAME", ""),
-                temperature=0.1
+                temperature=0.1,
             )
             text = (resp.content or "").strip()
 

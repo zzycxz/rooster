@@ -68,7 +68,9 @@ class RuntimeConfig:
 
     # --- Timeouts (Seconds) ---
     LLM_API_TIMEOUT: float = _env_float("LLM_API_TIMEOUT", 300.0)  # 底层 httpx 网络请求超时（原 45s/60s，现统一）
-    LLM_STREAM_CHUNK_TIMEOUT: float = _env_float("LLM_STREAM_CHUNK_TIMEOUT", 30.0)  # 流式响应块间隔超时（超过此值认为流挂起）
+    LLM_STREAM_CHUNK_TIMEOUT: float = _env_float(
+        "LLM_STREAM_CHUNK_TIMEOUT", 30.0
+    )  # 流式响应块间隔超时（超过此值认为流挂起）
     REMAND_HISTORY_MAX_CHARS: int = _env_int("REMAND_HISTORY_MAX_CHARS", 120000)  # REMAND 重试历史注入上限字符数
     STRATEGIST_LLM_TIMEOUT: float = _env_float("STRATEGIST_LLM_TIMEOUT", 300.0)  # 顶层规划器超时
     SUBTASK_MIN_TIMEOUT: int = _env_int(
@@ -78,9 +80,15 @@ class RuntimeConfig:
     WAIT_CONFIRM_TIMEOUT: int = _env_int("WAIT_CONFIRM_TIMEOUT", 300)  # 等待用户确认/澄清的超时时间
     DEP_WAIT_TIMEOUT: int = _env_int("DEP_WAIT_TIMEOUT", 600)  # 子任务依赖等待超时时间
     REFRAMER_TIMEOUT: float = _env_float("REFRAMER_TIMEOUT", 60.0)  # 意图重构器超时时间（正常 3-18s，60s 给 3 倍余量）
-    EVOLUTION_TIMEOUT: float = _env_float("EVOLUTION_TIMEOUT", 120.0)  # 进化引擎后台分析超时时间（正常 10-30s，120s 给 4 倍余量）
-    LLM_CALL_TIMEOUT: float = _env_float("LLM_CALL_TIMEOUT", 120.0)  # 通用 LLM 调用安全网（裸 chat_non_stream 的兜底超时）
-    FEISHU_API_TIMEOUT: float = _env_float("FEISHU_API_TIMEOUT", 30.0)  # 飞书 SDK API 调用超时（正常 1-3s，30s 给充足余量）
+    EVOLUTION_TIMEOUT: float = _env_float(
+        "EVOLUTION_TIMEOUT", 120.0
+    )  # 进化引擎后台分析超时时间（正常 10-30s，120s 给 4 倍余量）
+    LLM_CALL_TIMEOUT: float = _env_float(
+        "LLM_CALL_TIMEOUT", 120.0
+    )  # 通用 LLM 调用安全网（裸 chat_non_stream 的兜底超时）
+    FEISHU_API_TIMEOUT: float = _env_float(
+        "FEISHU_API_TIMEOUT", 30.0
+    )  # 飞书 SDK API 调用超时（正常 1-3s，30s 给充足余量）
     DOWNLOAD_TIMEOUT: int = _env_int("DOWNLOAD_TIMEOUT", 300)  # 多媒体/资源下载超时（秒）
     SUBAGENT_TOOL_TIMEOUT: int = _env_int("SUBAGENT_TOOL_TIMEOUT", 120)  # SubAgent 工具级别的执行超时上限（秒）
     MEMORY_INIT_TIMEOUT: int = _env_int("MEMORY_INIT_TIMEOUT", 120)  # 启动时记忆系统初始化超时（秒）
