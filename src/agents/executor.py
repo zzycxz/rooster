@@ -558,22 +558,42 @@ class AgentExecutor:
                 # 若检测到，立即中断循环，把问题推送给用户，等待下一轮对话。
                 _confirm_signal = self._extract_confirm_required(full_content)
                 if _confirm_signal:
-                    _formatted_question = self._format_clarification_message(
-                        _confirm_signal.get("question", ""),
-                        _confirm_signal.get("options", []),
-                    )
-                    # 若 LLM 原始输出中已经包含了格式化的文字说明，则不重复发送 JSON 块
-                    # 仅当 full_content 主体不包含自然语言问句时，才补发格式化版本
-                    if not any(kw in full_content for kw in ["请选择", "请确认", "请问", "哪个", "哪一"]):
-                        await self.event_handler.emit_assistant_delta(
+                    try:
+                        # Ensure "Other" option exists for user free-text input
+                        _confirm_options = list(_confirm_signal.get("options", []))
+                        if not any("其他" in opt or "other" in opt.lower() for opt in _confirm_options):
+                            _confirm_options.append("其他（自定义输入）")
+
+                        executor_logger.error(f">>>>> [DEBUG] _confirm_signal detected! Options: {_confirm_options}")
+                        _formatted_question = self._format_clarification_message(
+                            _confirm_signal.get("question", ""),
+                            _confirm_signal.get("options", []),
+                        )
+                        # 若 LLM 原始输出中已经包含了格式化的文字说明，则不重复发送 JSON 块
+                        if not any(kw in full_content for kw in ["请选择", "请确认", "请问", "哪个", "哪一"]):
+                            await self.event_handler.emit_assistant_delta(
+                                session_key=config.session_key,
+                                client_run_id=run_id,
+                                text=_formatted_question,
+                            )
+                        # 触发前端弹窗 UI
+                        executor_logger.error(">>>>> [DEBUG] Emitting require_user_input lifecycle event!")
+                        await self.event_handler.emit_lifecycle(
                             session_key=config.session_key,
                             client_run_id=run_id,
-                            text=_formatted_question,
+                            status="require_user_input",
+                            title="需要确认 (Confirmation Required)",
+                            message=_confirm_signal.get("question", "请在下方选择或输入："),
+                            options=_confirm_options,
+                            inputMode=True
                         )
-                    executor_logger.info(
-                        f"[CONFIRM_REQUIRED] 歧义拦截门触发 (Step {step})，"
-                        f"暂停执行，等待用户澄清：{_confirm_signal.get('question', '')[:80]}"
-                    )
+                        executor_logger.error(
+                            f"[CONFIRM_REQUIRED] 歧义拦截门触发 (Step {step})，"
+                            f"暂停执行，等待用户澄清：{_confirm_signal.get('question', '')[:80]}"
+                        )
+                    except Exception as confirm_exc:
+                        executor_logger.error(f">>>>> [FATAL ERROR] Failed to emit require_user_input: {confirm_exc}", exc_info=True)
+                    
                     break  # 不执行任何工具，退出 ReAct 循环，等待下一轮用户回复
 
                 # --- Phase 3: Tool execution ---
@@ -1257,9 +1277,40 @@ class AgentExecutor:
 
         LLM 可能在纯文本中夹杂一个 JSON 块，也可能直接输出纯 JSON。
         本方法使用贪心 JSON 扫描，而非严格的格式匹配，以提高鲁棒性。
+        同时，当模型未输出 JSON，但输出特定的 markdown 选择题格式时（如包含选项或 FAILED 并询问），
+        也能进行兜底提取。
         """
-        if not content or "CONFIRM_REQUIRED" not in content:
+        if not content:
             return None
+            
+        # 兜底解析：如果输出中包含 "回复 A 或 B" 这种明确的选项或包含 Markdown 表格或列表
+        if "CONFIRM_REQUIRED" not in content:
+            if "请确认" in content or "请选择" in content or "A 或 B" in content or "哪一部" in content:
+                # 尝试抓取 Markdown 表格或有序列表里的选项
+                options = []
+                lines = content.split("\n")
+                for line in lines:
+                    line_s = line.strip()
+                    # 匹配表格
+                    if line_s.startswith("|") and not "---" in line_s and not "选项" in line_s:
+                        parts = [p.strip() for p in line_s.split("|") if p.strip()]
+                        if len(parts) >= 2:
+                            options.append(" ".join(parts[:3]))
+                    # 匹配有序列表 (1. 选项A)
+                    elif re.match(r"^\d+\.\s+", line_s):
+                        # 提取选项内容，去掉前面的数字和点
+                        opt_text = re.sub(r"^\d+\.\s*", "", line_s)
+                        if len(opt_text) > 2 and len(opt_text) < 100:
+                            options.append(opt_text)
+                            
+                if options:
+                    return {
+                        "type": "CONFIRM_REQUIRED",
+                        "question": "检测到多个可能匹配的结果，请确认：",
+                        "options": options
+                    }
+            return None
+
         try:
             # 先尝试从 ```json ... ``` 代码块中提取
             fenced = re.findall(r"```(?:json)?\s*([\s\S]*?)```", content)

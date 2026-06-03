@@ -1581,6 +1581,8 @@ function app() {
     // ── UI ──────────────────────────────────────────────────
     activeTab: 'logs',
     sidebarOpen: false,
+    desktopSidebarCollapsed: false,
+    desktopChatSidebarCollapsed: false,
     chatSidebarOpen: false,
     isMobile: window.innerWidth < 768,
     tabs: [
@@ -1767,7 +1769,8 @@ function app() {
       message: 'Please confirm the action or provide input.',
       inputMode: true,
       options: ['Confirm', 'Cancel'],
-      inputValue: ''
+      inputValue: '',
+      selectedOption: null,
     },
     _lastRunId:   null,
     availableProviders: [],
@@ -4071,6 +4074,7 @@ function app() {
              this.confirmCard.inputMode = d.data?.inputMode !== false;
              this.confirmCard.options = d.data?.options || ['Confirm', 'Cancel'];
              this.confirmCard.inputValue = '';
+             this.confirmCard.selectedOption = null;
           }
         }
         this.$nextTick(() => {
@@ -4079,11 +4083,43 @@ function app() {
         });
       }
     },
-    submitConfirm(value) {
+    focusConfirmInput() {
+      this.confirmCard.selectedOption = '__other__';
+      this.$nextTick(() => {
+        const el = document.getElementById('confirm-card-input');
+        if (el) {
+          el.focus();
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      });
+    },
+    selectConfirmOption(opt) {
+      this.confirmCard.selectedOption = opt;
+      // If "Other" selected, focus input
+      if (opt.includes('其他') || opt.toLowerCase().includes('other')) {
+        this.confirmCard.selectedOption = '__other__';
+        this.$nextTick(() => {
+          const el = document.getElementById('confirm-card-input');
+          if (el) el.focus();
+        });
+      } else {
+        this.confirmCard.inputValue = '';
+      }
+    },
+    submitConfirmFromCard() {
       if (!this.gatewayConnected) return;
-      this.confirmCard.show = false;
-      const text = String(value).trim();
+      // Determine final value: selected option, or custom input
+      let text = '';
+      const sel = this.confirmCard.selectedOption;
+      if (sel === '__other__') {
+        text = this.confirmCard.inputValue.trim();
+      } else if (sel) {
+        text = String(sel).trim();
+      } else {
+        text = this.confirmCard.inputValue.trim();
+      }
       if (!text) return;
+      this.confirmCard.show = false;
       
       this.chatMessages.push({ id: Date.now(), role: 'user', content: text });
       this.chatMessages.push({ id: Date.now() + 1, role: 'assistant', content: '', thinkContent: '', streaming: true, isThinking: false });

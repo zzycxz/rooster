@@ -114,7 +114,7 @@ class MessageRouter:
 
         try:
             router = Router.get_instance()
-            await router.handle_inbound(msg, channel)
+            await router.handle_inbound(msg, channel, parent_event_handler=event_handler)
         except Exception as e:
             logger.error(f"process_run 失败: {e}")
             await event_handler.emit(

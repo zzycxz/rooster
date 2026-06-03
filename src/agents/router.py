@@ -76,15 +76,15 @@ class Router:
     async def close(self):
         await self.llm_client.close()
 
-    async def handle_inbound(self, msg: Any, channel: Any):
+    async def handle_inbound(self, msg: Any, channel: Any, parent_event_handler=None):
         """处理所有入口指令：L1 门闸 → 路由 → 执行。"""
         _mission_token = set_mission_id(getattr(msg, "session_id", "router"))
         try:
-            await self._handle_inbound_inner(msg, channel)
+            await self._handle_inbound_inner(msg, channel, parent_event_handler)
         finally:
             reset_mission_id(_mission_token)
 
-    async def _handle_inbound_inner(self, msg: Any, channel: Any):
+    async def _handle_inbound_inner(self, msg: Any, channel: Any, parent_event_handler=None):
         """V15 路由主流程。"""
         from evolution.engine import EvolutionEngine
 
@@ -133,7 +133,7 @@ class Router:
             return
 
         # 5. 动态事件处理器
-        dynamic_event_handler = self._build_event_handler(msg, channel)
+        dynamic_event_handler = self._build_event_handler(msg, channel, parent_event_handler)
 
         # 6. flag:reframe → Reframer 前置
         original_text = msg.text
@@ -163,6 +163,23 @@ class Router:
                         lines.append(f"  **{i}.** {opt}")
                     lines.append("\n请回复选项序号（如 `1`、`2`）或直接输入您想要的具体描述。")
                 await channel.send_message(to=msg.sender_id, text="\n".join(lines))
+
+                # Emit require_user_input lifecycle event for dashboard confirmCard popup
+                display_options = list(options) if options else []
+                if not any("其他" in opt or "other" in opt.lower() for opt in display_options):
+                    display_options.append("其他（自定义输入）")
+                try:
+                    await dynamic_event_handler.emit_lifecycle(
+                        session_key=msg.session_id,
+                        client_run_id="clarify_" + msg.session_id,
+                        status="require_user_input",
+                        title="❓ 需要确认一下",
+                        message=question,
+                        options=display_options,
+                        inputMode=True,
+                    )
+                except Exception as e:
+                    logger.debug(f"[Path B] emit require_user_input failed: {e}")
                 return
 
         # 7. SkillIndex 查询（L2，~20ms）
@@ -189,14 +206,26 @@ class Router:
             evolution_engine.on_turn_complete(msg.session_id, msg.text, "Mission Completed", [])
         )
 
-    def _build_event_handler(self, msg: Any, channel: Any) -> AgentEventHandler:
-        """构建动态事件处理器（任务进度推送）。"""
+    def _build_event_handler(self, msg: Any, channel: Any, parent_event_handler=None) -> AgentEventHandler:
+        """构建动态事件处理器（任务进度推送）。
+        parent_event_handler: 来自 process_run 的事件处理器，拥有 Gateway WS 广播能力。
+        生命周期事件（如 require_user_input）通过它转发到前端弹窗。
+        """
         async def channel_broadcast(event_dict: dict):
-            if event_dict.get("stream") == "assistant":
+            stream = event_dict.get("stream")
+            if stream == "assistant":
                 status = event_dict["data"].get("status")
                 text = event_dict["data"].get("text", "")
                 if status == "done" and text:
                     await channel.send_message(to=msg.sender_id, text=text)
+            elif stream == "lifecycle" and parent_event_handler:
+                # Forward lifecycle events to Gateway WS client (for confirmCard popup)
+                await parent_event_handler.emit(
+                    run_id=event_dict.get("run_id", ""),
+                    session_id=event_dict.get("session_id", msg.session_id),
+                    stream="lifecycle",
+                    data=event_dict.get("data", {}),
+                )
 
         return AgentEventHandler(broadcast_callback=channel_broadcast)
 

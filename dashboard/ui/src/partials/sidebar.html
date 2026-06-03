@@ -1,6 +1,6 @@
   <!-- ────────── SIDEBAR ────────── -->
-  <aside class="main-sidebar flex-none w-52 xl:w-64 bg-slate-800 border-r border-slate-700 flex flex-col"
-         :class="sidebarOpen ? 'open' : ''">
+  <aside class="main-sidebar flex-none w-52 xl:w-64 bg-slate-800 border-r border-slate-700 flex-col"
+         :class="{ 'open': sidebarOpen, 'hidden md:flex': !desktopSidebarCollapsed, 'hidden md:hidden': desktopSidebarCollapsed }">
     <nav class="flex-1 py-2 space-y-0.5 overflow-y-auto">
       <template x-for="tab in tabs" :key="tab.id">
         <button

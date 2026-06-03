@@ -110,6 +110,10 @@ class RuntimeConfig:
     # --- Task checkpoint ---
     CHECKPOINT_ENABLED: bool = _env_bool("CHECKPOINT_ENABLED", True)
 
+    # --- Vision Debug ---
+    VISION_DEBUG_SAVE: bool = _env_bool("VISION_DEBUG_SAVE", False)
+    VISION_DEBUG_DIR: str = _env("VISION_DEBUG_DIR", "logs/vision")
+
     # --- Output ---
     OUTPUT_DIR: str = _env("OUTPUT_DIR", "output")
 

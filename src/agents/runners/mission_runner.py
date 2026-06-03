@@ -264,7 +264,14 @@ class MissionRunner:
                     run_id="system_confirm",
                     session_id=session_id,
                     stream="lifecycle",
-                    data={"status": "require_user_input", "subtask_id": st.id},
+                    data={
+                        "status": "require_user_input",
+                        "subtask_id": st.id,
+                        "title": f"⚠️ 子任务 `{st.id}` 需要确认",
+                        "message": f"子任务 `{st.id}` 需要人工确认后执行：\n> {preview}",
+                        "options": ["确认执行", "取消", "其他（自定义输入）"],
+                        "inputMode": True,
+                    },
                 )
             except Exception:
                 pass
@@ -1305,6 +1312,20 @@ class MissionRunner:
         if plan_decision.mode == PlanMode.CLARIFY:
             logger.info("[V15] CLARIFY → 发送澄清问题")
             await channel.send_message(to=msg.sender_id, text=plan_decision.clarify_question)
+
+            # Emit require_user_input lifecycle event for dashboard confirmCard popup
+            try:
+                await dynamic_event_handler.emit_lifecycle(
+                    session_key=msg.session_id,
+                    client_run_id="clarify_" + msg.session_id,
+                    status="require_user_input",
+                    title="❓ 需要澄清",
+                    message=plan_decision.clarify_question,
+                    options=["提供更多细节", "换个说法", "其他（自定义输入）"],
+                    inputMode=True,
+                )
+            except Exception as e:
+                logger.debug(f"[CLARIFY] emit require_user_input failed: {e}")
             return
 
         # 4. SINGLE_STEP / DAG_PLAN: 委托给 run() 执行

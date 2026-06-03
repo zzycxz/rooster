@@ -79,8 +79,10 @@ class AgentEventHandler:
 
     # ========== 扩展协议支持（供 Executor 调用）==========
     # ========== Extended protocol support (called by Executor) ==========
-    async def emit_lifecycle(self, session_key: str, client_run_id: str, status: str):
-        await self.emit(run_id=client_run_id, session_id=session_key, stream="lifecycle", data={"status": status})
+    async def emit_lifecycle(self, session_key: str, client_run_id: str, status: str, **kwargs):
+        data = {"status": status}
+        data.update(kwargs)
+        await self.emit(run_id=client_run_id, session_id=session_key, stream="lifecycle", data=data)
 
     async def emit_assistant_delta(self, session_key: str, client_run_id: str, text: str):
         await self.emit(

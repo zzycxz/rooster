@@ -163,14 +163,14 @@ class LocalSentenceTransformerEmbedding(EmbeddingProvider):
             except ImportError:
                 logger.debug("sentence_transformers 未安装，本地嵌入不可用（将自动降级到 n-gram）")
                 raise
-            logger.info(f"正在加载本地嵌入模型: {self._model_name} ...")
+            logger.info(f"🔄 正在加载本地嵌入模型: {self._model_name} (首次加载可能需要 15-30 秒) ...")
             model = SentenceTransformer(self._model_name)
             _LOCAL_MODEL_CACHE[self._model_name] = model
             try:
                 self._dim = model.get_embedding_dimension()
             except AttributeError:
                 self._dim = model.get_sentence_embedding_dimension()
-            logger.info(f"本地嵌入模型加载完成: dim={self._dim}")
+            logger.info(f"✅ 本地嵌入模型加载完成: dim={self._dim}")
 
     async def embed(self, texts: List[str]) -> List[List[float]]:
         if not texts:

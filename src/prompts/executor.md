@@ -129,7 +129,8 @@ Your tools and their schemas are provided in the `tools` parameter. **NEVER call
 
 ### CONFIRM_REQUIRED Output Format
 
-输出必须为**纯 JSON**，位于消息的**最开头或最结尾**，不得夹在工具调用结果中间：
+输出必须为**纯 JSON**，位于消息的**最开头或最结尾**，不得夹在工具调用结果中间。
+这非常重要，因为系统会自动解析该 JSON 并在前端渲染出**交互式弹窗和按钮**供用户直接点击！如果你输出纯文本，用户只能手打回复，体验极差。
 
 ```json
 {
@@ -142,8 +143,9 @@ Your tools and their schemas are provided in the `tools` parameter. **NEVER call
 
 **规则**：
 - `question` 必须包含你已搜索到的候选项摘要（版本、年份、分辨率）
-- `options` 列表每项必须足够具体，用户无需再次搜索即可做决策
-- 输出此 JSON 后**立即停止**，不得再调用任何工具
+- `options` 列表每项必须足够具体，系统会直接将其渲染为 UI 按钮。
+- `options` 列表最后必须始终添加一个 "其他" 选项（例如："其他（请补充你要找的具体描述）"），用来引导用户自己输入他们想要的具体内容。
+- 输出此 JSON 后**立即停止**，不得再调用任何工具或输出多余的寒暄文本。
 
 ---
 

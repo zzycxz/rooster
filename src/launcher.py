@@ -76,123 +76,97 @@ class RoosterLauncher:
         port = self._find_available_port()
         self.gateway_port = port
 
-        from rich.progress import Progress, SpinnerColumn, TextColumn
+        logger.info("正在启动核心网关服务...")
+        logger.info(f"📡 网关正在监听: {self.base_url}:{port}")  # Gateway listening
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            transient=True,
-        ) as progress:
-            task_core = progress.add_task("[cyan]正在启动核心网关服务...", total=None)
+        # FastAPI App config
+        from gateway.server import app
+        app.state.registry = self.registry
 
-            logger.info(f"📡 网关正在监听: {self.base_url}:{port}")  # Gateway listening
+        # Uvicorn config (prevent disabling existing loggers)
+        config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", log_config=None)
+        server = uvicorn.Server(config)
+        self._server_task = asyncio.create_task(server.serve())
 
-            # 2. 内网穿透
-            # 2. Intranet tunnel
-            if self._settings.ENABLE_TUNNEL:
-                tunnel = TunnelManager.get_instance(port)
-                asyncio.create_task(tunnel.start())
+        # 等待服务器就绪
+        await asyncio.sleep(1.0)
 
-            # 3. 启动 Uvicorn（后台任务，不阻塞后续初始化）
-            # 3. Start Uvicorn (background task, does not block subsequent initialization)
-            config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-            server = uvicorn.Server(config)
-            self._server_task = asyncio.create_task(server.serve())
+        # 3b. 自动打开 Dashboard
+        is_guardian = os.environ.get("ROOSTER_GUARDIAN_MODE") == "true"
+        if self._settings.DASHBOARD_AUTO_OPEN and not is_guardian:
+            dashboard_url = f"http://127.0.0.1:{port}/dashboard"
+            try:
+                import webbrowser
+                webbrowser.open(dashboard_url)
+                logger.info(f"🌐 Dashboard 已在浏览器中打开: {dashboard_url}")
+            except Exception as e:
+                logger.warning(f"⚠️ 无法自动打开浏览器: {e}")
+            logger.info(f"🖥️ Dashboard 地址: {dashboard_url}")
+        elif is_guardian:
+            logger.info("🛡️ 检测到由 Guardian 守护进程拉起，跳过自动打开浏览器以避免标签页骚扰。")
+            logger.info(f"🖥️ Dashboard 访问地址: http://127.0.0.1:{port}/dashboard")
 
-            # 等待服务器就绪
-            # Wait for server to be ready
-            await asyncio.sleep(1.0)
+        # 4. 连接 LocalNode
+        logger.info("💉 正在启动本地虚拟受控节点 (LocalNode) 并尝试挂载...")
+        local_node = RoosterLocalNode(gateway_url=f"ws://127.0.0.1:{port}/v1/node/ws")
+        asyncio.create_task(local_node.connect())
 
-            # 3b. 自动打开 Dashboard（由 DASHBOARD_AUTO_OPEN 控制，且非看守器自愈模式下才打开）
-            # 3c. Auto-open Dashboard (controlled by DASHBOARD_AUTO_OPEN, skipped in guardian self-healing mode)
-            is_guardian = os.environ.get("ROOSTER_GUARDIAN_MODE") == "true"
-            if self._settings.DASHBOARD_AUTO_OPEN and not is_guardian:
-                dashboard_url = f"http://127.0.0.1:{port}/dashboard"
-                try:
-                    import webbrowser
+        # 5. [P2-1] Webhook 通道注册
+        if self._settings.WEBHOOK_ENABLED:
+            try:
+                from channels.webhook import WebhookChannel
+                webhook_channel = WebhookChannel()
+                self.registry.register(webhook_channel)
+                await webhook_channel.start()
+                logger.info(f"🔗 Webhook 通道已启动，端口: {webhook_channel.port}")
+            except Exception as e:
+                logger.warning(f"⚠️ Webhook 通道启动失败（可选功能，不影响主系统）: {e}")
 
-                    webbrowser.open(dashboard_url)
-                    logger.info(f"🌐 Dashboard 已在浏览器中打开: {dashboard_url}")
-                except Exception as e:
-                    logger.warning(f"⚠️ 无法自动打开浏览器: {e}")
-                logger.info(f"🖥️ Dashboard 地址: {dashboard_url}")
-            elif is_guardian:
-                logger.info("🛡️ 检测到由 Guardian 守护进程拉起，跳过自动打开浏览器以避免标签页骚扰。")
-                logger.info(f"🖥️ Dashboard 访问地址: http://127.0.0.1:{port}/dashboard")
+        # 6. [P3-1] MCP 工具动态注册
+        if self._settings.MCP_DYNAMIC_ENABLED:
+            try:
+                from utils.mcp_dynamic import register_mcp_tools_from_servers
+                count = await register_mcp_tools_from_servers()
+                if count > 0:
+                    logger.info(f"🔌 MCP 动态工具注册完成，共 {count} 个工具")
+            except Exception as e:
+                logger.warning(f"⚠️ MCP 动态注册失败（可选功能，不影响主系统）: {e}")
 
-            # 4. 连接 LocalNode
-            # 4. Connect LocalNode
-            logger.info("💉 正在启动本地虚拟受控节点 (LocalNode) 并尝试挂载...")
-            local_node = RoosterLocalNode(gateway_url=f"ws://127.0.0.1:{port}/v1/node/ws")
-            asyncio.create_task(local_node.connect())
+        logger.info("✅ 核心网关服务就绪")
+        
+        logger.info("正在建立飞书长连接...")
+        logger.info("正在预热记忆引擎与向量模型 (首次加载可能需要 15-30 秒)...")
 
-            # 5. [P2-1] Webhook 通道注册（可选，由 WEBHOOK_ENABLED 控制）
-            # 5. [P2-1] Webhook channel registration (optional, controlled by WEBHOOK_ENABLED)
-            if self._settings.WEBHOOK_ENABLED:
-                try:
-                    from channels.webhook import WebhookChannel
+        async def _init_feishu():
+            try:
+                def _load_and_create():
+                    from channels.feishu import FeishuChannel
+                    return FeishuChannel(channel_id="feishu")
 
-                    webhook_channel = WebhookChannel()
-                    self.registry.register(webhook_channel)
-                    await webhook_channel.start()
-                    logger.info(f"🔗 Webhook 通道已启动，端口: {webhook_channel.port}")
-                except Exception as e:
-                    logger.warning(f"⚠️ Webhook 通道启动失败（可选功能，不影响主系统）: {e}")
+                feishu_channel = await asyncio.to_thread(_load_and_create)
+                self.registry.register(feishu_channel)
+                await feishu_channel.start()
+                logger.info("✅ 飞书长连接就绪！")
+            except ImportError:
+                logger.info("飞书通道未启用 (lark-oapi 未安装)，跳过。")
+            except Exception as e:
+                logger.warning(f"飞书通道启动失败（不影响主系统）: {e}")
 
-            # 6. [P3-1] MCP 工具动态注册（可选，由 MCP_DYNAMIC_ENABLED 控制）
-            # 6. [P3-1] MCP dynamic tool registration (optional, controlled by MCP_DYNAMIC_ENABLED)
-            if self._settings.MCP_DYNAMIC_ENABLED:
-                try:
-                    from utils.mcp_dynamic import register_mcp_tools_from_servers
+        async def _init_mem():
+            try:
+                from agents.router import Router
+                router = Router.get_instance()
+                await asyncio.wait_for(
+                    router.memory_manager.initialize_async(),
+                    timeout=self._settings.MEMORY_INIT_TIMEOUT,
+                )
+                logger.info("✅ 记忆系统就绪！")
+            except asyncio.TimeoutError:
+                logger.warning("⚠️ 嵌入模型加载超时，系统将继续运行（语义搜索可能不可用）。")
+            except Exception as e:
+                logger.warning(f"⚠️ 记忆系统初始化异常: {e}，系统将继续运行。")
 
-                    count = await register_mcp_tools_from_servers()
-                    if count > 0:
-                        logger.info(f"🔌 MCP 动态工具注册完成，共 {count} 个工具")
-                except Exception as e:
-                    logger.warning(f"⚠️ MCP 动态注册失败（可选功能，不影响主系统）: {e}")
-
-            progress.update(task_core, completed=100)
-
-            # 并发执行飞书加载和记忆预热
-            task_feishu = progress.add_task("[magenta]正在建立飞书长连接...", total=None)
-            task_mem = progress.add_task("[green]正在预热记忆引擎与向量模型...", total=None)
-
-            async def _init_feishu():
-                try:
-
-                    def _load_and_create():
-                        from channels.feishu import FeishuChannel
-
-                        return FeishuChannel(channel_id="feishu")
-
-                    feishu_channel = await asyncio.to_thread(_load_and_create)
-                    self.registry.register(feishu_channel)
-                    await feishu_channel.start()
-                except ImportError:
-                    logger.info("飞书通道未启用 (lark-oapi 未安装)，跳过。")
-                except Exception as e:
-                    logger.warning(f"飞书通道启动失败（不影响主系统）: {e}")
-                finally:
-                    progress.update(task_feishu, completed=100)
-
-            async def _init_mem():
-                try:
-                    from agents.router import Router
-
-                    router = Router.get_instance()
-                    await asyncio.wait_for(
-                        router.memory_manager.initialize_async(),
-                        timeout=self._settings.MEMORY_INIT_TIMEOUT,
-                    )
-                    logger.info("✅ 记忆系统就绪！")
-                except asyncio.TimeoutError:
-                    logger.warning("⚠️ 嵌入模型加载超时，系统将继续运行（语义搜索可能不可用）。")
-                except Exception as e:
-                    logger.warning(f"⚠️ 记忆系统初始化异常: {e}，系统将继续运行。")
-                finally:
-                    progress.update(task_mem, completed=100)
-
-            await asyncio.gather(_init_feishu(), _init_mem())
+        await asyncio.gather(_init_feishu(), _init_mem())
 
         # 8. 启动记忆蒸馏调度器
         # 8. Start session distillation scheduler

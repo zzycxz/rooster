@@ -1,6 +1,9 @@
+import os
+import time
 from PIL import Image, ImageDraw, ImageFont
 from typing import List, Dict, Any
 
+from utils.config.runtime import RuntimeConfig
 
 class ElitePainter:
     """OmniVision V3.9 精英绘图引擎 - Rooster 集成版"""
@@ -133,5 +136,21 @@ class ElitePainter:
             draw.rectangle(label_box, fill=color)
             draw.text((label_box[0] + 2, label_box[1] - 1), label_id, fill="#000000", font=font)
 
-        image.save(self.output_path)
+        # 受控落盘逻辑 (通过 .env 或默认配置控制)
+        if RuntimeConfig.VISION_DEBUG_SAVE:
+            save_dir = RuntimeConfig.VISION_DEBUG_DIR
+            os.makedirs(save_dir, exist_ok=True)
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            save_path = os.path.join(save_dir, f"vision_output_{timestamp}.png")
+            try:
+                image.save(save_path)
+            except Exception:
+                pass
+        elif self.output_path and self.output_path != "rooster_vision_output.png":
+            # 兼容外部显式传入特定路径的情况
+            try:
+                image.save(self.output_path)
+            except Exception:
+                pass
+
         return labeled_count
