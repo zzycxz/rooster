@@ -1,5 +1,5 @@
 # src/agents/runners/mission_runner.py
-"""多步任务编排器（COMPLEX / DIRECT / REFRAME 模式）"""  # Multi-step task orchestrator (COMPLEX / DIRECT / REFRAME mode)
+"""V15 任务编排器：消费 PlanDecision 并执行单步或多步任务。"""
 
 import asyncio
 import hashlib
@@ -35,7 +35,7 @@ _CHECKPOINT_DIR = os.path.join(".rooster", "checkpoints")
 
 
 class MissionRunner:
-    """处理 COMPLEX 模式的多步任务编排。"""
+    """V15 唯一执行入口：DIRECT_REPLY / SINGLE_STEP / DAG_PLAN。"""
 
     def __init__(
         self,
@@ -198,6 +198,38 @@ class MissionRunner:
         except Exception:
             pass
 
+    @staticmethod
+    def _normalize_model_tier(model_tier: Optional[str]) -> str:
+        tier = (model_tier or "standard").strip().lower()
+        if tier not in {"fast", "standard", "reasoning"}:
+            return "standard"
+        return tier
+
+    def _resolve_executor_target(self, model_tier: Optional[str]) -> tuple[str, str]:
+        tier = self._normalize_model_tier(model_tier)
+        if tier == "fast":
+            provider = getattr(settings, "FAST_MODEL_PROVIDER", "") or settings.EXECUTOR_MODEL_MODE
+            model = getattr(settings, "MODEL_TIER_FAST", "") or settings.FAST_MODEL_NAME or settings.EXECUTOR_MODEL_NAME
+            return provider, model
+        if tier == "reasoning":
+            return (
+                settings.EXECUTOR_MODEL_MODE,
+                getattr(settings, "MODEL_TIER_REASONING", "") or settings.EXECUTOR_MODEL_NAME,
+            )
+        return (
+            settings.EXECUTOR_MODEL_MODE,
+            getattr(settings, "MODEL_TIER_STANDARD", "") or settings.EXECUTOR_MODEL_NAME,
+        )
+
+    def _resolve_subtask_target(self, st: SubTask, model_tier: Optional[str]) -> tuple[str, str, bool]:
+        is_local_domain = False
+        if st.domain and settings.LOCAL_MODEL:
+            is_local_domain = any(d.lower() == st.domain.lower() for d in getattr(settings, "OLLAMA_DOMAINS", []))
+        if is_local_domain:
+            return "local", settings.LOCAL_MODEL, True
+        provider, model = self._resolve_executor_target(model_tier)
+        return provider, model, False
+
     # ------------------------------------------------------------------
     # User confirmation gate for requires_confirm subtasks
     # ------------------------------------------------------------------
@@ -279,6 +311,7 @@ class MissionRunner:
         reframed_text: str,
         dynamic_event_handler: AgentEventHandler,
         pre_planned_plan: Optional[MissionPlan] = None,
+        decision_model_tier: Optional[str] = None,
     ) -> None:
         """执行多步任务编排。"""  # Execute multi-step task orchestration
         archiver = VaultArchiver(settings.EVIDENCE_ROOT, msg.session_id)
@@ -651,6 +684,8 @@ class MissionRunner:
                         f"🏁 [{st.id}] RACE 模式：竞速分组 '{getattr(st, 'race_group', '')}'，首完成者取消兄弟任务"
                     )
 
+                subtask_provider, subtask_model, is_local_domain = self._resolve_subtask_target(st, decision_model_tier)
+
                 # Broadcast subtask start to blackboard so peers know this slot is active
                 await blackboard.update_progress(st.id, "running", step=0)
 
@@ -659,7 +694,7 @@ class MissionRunner:
                     session_key=msg.session_id,
                     agent_id=f"executor_{st.id}",
                     prompt=refined,
-                    model=settings.EXECUTOR_MODEL_NAME,
+                    model=subtask_model,
                     workspace_dir=os.path.abspath("."),
                     tool_registry=subtask_tool_registry,
                     allowed_paths=[str(p) for p in settings.ALLOWED_PATHS],
@@ -672,19 +707,15 @@ class MissionRunner:
                 # Each subtask gets its own LLMClient instance.
                 # Sharing self.exec_llm across parallel subtasks is a race condition:
                 # switch_provider() mutates shared state and corrupts the other subtask's provider.
-                # [Ollama 本地模型接入] 自适应路由轻量任务域 (domain) 至本地模型
-                is_local_domain = False
-                if st.domain:
-                    is_local_domain = any(
-                        d.lower() == st.domain.lower() for d in getattr(settings, "OLLAMA_DOMAINS", [])
-                    )
-
-                subtask_provider = "local" if is_local_domain else settings.EXECUTOR_MODEL_MODE
-                subtask_model = settings.LOCAL_MODEL if is_local_domain else settings.EXECUTOR_MODEL_NAME
-
+                # V15 priority: domain > model tier > executor defaults
                 if is_local_domain:
                     logger.info(
                         f"⚡ [Ollama Local Router] 检测到子任务 {st.id} 职能域为 {st.domain}，自动路由至本地模型 (local)"
+                    )
+                elif decision_model_tier:
+                    logger.info(
+                        f"🎚️ [Model Tier] 子任务 {st.id} 使用 {self._normalize_model_tier(decision_model_tier)} 档模型: "
+                        f"{subtask_provider}/{subtask_model}"
                     )
 
                 subtask_llm_client = LLMClient(
@@ -1235,9 +1266,7 @@ class MissionRunner:
                 plan=fallback_plan,
             )
 
-        # 记录 PlanDecision 指标
-        metrics.counter("plan_decision_total", "Strategist decision distribution").inc()
-        metrics.counter(f"plan_decision_{plan_decision.mode.value}_total", f"PlanDecision: {plan_decision.mode.value}").inc()
+        metrics.observe_v15_plan_decision(plan_decision.mode.value, plan_decision.model_tier)
 
         # 2. DIRECT_REPLY: 流式回复
         if plan_decision.mode == PlanMode.DIRECT_REPLY:
@@ -1286,6 +1315,7 @@ class MissionRunner:
             reframed_text=original_text,
             dynamic_event_handler=dynamic_event_handler,
             pre_planned_plan=plan_decision.plan,
+            decision_model_tier=plan_decision.model_tier,
         )
 
     # ----------------------------------------------------------------

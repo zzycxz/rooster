@@ -114,8 +114,7 @@ class Router:
         flags = self._l1_gate(msg.text)
         _l1_duration = time.time() - _l1_start
 
-        metrics.counter("route_l1_gate_total", "L1 gate hits").inc()
-        metrics.counter(f"route_l1_gate_{flags['target']}_total", f"L1 gate {flags['target']}").inc()
+        metrics.observe_v15_l1_gate(flags["target"], _l1_duration)
         logger.info(f"[L1 Gate] target={flags['target']} duration={_l1_duration:.4f}s text={msg.text[:60]}")
 
         # 3. BLOCK
@@ -172,7 +171,7 @@ class Router:
             skill_hint = skill_idx.query(original_text)
             if skill_hint:
                 logger.info(f"[SkillIndex] hint={skill_hint.hint_skill} confidence={skill_hint.confidence}")
-                metrics.counter(f"route_skill_hint_{skill_hint.hint_skill}_total", f"SkillIndex hit: {skill_hint.hint_skill}").inc()
+                metrics.observe_v15_skill_hint(skill_hint.hint_skill)
             skill_hint_dict = skill_hint.to_dict() if skill_hint else None
         except Exception as e:
             logger.debug(f"[SkillIndex] 查询失败（降级为无 hint）: {e}")

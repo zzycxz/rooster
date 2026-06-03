@@ -18,8 +18,8 @@ Rooster 是一个**多角色 Agent 框架**，能自主完成桌面操作、网�
 - **工具级依赖注入 (RoosterContext)**: 统一的 `RoosterContext` dataclass 将 session、task、memory、llm_client、blackboard、config 注入每次工具调用。零破坏迁移 — 旧工具无需改动即可继续运行。
 - **Schema 校验自愈 (ToolCallValidator)**: 基于 Pydantic 的工具调用校验器，支持两条自动修复路径（JSON 语法修复 + Schema 结构修复）。无效参数在执行前由轻量路由模型自动订正，硬上限 2 次重试，永不死循环。
 - **渐进式历史压缩**: ReAct 执行循环中每 10 步触发一次局部语义蒸馏，保留最近 5 步原始上下文，彻底解决长任务后期的"硬截断降智"问题。
-- **多角色协作**: Router（分拣）→ Strategist（规划）→ Executor（执行）→ Auditor（审计）
-- **混合执行模式**: Solo（单轮快速）/ Mission（多步长任务）/ Schedule（定时任务）
+- **薄路由执行链**: Router 硬规则门闸 → SkillIndex hint → Strategist.decide() → MissionRunner / Schedule
+- **统一执行模式**: `DIRECT_REPLY` / `SINGLE_STEP` / `DAG_PLAN` / `SCHEDULE`
 - **类型化控制流信号**: 原生 Python `EscalateSignal` / `AbortSignal` 替代魔法字符串解析，异常捕捉和堆栈回溯精确到类型。
 - **立体指标监控**: Prometheus 工具延迟直方图、子任务耗时、Provider 故障切换率、LLM 错误追踪。所有日志自动注入 `mission_id` 关联标记。
 - **视觉定位**: YOLO 模型驱动的桌面 UI 元素识别与操控
@@ -39,11 +39,11 @@ Rooster 是一个**多角色 Agent 框架**，能自主完成桌面操作、网�
 - **L2 SkillIndex**（~20ms，TF-IDF）：本地能力索引匹配，输出 SkillHint 给 Strategist 参考
 - **Strategist.decide()**（fast LLM）：语义判断任务深度 → `DIRECT_REPLY`（流式回复）/ `SINGLE_STEP`（单步执行）/ `DAG_PLAN`（多步规划）/ `CLARIFY`（歧义拦截）
 
-**零延迟静态规则引擎（0ms）**：内置下载触发词、定时触发词、安全拦截词。全程零 LLM 调用，零延迟。
+**低延迟硬门闸**：内置下载触发词、定时触发词、安全拦截词。Router 只做确定性分流，不再为语义分诊单独调用 LLM。
 
-**动态短路路由**：命中目标关键字后，完全绕过 Strategist 规划层，正则解析参数直达工具执行。
+**薄路由下沉**：硬门闸只决定 BLOCK / SCHEDULE / Reframer 前置；其余请求继续进入 SkillIndex + `Strategist.decide()`，不再存在 Router 自己的语义 triage 分支。
 
-**LLM 语义兜底**：仅在静态规则未命中时，才启用 fast 模型判断任务深度。用 0ms 解决约 80% 高频问题，不靠 LLM 硬扛一切。
+**单一语义判断点**：任务深度只在 `Strategist.decide()` 判一次，同时保留 `DIRECT_REPLY`、`SINGLE_STEP`、`DAG_PLAN` 和 `CLARIFY` 四种结果。
 
 ### 2. 全维度安全沙箱与隐私隔离：从接入到执行的纵深防御
 
@@ -456,11 +456,11 @@ rooster/
 L1 硬规则门闸 (< 5ms，纯代码)
     ├─ BLOCK ────────► 安全拦截
     ├─ SCHEDULE ─────► 定时任务注册 → schedules.json
-    ├─ 下载词表 ─────► Reframer 前置 → Strategist.decide()
-    └─ 其他 ─────────► PASS_TO_PLANNER
-                           │
-                           ▼
-                    L2 SkillIndex (~20ms，TF-IDF)
+    ├─ 下载词表 ─────► Reframer 前置
+    └─ 其他 ─────────► 进入 planner path
+                            │
+                            ▼
+                     L2 SkillIndex (~20ms，TF-IDF)
                            │
                            ▼
                     Strategist.decide() (fast LLM)
@@ -770,7 +770,7 @@ WS /v1/node/ws   — 受控桌面节点（含 auth_required 握手协议）
 
 ## 八、关键配置项
 
-> 完整配置请参考 `.env` 文件（80+ 配置项），以下仅列出核心项。
+> `.env.local.example` 只提供密钥模板；路由、模型档位和运行时行为配置以 `.env` 为准。
 
 ### 必填：至少一个 LLM Key
 
@@ -803,6 +803,20 @@ EXECUTOR_MODEL_MODE=jiutian        # 执行官（默认 jiutian）
 AUDITOR_MODEL_MODE=jiutian         # 审计官（默认 jiutian）
 ```
 
+### V15 薄路由 / 模型档位
+
+```ini
+FAST_MODEL_PROVIDER=jiutian        # decide()/自愈修正轻量模型 provider
+FAST_MODEL_NAME=qwen/qwen3.6-35b   # fast 档模型
+
+MODEL_TIER_FAST=                   # 空则回退 FAST_MODEL_NAME
+MODEL_TIER_STANDARD=               # 空则回退 EXECUTOR_MODEL_NAME
+MODEL_TIER_REASONING=              # 空则回退 EXECUTOR_MODEL_NAME
+
+SKILL_INDEX_THRESHOLD=0.3          # SkillIndex 命中阈值
+# 运行时优先级：OLLAMA domain > model tier > executor defaults
+```
+
 ### Failover
 
 ```ini
@@ -829,10 +843,10 @@ HF_ENDPOINT=https://huggingface.co        # HuggingFace 镜像（国内改 hf-mi
 pip install -e ".[dev]"
 
 # 运行测试
-pytest tests/ -v
+pytest -q
 
 # 代码检查
-ruff check src/ tests/
+ruff check .
 ```
 
 ### 添加新技能

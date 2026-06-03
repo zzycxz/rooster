@@ -18,8 +18,8 @@ Rooster is a **multi-role Agent framework** that autonomously handles complex ta
 - **Tool Dependency Injection (RoosterContext)**: Unified `RoosterContext` dataclass injects session, task, memory, LLM client, blackboard, and config into every tool call. Zero-breakage migration — old tools continue working unchanged.
 - **Schema Validation Self-Healing (ToolCallValidator)**: Pydantic-based tool call validator with two auto-healing paths (JSON syntax fix + schema structure repair). Invalid parameters are automatically corrected by a lightweight router model before execution, with a hard budget of 2 retries.
 - **Progressive History Compression**: Per-10-step semantic distillation during ReAct execution. Preserves the latest 5 raw steps while compressing older context, eliminating the "hard truncation degradation" that plagued long-running tasks.
-- **Multi-role collaboration**: Router (triage) → Strategist (planning) → Executor (execution) → Auditor (review)
-- **Hybrid execution modes**: Solo (single-turn quick) / Mission (multi-step long-running) / Schedule (timed tasks)
+- **Thin routing pipeline**: Router hard rules → SkillIndex hint → Strategist.decide() → MissionRunner / Schedule
+- **Unified execution modes**: `DIRECT_REPLY` / `SINGLE_STEP` / `DAG_PLAN` / `SCHEDULE`
 - **Typed Signal Exceptions**: Native Python `EscalateSignal` / `AbortSignal` replace magic string parsing for control flow, enabling precise exception catching and stack traces.
 - **Structured Observability**: Prometheus histograms for tool latency, subtask duration, Provider failover rate, and LLM error tracking. Automatic `mission_id` correlation across all log entries.
 - **Visual grounding**: YOLO-driven desktop UI element detection and manipulation
@@ -39,11 +39,11 @@ Rooster is a **multi-role Agent framework** that autonomously handles complex ta
 - **L2 SkillIndex** (~20ms, TF-IDF): Local capability index matching, outputs SkillHint for Strategist reference
 - **Strategist.decide()** (fast LLM): Semantic depth judgment → `DIRECT_REPLY` (streaming) / `SINGLE_STEP` (single task) / `DAG_PLAN` (multi-step DAG) / `CLARIFY` (ambiguity intercept)
 
-**Zero-latency static rule engine (0ms)**: Built-in download/schedule/security trigger dictionaries. Zero LLM calls, zero latency.
+**Low-latency hard gate**: Built-in download/schedule/security trigger dictionaries handle deterministic branching in code. Router no longer spends an LLM call on semantic triage.
 
-**Dynamic short-circuit routing**: On keyword match, completely bypasses the Strategist planning layer — parameters parsed by regex route directly to tool execution.
+**Thin-router handoff**: The hard gate only decides BLOCK / SCHEDULE / reframe-preprocess. Everything else continues into SkillIndex + `Strategist.decide()` instead of a separate Router-owned planner model.
 
-**LLM semantic fallback**: Only invoked when static rules miss. The rule engine resolves ~80% of high-frequency requests at 0ms — LLM is a last resort, not the default.
+**Single semantic decision point**: Semantic depth is judged exactly once by `Strategist.decide()`. That keeps routing thin while still preserving `DIRECT_REPLY`, `SINGLE_STEP`, `DAG_PLAN`, and `CLARIFY`.
 
 ### 2. Full-Spectrum Security Sandbox & Privacy Isolation: Defense-in-Depth from Ingestion to Execution
 
@@ -458,11 +458,11 @@ User Message (CLI / Feishu / WebSocket / Dashboard)
 L1 Hard-Rule Gate (< 5ms, pure code)
     ├─ BLOCK ────────► Safety intercept
     ├─ SCHEDULE ─────► Scheduled task registration → schedules.json
-    ├─ Download KW ──► Reframer pre-processing → Strategist.decide()
-    └─ Other ────────► PASS_TO_PLANNER
-                           │
-                           ▼
-                    L2 SkillIndex (~20ms, TF-IDF)
+    ├─ Download KW ──► Reframer pre-processing
+    └─ Other ────────► Continue to planner path
+                            │
+                            ▼
+                     L2 SkillIndex (~20ms, TF-IDF)
                            │
                            ▼
                     Strategist.decide() (fast LLM)
@@ -784,7 +784,7 @@ WS /v1/node/ws   — Controlled desktop node (with auth_required handshake)
 
 ## 8. Key Configuration
 
-> See the `.env` file for the full list (80+ config items). Only core items listed here.
+> `.env.local.example` only templates secrets. Runtime behavior, routing, and model selection live in `.env`.
 
 ### Required: At Least One LLM Key
 
@@ -817,6 +817,20 @@ EXECUTOR_MODEL_MODE=jiutian        # Executor (default: jiutian)
 AUDITOR_MODEL_MODE=jiutian         # Auditor (default: jiutian)
 ```
 
+### V15 Thin Routing / Model Tiers
+
+```ini
+FAST_MODEL_PROVIDER=jiutian        # Lightweight provider for decide() / validator repair
+FAST_MODEL_NAME=qwen/qwen3.6-35b   # Fast-path model
+
+MODEL_TIER_FAST=                   # Optional override for fast tier
+MODEL_TIER_STANDARD=               # Optional override for standard executor tier
+MODEL_TIER_REASONING=              # Optional override for reasoning executor tier
+
+SKILL_INDEX_THRESHOLD=0.3          # TF-IDF hint threshold
+# Runtime priority: OLLAMA domain > model tier > executor defaults
+```
+
 ### Failover
 
 ```ini
@@ -843,10 +857,10 @@ HF_ENDPOINT=https://huggingface.co        # HuggingFace mirror (China: hf-mirror
 pip install -e ".[dev]"
 
 # Run tests
-pytest tests/ -v
+pytest -q
 
 # Lint
-ruff check src/ tests/
+ruff check .
 ```
 
 ### Adding a New Skill

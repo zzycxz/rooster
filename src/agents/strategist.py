@@ -13,6 +13,10 @@ from .executor import _stream_with_chunk_timeout
 logger = logging.getLogger(__name__)
 
 
+def _fast_tier_model() -> str:
+    return getattr(settings, "MODEL_TIER_FAST", "") or settings.FAST_MODEL_NAME
+
+
 class Strategist:
     """
     战略官 (Strategist)：
@@ -677,7 +681,7 @@ class Strategist:
                                 {"role": "system", "content": "你是一个有帮助的助手。简洁、准确地回答用户问题。"},
                                 {"role": "user", "content": user_request},
                             ],
-                            model=settings.FAST_MODEL_NAME,
+                            model=_fast_tier_model(),
                             temperature=0.3,
                         ),
                         chunk_timeout=getattr(settings, "LLM_STREAM_CHUNK_TIMEOUT", 30.0),
@@ -759,7 +763,7 @@ class Strategist:
             response = await asyncio.wait_for(
                 self.llm_client.chat_non_stream(
                     messages=messages,
-                    model=settings.FAST_MODEL_NAME,
+                    model=_fast_tier_model(),
                     temperature=0.1,
                     max_tokens=256,
                 ),

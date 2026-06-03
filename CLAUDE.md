@@ -29,11 +29,12 @@ Router._handle_inbound_inner()
   │
   ├─ SkillIndex (L2, ~20ms, TF-IDF) → SkillHint
   │
-  └─ Strategist.decide() (fast LLM)
-      ├─ DIRECT_REPLY → 流式回复（lazy 异步生成器）
-      ├─ SINGLE_STEP  → MissionRunner.run(pre_planned_plan=单任务)
-      ├─ DAG_PLAN     → MissionRunner.run(pre_planned_plan=多步DAG)
-      └─ CLARIFY      → 发送澄清问题
+  └─ MissionRunner.run_with_decision()
+      └─ Strategist.decide() (fast LLM)
+          ├─ DIRECT_REPLY → 流式回复（lazy 异步生成器）
+          ├─ SINGLE_STEP  → MissionRunner.run(pre_planned_plan=单任务)
+          ├─ DAG_PLAN     → MissionRunner.run(pre_planned_plan=多步DAG)
+          └─ CLARIFY      → 发送澄清问题
 ```
 
 ### 关键文件
@@ -82,10 +83,10 @@ EXECUTOR_MODEL_NAME=    # 执行模型（主力）
 AUDITOR_MODEL_NAME=     # 审计模型
 FAST_MODEL_NAME=        # 轻量模型（Strategist.decide() 分诊 + 校验管道）
 
-# V15 模型档位（Phase 4，目前定义但未消费）
-MODEL_TIER_FAST=        # 空则回退 FAST_MODEL_NAME
-MODEL_TIER_STANDARD=    # 空则回退 EXECUTOR_MODEL_NAME
-MODEL_TIER_REASONING=   # 空则回退 EXECUTOR_MODEL_NAME
+# V15 模型档位（已接线）
+MODEL_TIER_FAST=        # decide()/DIRECT_REPLY/校验自愈优先使用；空则回退 FAST_MODEL_NAME
+MODEL_TIER_STANDARD=    # 执行 standard 档；空则回退 EXECUTOR_MODEL_NAME
+MODEL_TIER_REASONING=   # 执行 reasoning 档；空则回退 EXECUTOR_MODEL_NAME
 
 # 稳定性配置
 CHECKPOINT_ENABLED=true           # 长任务断点续跑（必须开启！）

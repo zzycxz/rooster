@@ -13,11 +13,11 @@
 - **strategist_triage.md 深度判断 Prompt**：新增分诊 prompt，含工具动词兜底规则、model_tier 建议、CLARIFY 触发条件。(`src/prompts/strategist_triage.md`)
 - **SkillIndex 能力索引（TF-IDF 第一版）**：零外部依赖的关键词匹配索引，全局单例，支持从 `skills/` 目录自动加载 SKILL.md。可配置阈值 `SKILL_INDEX_THRESHOLD`。(`src/agents/skill_index.py`)
 - **PlanMode / PlanDecision / MissionState 数据结构**：`PlanMode` 枚举（4 值）、`PlanDecision`（含 lazy 流式生成器 `reply_stream` + `clarify_question` + `plan`）、`MissionState`（7 态，只在内存不写 checkpoint）。(`src/agents/protocol.py`)
-- **PASS_TO_PLANNER 路由目标**：新增 `RouteTarget.PASS_TO_PLANNER`，L1 门闸未命中硬规则时下沉给 Strategist。(`src/agents/routing_protocol.py`)
+- **Planner handoff 语义**：L1 门闸未命中硬规则时，Router 内部将请求继续下沉到 planner path，再由 SkillIndex + `Strategist.decide()` 处理。(`src/agents/router.py`)
 - **L1 硬规则门闸**：`Router._l1_gate()` 纯代码分诊（< 5ms），安全词表 → BLOCK、定时词表 → SCHEDULE、下载词表 → flag:reframe。(`src/agents/router.py`)
 - **MissionRunner.run_with_decision()**：V15 新入口，调用 `Strategist.decide()` 获取 `PlanDecision` 后执行。DIRECT_REPLY 走流式缓冲，CLARIFY 发送澄清问题，SINGLE_STEP/DAG_PLAN 委托给 `run()`。(`src/agents/runners/mission_runner.py`)
 - **V15 Metrics 指标**：新增 `observe_v15_l1_gate()`、`observe_v15_plan_decision()`、`observe_v15_skill_hint()`。(`src/gateway/metrics.py`)
-- **V15 模型三档配置**：新增 `MODEL_TIER_FAST` / `MODEL_TIER_STANDARD` / `MODEL_TIER_REASONING`、`EXECUTOR_AUTO_UPGRADE` / `EXECUTOR_UPGRADE_THRESHOLD`。(`src/utils/config/providers.py`)
+- **V15 模型三档配置**：新增 `MODEL_TIER_FAST` / `MODEL_TIER_STANDARD` / `MODEL_TIER_REASONING`、`EXECUTOR_AUTO_UPGRADE` / `EXECUTOR_UPGRADE_THRESHOLD`。fast 档接入 `Strategist.decide()` 与校验自愈，standard/reasoning 档接入 MissionRunner 下游执行。(`src/utils/config/providers.py`, `src/agents/strategist.py`, `src/agents/runners/mission_runner.py`, `src/toolset/validation.py`)
 
 ### Changed
 
@@ -35,7 +35,7 @@
 - **SoloRunner 完全删除**：`solo_runner.py` 删除，Router 不再持有 SoloRunner 实例。DIRECT_REPLY 由 Strategist.decide() + MissionRunner.run_with_decision() 流式处理。(`src/agents/runners/solo_runner.py`)
 - **Router LLM 分诊删除**：`_triage_via_llm()`、`_triage_by_keyword()`、`_triage_llm` 实例、`router_triage.md` prompt 全部删除。(`src/agents/router.py`, `src/prompts/router_triage.md`)
 - **Legacy 路由路径删除**：`_handle_inbound_legacy()` 及其依赖的 bracket-tag 状态机（`triage_state`、`_TRIAGE_TO_TARGET`）全部删除。(`src/agents/router.py`)
-- **Deprecated RouteTarget 枚举删除**：`TALK`、`DIRECT_EXECUTOR`、`MISSION` 及其工厂方法 `talk()`、`direct()`、`mission()` 全部删除。(`src/agents/routing_protocol.py`)
+- **旧 bracket-tag 路由语义删除**：`[TALK]` / `[DIRECT]` / `[REFRAME]` 驱动的 Router 决策叙事退出主线，统一由 L1 gate + `PlanMode` 承担。(`src/agents/router.py`, `src/agents/protocol.py`)
 - **ROUTER_MODEL_MODE / ROUTER_MODEL_NAME 配置删除**：从 `providers.py`、`.env`、`security.py` allowlist、dashboard 中移除。(`src/utils/config/providers.py`, `.env`, `src/gateway/security.py`)
 - **SOLO_MODEL_MODE / SOLO_MODEL_NAME / SOLO_FAILOVER_ORDER 配置删除**：从 `providers.py`、`.env` 中移除。(`src/utils/config/providers.py`, `.env`)
 - **Legacy Metrics 删除**：`observe_route_decision()` 方法删除（含 `route_triage_llm_total` 计数器）。(`src/gateway/metrics.py`)
@@ -156,7 +156,7 @@
 #### P2: Schema Validation Self-Healing (Schema 强校验底盘拦截)
 
 - **ToolCallValidator (工具调用校验器)**：新建 `src/toolset/validation.py`，基于 Pydantic 设计底层校验引擎。包含两条自愈路径：JSON 语法修复（`_heal_json_parse`）和 Schema 结构修复（`_heal_schema`），各最多 2 次重试。
-- **Validation Pipeline Integration (校验管道集成)**：在 `tool_dispatch.py` 的执行链中，先经过 `ToolCallValidator.validate_and_heal()` 校验，通过后才交给工具执行。如果 Pydantic `model_validate` 抛出 `ValidationError`，校验器自动将错误信息打包成 Prompt 发给轻量路由模型（`ROUTER_MODEL_NAME`，`temperature=0.1`）要求订正参数。大模型在一两秒内修正后系统继续执行，上层 MissionRunner / Strategist 完全无感。
+- **Validation Pipeline Integration (校验管道集成)**：在 `tool_dispatch.py` 的执行链中，先经过 `ToolCallValidator.validate_and_heal()` 校验，通过后才交给工具执行。如果 Pydantic `model_validate` 抛出 `ValidationError`，校验器自动将错误信息打包成 Prompt 发给轻量修正模型（v15 主线由 `FAST_MODEL_NAME` / `MODEL_TIER_FAST` 承担，`temperature=0.1`）要求订正参数。大模型在一两秒内修正后系统继续执行，上层 MissionRunner / Strategist 完全无感。
 - **Healing Budget (自愈预算硬上限)**：`MAX_HEAL_RETRIES = 2`，超出后降级为返回 SchemaValidationFailed 错误，由 ReAct 循环自主处理。永不死循环。
 
 #### ⚠️ v14.1 Known Gaps (已验证未闭合)
