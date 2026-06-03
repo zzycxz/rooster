@@ -111,7 +111,7 @@ class ToolCallValidator:
         try:
             resp = await llm_client.chat_non_stream(
                 messages=[{"role": "user", "content": prompt}],
-                model=getattr(settings, "ROUTER_MODEL_NAME", ""),
+                model=settings.FAST_MODEL_NAME,
                 temperature=0.1,
             )
             text = (resp.content or "").strip()

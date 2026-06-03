@@ -294,11 +294,11 @@ Inspect the `status` field before treating any subtask as complete.
 
 **REROUTE rebuild rules:**
 
-| `suggested_route` | Target Domain | Target Tool        |
-|-------------------|---------------|--------------------|
-| `[DIRECT]`        | `RESOURCE`    | `web_search`       |
-| `[REFRAME]`       | `RESOURCE`    | `multimedia_download` |
-| `[TALK]`          | `COMMS`       | `dialogue_agent`   |
+| `suggested_route`  | Target Domain | Target Tool        |
+|--------------------|---------------|--------------------|
+| `single_step`      | `RESOURCE`    | `web_search`       |
+| `dag_plan`         | `RESOURCE`    | `multimedia_download` |
+| `direct_reply`     | `COMMS`       | `dialogue_agent`   |
 
 - Preserve original `instruction`; only replace `domain` and `tool`.
 - A `REROUTE` may only occur once per subtask. Double `REDIRECT` → `ABORT`.

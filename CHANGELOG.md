@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.5.5] - 2026-06-03
+
+> **涵盖**: V15 路由架构重写 — L1 硬路由 + Strategist 语义主权
+> **核心范式**: Router 不再调 LLM；语义判断下沉到 Strategist.decide()（fast 模型）；能力索引 SkillIndex 辅助决策
+
+---
+
+### Added
+
+- **Strategist.decide() 语义主权入口**：新增 `decide()` 方法，调用 fast LLM 判断任务深度，输出 `PlanDecision` 结构（`DIRECT_REPLY` / `SINGLE_STEP` / `DAG_PLAN` / `CLARIFY`）。不修改现有 `plan()` / `plan_stream()` / `replan()`。(`src/agents/strategist.py`)
+- **strategist_triage.md 深度判断 Prompt**：新增分诊 prompt，含工具动词兜底规则、model_tier 建议、CLARIFY 触发条件。(`src/prompts/strategist_triage.md`)
+- **SkillIndex 能力索引（TF-IDF 第一版）**：零外部依赖的关键词匹配索引，全局单例，支持从 `skills/` 目录自动加载 SKILL.md。可配置阈值 `SKILL_INDEX_THRESHOLD`。(`src/agents/skill_index.py`)
+- **PlanMode / PlanDecision / MissionState 数据结构**：`PlanMode` 枚举（4 值）、`PlanDecision`（含 lazy 流式生成器 `reply_stream` + `clarify_question` + `plan`）、`MissionState`（7 态，只在内存不写 checkpoint）。(`src/agents/protocol.py`)
+- **PASS_TO_PLANNER 路由目标**：新增 `RouteTarget.PASS_TO_PLANNER`，L1 门闸未命中硬规则时下沉给 Strategist。(`src/agents/routing_protocol.py`)
+- **L1 硬规则门闸**：`Router._l1_gate()` 纯代码分诊（< 5ms），安全词表 → BLOCK、定时词表 → SCHEDULE、下载词表 → flag:reframe。(`src/agents/router.py`)
+- **MissionRunner.run_with_decision()**：V15 新入口，调用 `Strategist.decide()` 获取 `PlanDecision` 后执行。DIRECT_REPLY 走流式缓冲，CLARIFY 发送澄清问题，SINGLE_STEP/DAG_PLAN 委托给 `run()`。(`src/agents/runners/mission_runner.py`)
+- **V15 Metrics 指标**：新增 `observe_v15_l1_gate()`、`observe_v15_plan_decision()`、`observe_v15_skill_hint()`。(`src/gateway/metrics.py`)
+- **V15 模型三档配置**：新增 `MODEL_TIER_FAST` / `MODEL_TIER_STANDARD` / `MODEL_TIER_REASONING`、`EXECUTOR_AUTO_UPGRADE` / `EXECUTOR_UPGRADE_THRESHOLD`。(`src/utils/config/providers.py`)
+
+### Changed
+
+- **Router 架构重写**：删除 `_triage_via_llm()`、`_triage_by_keyword()`、`_handle_inbound_legacy()` 及所有类级关键词列表（`_TALK_KW` / `_COMPLEX_KW` / `_DOWNLOAD_KW` / `_SCHEDULE_KW` / `_CAPABILITY_QUERY_RE`）。Router 不再持有 `_triage_llm` 和 `solo_runner`。(`src/agents/router.py`)
+- **MissionRunner.run() 签名变更**：移除 `is_direct: bool` 参数，新增 `pre_planned_plan: Optional[MissionPlan]` 参数。当提供 `pre_planned_plan` 时跳过规划阶段直接执行。(`src/agents/runners/mission_runner.py`)
+- **Strategist.decide() 使用 FAST_MODEL_NAME**：分诊调用 fast 模型（`FAST_MODEL_NAME`），超时 15s，降级为 SINGLE_STEP。(`src/agents/strategist.py`)
+- **Executor for_solo() 模型变更**：`agent_id` 从 `rooster_solo` 改为 `rooster_direct_reply`，模型从 `SOLO_MODEL_NAME` 改为 `EXECUTOR_MODEL_NAME`。(`src/agents/executor.py`)
+- **validation.py 模型变更**：校验管道 LLM 调用从 `ROUTER_MODEL_NAME` 改为 `FAST_MODEL_NAME`。(`src/toolset/validation.py`)
+- **Reframer 触发时机变更**：从"Router LLM 分诊返回 REFRAME"改为"L1 门闸命中下载词表后触发"。代码不变，只改触发入口。(`src/agents/router.py`)
+- **strategist.md REROUTE 表更新**：`suggested_route` 从 bracket-tag 格式改为 PlanMode 值（`[DIRECT]`→`single_step`、`[REFRAME]`→`dag_plan`、`[TALK]`→`direct_reply`）。(`src/prompts/strategist.md`)
+- **intent_reframer.md 更新**：REDIRECT 输出的 `suggested_route` 从 `"[DIRECT]"` 改为 `"single_step"`。(`src/prompts/intent_reframer.md`)
+
+### Removed
+
+- **SoloRunner 完全删除**：`solo_runner.py` 删除，Router 不再持有 SoloRunner 实例。DIRECT_REPLY 由 Strategist.decide() + MissionRunner.run_with_decision() 流式处理。(`src/agents/runners/solo_runner.py`)
+- **Router LLM 分诊删除**：`_triage_via_llm()`、`_triage_by_keyword()`、`_triage_llm` 实例、`router_triage.md` prompt 全部删除。(`src/agents/router.py`, `src/prompts/router_triage.md`)
+- **Legacy 路由路径删除**：`_handle_inbound_legacy()` 及其依赖的 bracket-tag 状态机（`triage_state`、`_TRIAGE_TO_TARGET`）全部删除。(`src/agents/router.py`)
+- **Deprecated RouteTarget 枚举删除**：`TALK`、`DIRECT_EXECUTOR`、`MISSION` 及其工厂方法 `talk()`、`direct()`、`mission()` 全部删除。(`src/agents/routing_protocol.py`)
+- **ROUTER_MODEL_MODE / ROUTER_MODEL_NAME 配置删除**：从 `providers.py`、`.env`、`security.py` allowlist、dashboard 中移除。(`src/utils/config/providers.py`, `.env`, `src/gateway/security.py`)
+- **SOLO_MODEL_MODE / SOLO_MODEL_NAME / SOLO_FAILOVER_ORDER 配置删除**：从 `providers.py`、`.env` 中移除。(`src/utils/config/providers.py`, `.env`)
+- **Legacy Metrics 删除**：`observe_route_decision()` 方法删除（含 `route_triage_llm_total` 计数器）。(`src/gateway/metrics.py`)
+- **废弃测试文件删除**：`test_router_triage.py`（测试已删除的 `_triage_by_keyword`）、`test_streaming_fix.py`（使用已删除的 `triage_state` bracket-tag）。(`tests/`)
+- **Dashboard 清理**：`ROUTER_MODEL_MODE` 和 `SOLO_MODEL_MODE` 从 setup 表单、配置路由、模型路由中移除。(`dashboard/`)
+- **README 更新**：架构图、目录树、流程图、配置示例全部更新为 V15 架构。(`README.md`, `README.cn.md`)
+
+---
+
 ## [0.5.0] - 2026-06-02
 
 > **涵盖**: v11 CCP 规划协议 | v12 执行引擎增强 (B1-B5) | v13 工程加固 (安全/资源/观测/测试) | v14.1 架构范式重塑 (P1 DI + P2 Schema 自愈)

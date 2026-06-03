@@ -1,22 +1,20 @@
 # src/agents/router.py
 """
-[Rooster 任务路由中枢]
-瘦 Router：只负责分拣和路由，不再负责执行和审计。
+[Rooster V15 任务路由中枢]
+L1 硬规则门闸 → SkillIndex → Reframer(可选) → Strategist.decide() → MissionRunner
 """
-# [Rooster task routing hub]
-# Thin Router: only responsible for sorting and routing, no longer handles execution and audit
 
 import asyncio
+import json
 import logging
 import os
 import time
 from typing import Any
 
 from agents.llm_client import LLMClient
-from agents.runners.solo_runner import SoloRunner
 from agents.runners.mission_runner import MissionRunner
 from agents.prompt_builder import PromptBuilder
-from agents.routing_protocol import RouteDecision, RouteTarget
+from agents.skill_index import get_skill_index
 from gateway.event_handler import AgentEventHandler
 from gateway.metrics import metrics
 from memory.manager import MemoryManager
@@ -28,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 class Router:
-    """请求分拣器 — 不再负责执行。"""  # Request sorter — no longer responsible for execution
+    """V15 请求分拣器 — L1 硬路由 + Strategist 语义主权。"""
 
     _instance = None
 
@@ -48,7 +46,6 @@ class Router:
         prompt_builder=None,
     ):
         self.llm_client = llm_client or LLMClient(provider="mimo", model=settings.MIMO_MODEL)
-        self._triage_llm = LLMClient(provider=settings.ROUTER_MODEL_MODE, model=settings.ROUTER_MODEL_NAME)
         self.tool_registry = tool_registry or global_tool_registry
         self.memory_manager = memory_manager or MemoryManager()
         self.prompt_builder = prompt_builder or PromptBuilder()
@@ -56,7 +53,6 @@ class Router:
         if orchestrator is None:
             try:
                 from agents.orchestrator import ToolOrchestrator
-
                 self.orchestrator = ToolOrchestrator(workspace_dir=os.path.abspath("."))
             except ImportError:
                 self.orchestrator = None
@@ -68,16 +64,6 @@ class Router:
 
         self.event_handler = event_handler or AgentEventHandler(broadcast_callback=dummy_broadcast)
 
-        # 初始化 Runner
-        # Initialize Runners
-        self.solo_runner = SoloRunner(
-            llm_client=self.llm_client,
-            tool_registry=self.tool_registry,
-            event_handler=self.event_handler,
-            memory_manager=self.memory_manager,
-            prompt_builder=self.prompt_builder,
-            orchestrator=self.orchestrator,
-        )
         self.mission_runner = MissionRunner(
             llm_client=self.llm_client,
             tool_registry=self.tool_registry,
@@ -89,12 +75,9 @@ class Router:
 
     async def close(self):
         await self.llm_client.close()
-        await self._triage_llm.close()
 
     async def handle_inbound(self, msg: Any, channel: Any):
-        """处理所有入口指令：分拣 → 路由 → 进化。"""  # Handle all inbound commands: sort → route → evolve
-
-        # [v13.3-fix] Set correlation ID at the top level so all downstream logs inherit it
+        """处理所有入口指令：L1 门闸 → 路由 → 执行。"""
         _mission_token = set_mission_id(getattr(msg, "session_id", "router"))
         try:
             await self._handle_inbound_inner(msg, channel)
@@ -102,195 +85,155 @@ class Router:
             reset_mission_id(_mission_token)
 
     async def _handle_inbound_inner(self, msg: Any, channel: Any):
-        """Actual inbound logic, separated to allow try/finally correlation ID cleanup."""
+        """V15 路由主流程。"""
         from evolution.engine import EvolutionEngine
-        from agents.reframer import Reframer
 
-        # 隐私：进化引擎使用本地模型 / Privacy: evolution engine uses local model
+        # 进化引擎（本地模型）
         try:
             from models.factory import ModelFactory
-
             _evo_client = ModelFactory.get_client("local")
         except Exception:
             _evo_client = self.llm_client
         evolution_engine = EvolutionEngine(llm_client=_evo_client)
 
-        # 1a. Advanced Security: jailbreak detection (default ON, can be disabled via ADVANCED_SECURITY=false)
+        # 1. 安全检查
         try:
             from utils.security.advanced_guard import AdvancedGuard
-
             jb_report = AdvancedGuard.scan_user_message(msg.text)
             if jb_report.should_block:
                 logger.warning(f"[AdvancedGuard] 越狱尝试被阻断: {jb_report.threats[0].evidence!r}")
                 await channel.send_message(to=msg.sender_id, text=jb_report.to_user_message())
                 return
             if jb_report.has_threats:
-                logger.warning(f"[AdvancedGuard] 越狱线索（高/中级），记录并继续: {jb_report.threats[0].evidence!r}")
+                logger.warning(f"[AdvancedGuard] 越狱线索（记录并继续）: {jb_report.threats[0].evidence!r}")
         except Exception as _ag_err:
-            logger.debug(f"[AdvancedGuard] jailbreak check skipped (degraded): {_ag_err}")
+            logger.debug(f"[AdvancedGuard] jailbreak check skipped: {_ag_err}")
 
-        # 1b. Triage (with latency tracking)
-        _triage_start = time.time()
-        triage_state, llm_used = await self._triage_via_llm(msg.text)
-        _triage_duration = time.time() - _triage_start
+        # 2. L1 硬规则门闸（< 5ms，纯代码）
+        _l1_start = time.time()
+        flags = self._l1_gate(msg.text)
+        _l1_duration = time.time() - _l1_start
 
-        # 动态事件处理器（支持流式打字机）
-        # Dynamic event handler (supports streaming typewriter)
-        _streaming_buffer: list[str] = []  # 缓冲 running delta，非流式通道合并后发
+        metrics.counter("route_l1_gate_total", "L1 gate hits").inc()
+        metrics.counter(f"route_l1_gate_{flags['target']}_total", f"L1 gate {flags['target']}").inc()
+        logger.info(f"[L1 Gate] target={flags['target']} duration={_l1_duration:.4f}s text={msg.text[:60]}")
 
+        # 3. BLOCK
+        if flags["target"] == "block":
+            logger.warning(f"安全策略拦截: {msg.text}")
+            await channel.send_message(
+                to=msg.sender_id,
+                text="⚠️ **[安全警示]** 您的请求包含敏感内容，已被系统拦截。",
+            )
+            return
+
+        # 4. SCHEDULE
+        if flags["target"] == "schedule":
+            logger.info("判定为定时任务 (SCHEDULE Mode)")
+            await self._handle_schedule(msg, channel)
+            return
+
+        # 5. 动态事件处理器
+        dynamic_event_handler = self._build_event_handler(msg, channel)
+
+        # 6. flag:reframe → Reframer 前置
+        original_text = msg.text
+        if flags.get("reframe"):
+            from agents.reframer import Reframer
+            reframe_mode = getattr(settings, "REFRAMER_MODEL_MODE", "local")
+            reframe_name = getattr(settings, "REFRAMER_MODEL_NAME", "")
+            reframe_llm = LLMClient(provider=reframe_mode, model=reframe_name)
+            reframer = Reframer(reframe_llm)
+            original_text = await reframer.reframe(msg.text, session_id=msg.session_id)
+            logger.info(f"[Reframer] 重构后: {original_text[:80]}")
+
+            # CLARIFICATION_NEEDED 处理
+            _CLAR_PREFIX = "__CLARIFICATION_NEEDED__:"
+            if original_text.startswith(_CLAR_PREFIX):
+                try:
+                    payload = json.loads(original_text[len(_CLAR_PREFIX):])
+                    question = payload.get("question", "请问您想要哪个版本？")
+                    options = payload.get("options", [])
+                except Exception:
+                    question = original_text[len(_CLAR_PREFIX):]
+                    options = []
+                lines = [f"❓ **需要确认一下：**\n\n{question}"]
+                if options:
+                    lines.append("\n**请从以下选项中选择：**")
+                    for i, opt in enumerate(options, 1):
+                        lines.append(f"  **{i}.** {opt}")
+                    lines.append("\n请回复选项序号（如 `1`、`2`）或直接输入您想要的具体描述。")
+                await channel.send_message(to=msg.sender_id, text="\n".join(lines))
+                return
+
+        # 7. SkillIndex 查询（L2，~20ms）
+        try:
+            skill_idx = get_skill_index(threshold=settings.SKILL_INDEX_THRESHOLD)
+            skill_hint = skill_idx.query(original_text)
+            if skill_hint:
+                logger.info(f"[SkillIndex] hint={skill_hint.hint_skill} confidence={skill_hint.confidence}")
+                metrics.counter(f"route_skill_hint_{skill_hint.hint_skill}_total", f"SkillIndex hit: {skill_hint.hint_skill}").inc()
+            skill_hint_dict = skill_hint.to_dict() if skill_hint else None
+        except Exception as e:
+            logger.debug(f"[SkillIndex] 查询失败（降级为无 hint）: {e}")
+            skill_hint_dict = None
+
+        # 8. PASS_TO_PLANNER → MissionRunner.run_with_decision()
+        await self.mission_runner.run_with_decision(
+            msg=msg,
+            channel=channel,
+            original_text=original_text,
+            dynamic_event_handler=dynamic_event_handler,
+            skill_hint=skill_hint_dict,
+        )
+        self._fire_and_forget(
+            evolution_engine.on_turn_complete(msg.session_id, msg.text, "Mission Completed", [])
+        )
+
+    def _build_event_handler(self, msg: Any, channel: Any) -> AgentEventHandler:
+        """构建动态事件处理器（任务进度推送）。"""
         async def channel_broadcast(event_dict: dict):
             if event_dict.get("stream") == "assistant":
                 status = event_dict["data"].get("status")
                 text = event_dict["data"].get("text", "")
+                if status == "done" and text:
+                    await channel.send_message(to=msg.sender_id, text=text)
 
-                if status == "running" and triage_state == "[TALK]":
-                    if getattr(channel, "supports_streaming", False):
-                        await channel.send_message(to=msg.sender_id, text=text)
-                    else:
-                        _streaming_buffer.append(text)
+        return AgentEventHandler(broadcast_callback=channel_broadcast)
 
-                elif status == "done":
-                    if triage_state in ["[DIRECT]", "[REFRAME]"]:
-                        logger.debug("复杂任务，文字报告已扣押，等待审计放行...")
-                    elif triage_state == "[TALK]":
-                        if getattr(channel, "supports_streaming", False):
-                            await channel.send_message(to=msg.sender_id, text="\n")
-                        else:
-                            # 合并缓冲区 delta 为一条消息发送
-                            merged = "".join(_streaming_buffer).strip()
-                            final_text = merged or text
-                            _streaming_buffer.clear()
-                            await channel.send_message(to=msg.sender_id, text=final_text)
-                    else:
-                        await channel.send_message(to=msg.sender_id, text=text)
+    def _l1_gate(self, text: str) -> dict:
+        """L1 硬规则门闸（< 5ms，纯代码，无 LLM）。
+        Returns: {"target": "block"|"schedule"|"pass_to_planner", "reframe": bool}
+        """
+        t = text.lower().strip()
 
-        dynamic_event_handler = AgentEventHandler(broadcast_callback=channel_broadcast)
+        # 安全词表 → BLOCK
+        _BLOCK_KW = ["rm -rf /", "format c:", "del /f /s /q", "shutdown /s", "sudo rm -rf /"]
+        if any(kw in t for kw in _BLOCK_KW):
+            return {"target": "block", "reframe": False}
 
-        # 2. BLOCK — 兜底：如果是下载类请求被误拦截，降级为 REFRAME
-        # 2. BLOCK — fallback: if download request misjudged as BLOCK, degrade to REFRAME
-        _preprocessors: list[str] = []
-        if triage_state == "[BLOCK]":
-            _download_kw = ["下载", "download", "install", "安装", "迅雷", "磁力", "torrent", "bt下载"]
-            if any(kw in msg.text.lower() for kw in _download_kw):
-                logger.warning(f"下载请求被误判为 BLOCK，自动降级至 REFRAME: {msg.text}")
-                triage_state = "[REFRAME]"
-                _preprocessors.append("download_redirect")
-            else:
-                logger.warning(f"安全策略拦截: {msg.text}")
-                await channel.send_message(
-                    to=msg.sender_id,
-                    text="⚠️ **[安全警示]** 您的请求包含敏感内容，已被系统拦截。",
-                )
-                return
+        # /slash 命令 → 直接分流
+        if text.startswith("/schedule") or text.startswith("/定时"):
+            return {"target": "schedule", "reframe": False}
 
-        # 2b. DIRECT → 下载类请求强制走 REFRAME，否则进规划管道找不到工具
-        # 2b. DIRECT → force download requests through REFRAME, otherwise planning pipeline can't find the tool
-        if triage_state == "[DIRECT]":
-            _download_kw = ["下载", "download", "install", "安装", "迅雷", "磁力", "torrent", "bt下载"]
-            if any(kw in msg.text.lower() for kw in _download_kw):
-                logger.info(f"下载请求被分诊为 DIRECT，强制走 REFRAME: {msg.text}")
-                triage_state = "[REFRAME]"
-                _preprocessors.append("download_redirect")
+        # 定时词表 → SCHEDULE
+        _SCHEDULE_KW = ["每天", "每周", "每小时", "每分钟", "定时", "自动提醒", "提醒我",
+                         "schedule", "every day", "every hour", "every week", "remind me at"]
+        if any(kw in t for kw in _SCHEDULE_KW):
+            return {"target": "schedule", "reframe": False}
 
-        # 1c. Build RouteDecision and emit metrics (after all post-triage adjustments)
-        _TRIAGE_TO_TARGET = {
-            "[TALK]": RouteTarget.TALK,
-            "[DIRECT]": RouteTarget.MISSION,  # currently still routes through MissionRunner
-            "[REFRAME]": RouteTarget.MISSION,  # currently still routes through MissionRunner
-            "[BLOCK]": RouteTarget.BLOCK,
-            "[SCHEDULE]": RouteTarget.SCHEDULE,
-        }
-        _route_decision = RouteDecision(
-            target=_TRIAGE_TO_TARGET.get(triage_state, RouteTarget.MISSION),
-            confidence=1.0,
-            reason=f"triage={triage_state}",
-            llm_used=llm_used,
-            requires_tools=(triage_state in ("[DIRECT]", "[REFRAME]")),
-            preprocessors=_preprocessors,
-        )
-        # 标记 reframe 前置处理（Phase 1 Edge Gateway 会把这条从隐式分支改成显式 pipeline）
-        # Mark reframe preprocessing (Phase 1 Edge Gateway will make this an explicit pipeline step)
-        if triage_state == "[REFRAME]" or getattr(settings, "ENABLE_REFRAMER", False):
-            _route_decision.preprocessors.append("reframe")
-        metrics.observe_route_decision(
-            target=_route_decision.target.value,
-            llm_used=llm_used,
-            duration_s=_triage_duration,
-        )
-        logger.info(
-            f"[RouteDecision] target={_route_decision.target.value} "
-            f"llm_used={llm_used} duration={_triage_duration:.3f}s "
-            f"reason={_route_decision.reason}"
-        )
+        # 下载词表 → flag:reframe
+        _DOWNLOAD_KW = ["下载", "download", "install", "安装", "迅雷", "磁力", "torrent", "bt下载",
+                         "fetch", "retrieve", "save file", "get file"]
+        if any(kw in t for kw in _DOWNLOAD_KW):
+            return {"target": "pass_to_planner", "reframe": True}
 
-        # 3. TALK → SoloRunner
-        if triage_state == "[TALK]":
-            logger.info("判定为直答 (SOLO Mode)")  # Determined as direct answer (SOLO Mode)
-            await self.solo_runner.run(msg, channel, dynamic_event_handler)
-            self._fire_and_forget(
-                evolution_engine.on_turn_complete(msg.session_id, msg.text, "Direct Response Sent", [])
-            )
-            return
-
-        # 3b. SCHEDULE → 自然语言定时任务解析与持久化
-        # 3b. SCHEDULE → natural language scheduled task parsing and persistence
-        if triage_state == "[SCHEDULE]":
-            logger.info("判定为定时任务 (SCHEDULE Mode)")  # Determined as scheduled task (SCHEDULE Mode)
-            await self._handle_schedule(msg, channel)
-            return
-
-        # 4. DIRECT / REFRAME → MissionRunner
-        logger.info(f"进入弹性任务模式 (Mode: {triage_state})")  # Entering flexible task mode
-
-        # 意图重构
-        # Intent reframing
-        reframed_text = msg.text
-        if triage_state == "[REFRAME]" or getattr(settings, "ENABLE_REFRAMER", False):
-            reframe_mode = getattr(settings, "REFRAMER_MODEL_MODE", settings.ROUTER_MODEL_MODE)
-            reframe_name = getattr(settings, "REFRAMER_MODEL_NAME", settings.ROUTER_MODEL_NAME)
-            reframe_llm = LLMClient(provider=reframe_mode, model=reframe_name)
-            reframer = Reframer(reframe_llm)
-            reframed_text = await reframer.reframe(msg.text, session_id=msg.session_id)
-            logger.info(f"重构后任务: {reframed_text}")
-        else:
-            logger.info("任务清晰，跳过重构直达战略官。")
-
-        # --- [歧义拦截] Reframer 的 CLARIFICATION_NEEDED 信号处理 ---
-        # Reframer 判定实体存在多版本歧义时，返回带有 __CLARIFICATION_NEEDED__ 前缀的 payload。
-        # Router 在此处截获，格式化为用户友好的问询消息发送，不进入 MissionRunner。
-        # 用户的下一条回复将携带澄清信息，重新路由并透传给 Reframer/Executor 正常处理。
-        _CLARIFICATION_PREFIX = "__CLARIFICATION_NEEDED__:"
-        if reframed_text.startswith(_CLARIFICATION_PREFIX):
-            import json as _json
-
-            try:
-                payload = _json.loads(reframed_text[len(_CLARIFICATION_PREFIX) :])
-                question = payload.get("question", "请问您想要哪个版本？")
-                options = payload.get("options", [])
-            except Exception:
-                question = reframed_text[len(_CLARIFICATION_PREFIX) :]
-                options = []
-
-            # 格式化问询消息
-            lines = [f"❓ **需要确认一下：**\n\n{question}"]
-            if options:
-                lines.append("\n**请从以下选项中选择：**")
-                for i, opt in enumerate(options, 1):
-                    lines.append(f"  **{i}.** {opt}")
-                lines.append("\n请回复选项序号（如 `1`、`2`）或直接输入您想要的具体描述。")
-            clarification_msg = "\n".join(lines)
-
-            await channel.send_message(to=msg.sender_id, text=clarification_msg)
-            logger.info("[Router] 歧义拦截，已向用户发出问询，等待下一轮澄清回复。")
-            return  # 不进入 MissionRunner，等待用户下一条消息
-
-        is_direct = triage_state == "[DIRECT]"
-        await self.mission_runner.run(msg, channel, reframed_text, dynamic_event_handler, is_direct=is_direct)
-        self._fire_and_forget(evolution_engine.on_turn_complete(msg.session_id, msg.text, "Mission Completed", []))
+        # 其他 → PASS_TO_PLANNER
+        return {"target": "pass_to_planner", "reframe": False}
 
     @staticmethod
     def _fire_and_forget(coro):
-        """启动后台任务，异常记录到日志而非静默丢弃。"""  # Start background task, log exceptions instead of silently discarding
+        """启动后台任务，异常记录到日志。"""
         task = asyncio.create_task(coro)
         task.add_done_callback(
             lambda t: (
@@ -300,180 +243,8 @@ class Router:
             )
         )
 
-    async def _triage_via_llm(self, text: str) -> tuple[str, bool]:
-        """三路智能分诊判定。返回 (triage_state, llm_used)。"""
-        # Three-way intelligent triage. Returns (triage_state, llm_used).
-        if len(text) < 5 and any(
-            k in text.lower()
-            for k in [
-                "hi",
-                "你好",
-                "在吗",
-                "hello",
-                "hey",
-                "ok",
-                "好的",
-                "嗯",
-                "谢谢",
-            ]
-        ):
-            return "[TALK]", False  # keyword fast-path, no LLM
-        try:
-            triage_llm = self._triage_llm
-            prompt_path = os.path.join(os.path.dirname(__file__), "..", "prompts", "router_triage.md")
-            if os.path.exists(prompt_path):
-                with open(prompt_path, "r", encoding="utf-8") as f:
-                    triage_prompt = f.read()
-            else:
-                triage_prompt = "输出 [TALK]/[DIRECT]/[REFRAME]/[BLOCK]。输入: {text}"
-
-            if "{text}" in triage_prompt:
-                user_content = triage_prompt.replace("{text}", text)
-            else:
-                user_content = f'{triage_prompt}\n\n用户输入："{text}"'
-
-            response = await asyncio.wait_for(
-                triage_llm.chat_non_stream(
-                    [{"role": "user", "content": user_content}],
-                    model=settings.ROUTER_MODEL_NAME,
-                ),
-                timeout=getattr(settings, "LLM_CALL_TIMEOUT", 120.0),
-            )
-            verdict = response.content.upper()
-            if "[TALK]" in verdict:
-                return "[TALK]", True
-            if "[SCHEDULE]" in verdict:
-                return "[SCHEDULE]", True
-            if "[REFRAME]" in verdict:
-                return "[REFRAME]", True
-            if "[BLOCK]" in verdict:
-                return "[BLOCK]", True
-            return "[DIRECT]", True
-        except Exception as e:
-            logger.warning(f"分诊故障 ({e})，使用关键词兜底分诊。")
-            return self._triage_by_keyword(text), False  # keyword fallback
-
-    _DOWNLOAD_KW = [
-        "下载",
-        "download",
-        "install",
-        "安装",
-        "迅雷",
-        "磁力",
-        "torrent",
-        "fetch",
-        "retrieve",
-        "save file",
-        "get file",
-    ]
-    _SCHEDULE_KW = [
-        "每天",
-        "每周",
-        "每小时",
-        "每分钟",
-        "定时",
-        "自动提醒",
-        "提醒我",
-        "schedule",
-        "every day",
-        "every hour",
-        "every week",
-        "remind me at",
-        "at 8am",
-        "at 9am",
-        "daily report",
-        "weekly report",
-    ]
-    _TALK_KW = [
-        "你好",
-        "hi",
-        "hello",
-        "who are you",
-        "你是谁",
-        "在吗",
-        "怎么了",
-        "谢谢",
-        "hey",
-        "good morning",
-        "good evening",
-        "how are you",
-        "thanks",
-        "thank you",
-        "what can you do",
-        "help me understand",
-        "是什么",
-        "什么是",
-        "解释",
-        "explain",
-        "what is",
-        "what are",
-        "翻译",
-        "translate",
-        "convert",
-        "换算",
-        # 能力查询 — 询问 agent 是否具备某种能力，应直接口头回答
-        "你可以",
-        "你能",
-        "能不能",
-        "可以吗",
-        "你会",
-        "支持吗",
-        "支持哪些",
-    ]
-    _COMPLEX_KW = [
-        "帮我",
-        "帮我搜",
-        "帮我查",
-        "分析",
-        "对比",
-        "总结",
-        "整理",
-        "帮我写",
-        "帮我做",
-        "写一个",
-        "生成",
-        "批量",
-        "search for",
-        "find all",
-        "analyze",
-        "compare",
-        "summarize",
-        "write a",
-        "create a",
-        "build",
-        "generate",
-        "help me",
-        # "can you" 已由 _CAPABILITY_QUERY_PATTERN 正则前置处理，此处不再重复
-        "please",
-        "how do i",
-        "what is the best",
-    ]
-
-    # 英文能力查询正则 — "can you / could you / are you able to" 等句式
-    # 必须在 _COMPLEX_KW 之前检测，防止 "can you" 被误路由到 [DIRECT]
-    _CAPABILITY_QUERY_RE = r"(?:can you|could you|are you able to|do you support)"
-
-    def _triage_by_keyword(self, text: str) -> str:
-        """LLM 不可用时的关键词兜底分诊。"""  # Keyword fallback triage when LLM is unavailable
-        import re as _re
-
-        t = text.lower()
-        if any(k in t for k in self._SCHEDULE_KW):
-            return "[SCHEDULE]"
-        if any(k in t for k in self._DOWNLOAD_KW):
-            return "[REFRAME]"
-        # 英文能力查询前置检测：must precede _COMPLEX_KW check
-        if _re.search(self._CAPABILITY_QUERY_RE, t):
-            return "[TALK]"
-        if any(k in t for k in self._TALK_KW):
-            return "[TALK]"
-        if any(k in t for k in self._COMPLEX_KW):
-            return "[DIRECT]"
-        return "[DIRECT]"
-
     async def _handle_schedule(self, msg: Any, channel: Any):
-        """将自然语言定时任务解析后写入 .rooster/schedules.json。"""  # Parse natural language scheduled task and write to .rooster/schedules.json
-        import json
+        """将自然语言定时任务解析后写入 .rooster/schedules.json。"""
         import re
         import uuid
         import datetime
@@ -481,7 +252,6 @@ class Router:
         text = msg.text
         schedule_id = str(uuid.uuid4())[:8]
 
-        # Simple NL extraction: look for time patterns
         time_patterns = [
             (r"每天\s*(\d{1,2})[点时:：](\d{0,2})", "daily"),
             (r"every day at\s*(\d{1,2}):?(\d{0,2})\s*(am|pm)?", "daily"),
@@ -501,7 +271,6 @@ class Router:
                     hour = int(m.group(1))
                     minute = int(m.group(2)) if m.lastindex >= 2 and m.group(2) else 0
                     if f != "hourly":
-                        # Handle am/pm if present
                         if m.lastindex >= 3 and m.group(3) and "pm" in m.group(3).lower() and hour < 12:
                             hour += 12
                         cron_time = f"{hour:02d}:{minute:02d}"
@@ -525,7 +294,7 @@ class Router:
                 with open(schedules_path, "r", encoding="utf-8") as f:
                     schedules = json.load(f)
             except Exception as e:
-                logger.error(f"❌ schedules.json 文件损坏，解析失败，定时任务列表已重置: {e}")
+                logger.error(f"schedules.json 解析失败，已重置: {e}")
                 schedules = []
         schedules.append(entry)
         tmp_path = schedules_path + ".tmp"
@@ -534,7 +303,7 @@ class Router:
                 json.dump(schedules, f, ensure_ascii=False, indent=2)
             os.replace(tmp_path, schedules_path)
         except Exception as e:
-            logger.error(f"❌ schedules.json 写入失败: {e}")
+            logger.error(f"schedules.json 写入失败: {e}")
             try:
                 os.unlink(tmp_path)
             except Exception:

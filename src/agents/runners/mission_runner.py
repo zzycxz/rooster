@@ -14,9 +14,10 @@ from agents.auditor import Auditor
 from agents.executor import AgentExecutor, AgentRunConfig
 from agents.llm_client import LLMClient
 from agents.mission_tactician import MissionTactician
-from agents.protocol import MissionPlan, SubTask, AuditVerdictType, Report
+from agents.protocol import MissionPlan, PlanDecision, PlanMode, SubTask, AuditVerdictType, Report
 from agents.strategist import Strategist
 from gateway.event_handler import AgentEventHandler
+from gateway.metrics import metrics
 from memory.manager import MemoryManager
 from memory.models import MemoryFactType
 from agents.prompt_builder import PromptBuilder
@@ -277,7 +278,7 @@ class MissionRunner:
         channel: Any,
         reframed_text: str,
         dynamic_event_handler: AgentEventHandler,
-        is_direct: bool = False,
+        pre_planned_plan: Optional[MissionPlan] = None,
     ) -> None:
         """执行多步任务编排。"""  # Execute multi-step task orchestration
         archiver = VaultArchiver(settings.EVIDENCE_ROOT, msg.session_id)
@@ -311,6 +312,15 @@ class MissionRunner:
             executed_tasks: Dict[str, Report] = {k: Report(**v) for k, v in checkpoint["executed_tasks"].items()}
             completed_task_ids: Set[str] = set(checkpoint["completed_task_ids"])
             _subtask_metrics: Dict[str, dict] = checkpoint.get("subtask_metrics", {})
+        elif pre_planned_plan:
+            # V15: pre_planned_plan 由 Strategist.decide() 提供，跳过规划阶段
+            current_mission_plan = pre_planned_plan
+            if not current_mission_plan.original_goal:
+                current_mission_plan.original_goal = reframed_text
+            subtask_list = current_mission_plan.subtasks
+            executed_tasks: Dict[str, Report] = {}
+            completed_task_ids: Set[str] = set()
+            _subtask_metrics: Dict[str, dict] = {}
         else:
             # 1. 流式规划
             # 1. Streaming planning
@@ -333,22 +343,7 @@ class MissionRunner:
             if session.history and getattr(session.history[-1], "images", None):
                 images = session.history[-1].images
 
-            if is_direct:
-                import uuid
-
-                st = SubTask(
-                    id=f"ST_{uuid.uuid4().hex[:6]}",
-                    instruction=reframed_text,
-                    domain="SYSTEM",  # generic domain — lets tool_router pick the right kit
-                    tool="generic_tool",
-                )
-
-                async def mock_plan_stream():
-                    yield st
-
-                plan_iterator = mock_plan_stream()
-            else:
-                plan_iterator = self.strategist.plan_stream(reframed_text, images=images)
+            plan_iterator = self.strategist.plan_stream(reframed_text, images=images)
 
             async def _consume_plan():
                 nonlocal subtask_list
@@ -374,7 +369,7 @@ class MissionRunner:
 
             # [V11] 从 plan_stream 流式输出的 full_content 中提取顶层元数据
             # 无需再调一次 plan()，省掉一次完整 LLM 调用
-            if subtask_list and not is_direct:
+            if subtask_list:
                 meta = getattr(self.strategist, "_last_plan_meta", None)
                 if meta:
                     current_mission_plan.blockers = meta.get("blockers", [])
@@ -837,8 +832,8 @@ class MissionRunner:
                     # - 非叶节点（有下游依赖）：检查状态，失败则触发重规划
                     # - 叶节点（无下游依赖）：调 LLM 审计
 
-                    if not is_leaf or is_direct:
-                        if report.status == "FAILED" and not is_direct:
+                    if not is_leaf:
+                        if report.status == "FAILED":
                             # 非叶节点失败：下游会拿到空数据，必须重规划
                             await channel.send_message(
                                 to=msg.sender_id,
@@ -1196,6 +1191,102 @@ class MissionRunner:
         # Clean up MissionTactician state to prevent unbounded memory growth in long-running processes
         self.tactician.states.pop(current_mission_plan.task_id, None)
         reset_mission_id(mission_token)
+
+    # ──────────────────────────────────────────────────────────────────
+    # V15: run_with_decision() — Strategist 语义主权执行入口
+    # ──────────────────────────────────────────────────────────────────
+
+    async def run_with_decision(
+        self,
+        msg: Any,
+        channel: Any,
+        original_text: str,
+        dynamic_event_handler: AgentEventHandler,
+        skill_hint: Optional[dict] = None,
+    ) -> None:
+        """
+        V15 新入口：调用 Strategist.decide() 获取 PlanDecision，然后执行。
+        不修改现有 run() 逻辑。
+        """
+        logger.info(f"[V15] run_with_decision 启动: {original_text[:80]}")
+
+        # 1. 调用 Strategist.decide()（含异常保护，降级为 SINGLE_STEP）
+        try:
+            plan_decision = await self.strategist.decide(
+                user_request=original_text,
+                skill_hint=skill_hint,
+            )
+        except Exception as e:
+            logger.error(f"[V15] Strategist.decide() 异常，降级为 SINGLE_STEP: {e}")
+            import uuid
+            fallback_plan = MissionPlan(
+                task_id=f"T{int(time.time())}",
+                goal=original_text,
+                subtasks=[SubTask(
+                    id=f"ST_{uuid.uuid4().hex[:6]}",
+                    instruction=original_text,
+                    domain="SYSTEM",
+                    tool="generic_tool",
+                )],
+            )
+            plan_decision = PlanDecision(
+                mode=PlanMode.SINGLE_STEP,
+                model_tier="standard",
+                plan=fallback_plan,
+            )
+
+        # 记录 PlanDecision 指标
+        metrics.counter("plan_decision_total", "Strategist decision distribution").inc()
+        metrics.counter(f"plan_decision_{plan_decision.mode.value}_total", f"PlanDecision: {plan_decision.mode.value}").inc()
+
+        # 2. DIRECT_REPLY: 流式回复
+        if plan_decision.mode == PlanMode.DIRECT_REPLY:
+            logger.info("[V15] DIRECT_REPLY → 流式回复")
+            _buffer: list[str] = []
+            try:
+                async for chunk in plan_decision.reply_stream:
+                    if getattr(channel, "supports_streaming", False):
+                        await channel.send_message(to=msg.sender_id, text=chunk)
+                    else:
+                        _buffer.append(chunk)
+            except Exception as e:
+                logger.warning(f"[V15 DIRECT_REPLY] 流式失败，降级一次性发送: {e}")
+                if not _buffer:
+                    try:
+                        fallback = await self.strat_llm.chat_non_stream(
+                            messages=[{"role": "user", "content": original_text}],
+                            model=settings.FAST_MODEL_NAME,
+                        )
+                        _buffer = [fallback.content or ""]
+                    except Exception as fallback_err:
+                        logger.error(f"[V15 DIRECT_REPLY] 降级也失败: {fallback_err}")
+                        _buffer = ["抱歉，回复生成失败，请稍后重试。"]
+            finally:
+                # 非流式通道：合并缓冲区发送
+                if _buffer and not getattr(channel, "supports_streaming", False):
+                    await channel.send_message(to=msg.sender_id, text="".join(_buffer).strip())
+                if hasattr(plan_decision.reply_stream, "aclose"):
+                    try:
+                        await plan_decision.reply_stream.aclose()
+                    except Exception:
+                        pass
+            return
+
+        # 3. CLARIFY: 发送澄清问题
+        if plan_decision.mode == PlanMode.CLARIFY:
+            logger.info("[V15] CLARIFY → 发送澄清问题")
+            await channel.send_message(to=msg.sender_id, text=plan_decision.clarify_question)
+            return
+
+        # 4. SINGLE_STEP / DAG_PLAN: 委托给 run() 执行
+        logger.info(f"[V15] {plan_decision.mode.value} → 委托 run() 执行 ({len(plan_decision.plan.subtasks)} 子任务)")
+        await self.run(
+            msg=msg,
+            channel=channel,
+            reframed_text=original_text,
+            dynamic_event_handler=dynamic_event_handler,
+            pre_planned_plan=plan_decision.plan,
+        )
 
     # ----------------------------------------------------------------
     # Clarification Gate helpers (MISSION mode)

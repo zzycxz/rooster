@@ -101,8 +101,8 @@ def _validate_save_safety(data: Dict[str, Any], existing: Dict[str, str]) -> lis
 
     # Check if any role assignment targets a provider whose key would be empty after save
     role_keys = [
-        "ROUTER_MODEL_MODE", "STRATEGIST_MODEL_MODE",
-        "EXECUTOR_MODEL_MODE", "AUDITOR_MODEL_MODE", "SOLO_MODEL_MODE",
+        "STRATEGIST_MODEL_MODE",
+        "EXECUTOR_MODEL_MODE", "AUDITOR_MODEL_MODE",
     ]
     for role in role_keys:
         if role not in data:
@@ -118,7 +118,7 @@ def _validate_save_safety(data: Dict[str, Any], existing: Dict[str, str]) -> lis
                 )
 
     # Check if clearing the key of the currently active provider
-    active_mode = existing.get("SOLO_MODEL_MODE", "")
+    active_mode = existing.get("EXECUTOR_MODEL_MODE", "")
     if active_mode in _PROVIDER_KEY_MAP:
         active_key_name = _PROVIDER_KEY_MAP[active_mode]
         if active_key_name in data and not data[active_key_name]:
@@ -167,11 +167,9 @@ async def handle_config_save(data: Dict[str, Any]) -> Dict[str, Any]:
 
         if available:
             roles = [
-                "ROUTER_MODEL_MODE",
                 "STRATEGIST_MODEL_MODE",
                 "EXECUTOR_MODEL_MODE",
                 "AUDITOR_MODEL_MODE",
-                "SOLO_MODEL_MODE",
             ]
             is_explicit_any = any(data.get(r) for r in roles)
 
@@ -209,7 +207,7 @@ async def handle_config_save(data: Dict[str, Any]) -> Dict[str, Any]:
                 else:
                     heavy_model = next((m for m in heavy_priority if m in available), available[0])
                     fast_model = next((m for m in fast_priority if m in available), available[0])
-                    for r in ["ROUTER_MODEL_MODE", "STRATEGIST_MODEL_MODE", "AUDITOR_MODEL_MODE", "SOLO_MODEL_MODE"]:
+                    for r in ["STRATEGIST_MODEL_MODE", "AUDITOR_MODEL_MODE"]:
                         data[r] = heavy_model
                         existing[r] = heavy_model
                     data["EXECUTOR_MODEL_MODE"] = fast_model
@@ -224,7 +222,7 @@ async def handle_config_save(data: Dict[str, Any]) -> Dict[str, Any]:
                 else:
                     heavy_model = next((m for m in heavy_priority if m in available), available[0])
                     fast_model = next((m for m in fast_priority if m in available), available[0])
-                    for r in ["ROUTER_MODEL_MODE", "STRATEGIST_MODEL_MODE", "AUDITOR_MODEL_MODE", "SOLO_MODEL_MODE"]:
+                    for r in ["STRATEGIST_MODEL_MODE", "AUDITOR_MODEL_MODE"]:
                         if not data.get(r) and not existing.get(r):
                             data[r] = heavy_model
                             existing[r] = heavy_model
@@ -445,7 +443,7 @@ async def api_config_models():
     providers = [
         {"id": pid, "label": label, "configured": bool(getattr(settings, key, ""))} for pid, key, label in _providers
     ]
-    return {"providers": providers, "default": settings.SOLO_MODEL_MODE}
+    return {"providers": providers, "default": settings.EXECUTOR_MODEL_MODE}
 
 
 @router.get("/masked")

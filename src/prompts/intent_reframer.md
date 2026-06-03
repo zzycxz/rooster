@@ -20,7 +20,7 @@
 {
   "status": "REDIRECT",
   "reason": "当前输入不含下载/安装意图，无法在本模块处理",
-  "suggested_route": "[DIRECT]",
+  "suggested_route": "single_step",
   "original_input": "{{USER_INPUT}}"
 }
 ```

@@ -31,21 +31,19 @@ Rooster 是一个**多角色 Agent 框架**，能自主完成桌面操作、网�
 
 ## 二、核心技术亮点
 
-### 1. Router 智能五分流与零延迟重加工：每条指令走最优路径
+### 1. L1 硬路由 + Strategist 语义主权：每条指令走最优路径
 
-**意图分发**：Router 对所有输入消息进行精准意图分类，自动分流至最快处理路径：
+**V15 路由架构**：三层分流，零 LLM 门闸 + 能力索引 + 语义判断：
 
-- `[TALK]`（约 70%）→ 直通 SoloRunner，单轮极速响应
-- `[DIRECT]` → 短路路由直达 MissionRunner，跳过规划阶段
-- `[REFRAME]` → 进入语义重加工链，解析模糊或复杂意图
-- `[SCHEDULE]` → 解析为定时计划，Guardian 后台准时触发
-- `[BLOCK]` → 安全拦截（含下载关键词时智能降级为 REFRAME）
+- **L1 硬规则门闸**（< 5ms，纯代码）：安全词表 → BLOCK / 定时词表 → SCHEDULE / 下载词表 → Reframer 前置
+- **L2 SkillIndex**（~20ms，TF-IDF）：本地能力索引匹配，输出 SkillHint 给 Strategist 参考
+- **Strategist.decide()**（fast LLM）：语义判断任务深度 → `DIRECT_REPLY`（流式回复）/ `SINGLE_STEP`（单步执行）/ `DAG_PLAN`（多步规划）/ `CLARIFY`（歧义拦截）
 
-**零延迟静态规则引擎（0ms）**：内置 17 个影视触发词 + 12 个软件触发词 + 通用下载触发词。`clean_target()` 自动剥除"帮我下载""请问""1080p"等修饰语，精准提取核心实体名。全程零 LLM 调用，零延迟。
+**零延迟静态规则引擎（0ms）**：内置下载触发词、定时触发词、安全拦截词。全程零 LLM 调用，零延迟。
 
-**动态短路路由**：命中目标关键字（如 `resource-downloader`）后，完全绕过 Strategist 规划层，正则解析参数直达工具执行。内置域名信任清洗——15 个可信域（github.com、microsoft.com 等）优先呈现，13 个已知流氓站（onlinedown.net、pc6.com 等）自动屏蔽。
+**动态短路路由**：命中目标关键字后，完全绕过 Strategist 规划层，正则解析参数直达工具执行。
 
-**LLM 语义兜底**：仅在静态规则未命中时，才启用大模型重写模糊意图。若 LLM 判断该消息不应走 REFRAME，返回 `REDIRECT` 让 Router 重新分流。用 0ms 解决约 80% 高频问题，不靠 LLM 硬扛一切。
+**LLM 语义兜底**：仅在静态规则未命中时，才启用 fast 模型判断任务深度。用 0ms 解决约 80% 高频问题，不靠 LLM 硬扛一切。
 
 ### 2. 全维度安全沙箱与隐私隔离：从接入到执行的纵深防御
 
@@ -317,7 +315,7 @@ rooster/
 │   │
 │   ├── agents/                 # 核心 Agent 角色
 │   │   ├── protocol.py         #   数据协议（MissionPlan / SubTask / Report / AuditVerdict）
-│   │   ├── router.py           #   入口路由：Triage → SoloRunner / MissionRunner / Schedule
+│   │   ├── router.py           #   入口路由：L1 门闸 → SkillIndex → Strategist.decide() → MissionRunner
 │   │   ├── reframer.py         #   意图重构器（模糊需求 → 标准化指令）
 │   │   ├── short_circuit.py    #   短路路由（高频简单任务直通执行）
 │   │   ├── strategist.py       #   战略官（DAG 子任务拆分 + 重规划）
@@ -330,10 +328,8 @@ rooster/
 │   │   ├── llm_client.py       #  LLM 客户端（多 Provider 轮转 + 冷却 + 退避）
 │   │   ├── prompt_builder.py   #   五层 System Prompt 组装器
 │   │   ├── tool_dispatch.py    #   工具调用提取与执行
-│   │   ├── routing_protocol.py #   路由协议定义
 │   │   └── runners/
-│   │       ├── solo_runner.py  #     单轮快速模式
-│   │       └── mission_runner.py#    多步任务模式
+│   │       └── mission_runner.py#    多步任务编排（V15: 含 DIRECT_REPLY / SINGLE_STEP / DAG_PLAN）
 │   │
 │   ├── toolset/                # 工具注册与定义（55 个工具，32 个暴露给 LLM）
 │   │   ├── base.py             #   BaseTool 基类（含 platform / kit / fc_hidden）
@@ -411,7 +407,7 @@ rooster/
 │   │   ├── executor.md         #   执行官 Prompt
 │   │   ├── auditor.md          #   审计官 Prompt
 │   │   ├── replan.md           #   重规划 Prompt
-│   │   ├── router_triage.md    #   路由分诊 Prompt
+│   │   ├── strategist_triage.md #   V15 深度判断 Prompt
 │   │   └── intent_reframer.md  #   意图重构 Prompt
 │   │
 │   └── utils/                  # 工具库
@@ -457,22 +453,22 @@ rooster/
 用户消息 (CLI / 飞书 / WebSocket / Dashboard)
     │
     ▼
-Router (分拣器) ─── 关键词 / 意图分类
-    │
-    ├─ TALK (70%+) ──► SoloRunner (单轮快速回复) ──► 响应
-    ├─ BLOCK ────────► 安全拦截 ──► 响应
+L1 硬规则门闸 (< 5ms，纯代码)
+    ├─ BLOCK ────────► 安全拦截
     ├─ SCHEDULE ─────► 定时任务注册 → schedules.json
-    │
-    ├─ DIRECT ───────► ShortCircuit ──► MissionRunner（跳过语义清洗）
-    │
-    └─ REFRAME ──────► Reframer (语义清洗引擎)  ◄── 仅针对敏感/模糊意图
+    ├─ 下载词表 ─────► Reframer 前置 → Strategist.decide()
+    └─ 其他 ─────────► PASS_TO_PLANNER
                            │
-                           ├─ 静态规则引擎（本地，0ms，无需 LLM 调用）
-                           │   影视/软件/下载意图 → 中性工具指令
-                           │   "帮我下载XX电影" → "resource-downloader(title=XX, type=movie)"
-                           │   完全绕过大模型内容审核
+                           ▼
+                    L2 SkillIndex (~20ms，TF-IDF)
                            │
-                           └─ LLM 重构（兜底，静态规则未命中时）
+                           ▼
+                    Strategist.decide() (fast LLM)
+                           │
+                           ├─ DIRECT_REPLY ──► 流式回复 ──► 响应
+                           ├─ SINGLE_STEP ───► MissionRunner 单步执行
+                           ├─ DAG_PLAN ──────► MissionRunner 多步 DAG 编排
+                           └─ CLARIFY ────────► 发送澄清问题
                                                      │
                                                      ▼
                                              MissionRunner
@@ -805,8 +801,6 @@ WEBHOOK_HMAC_SECRET=your-hmac      # Webhook 签名密钥
 STRATEGIST_MODEL_MODE=zhipu        # 战略官（默认 zhipu）
 EXECUTOR_MODEL_MODE=jiutian        # 执行官（默认 jiutian）
 AUDITOR_MODEL_MODE=jiutian         # 审计官（默认 jiutian）
-ROUTER_MODEL_MODE=zhipu            # 路由官（默认 zhipu）
-SOLO_MODEL_MODE=jiutian            # 直接对话（默认 jiutian）
 ```
 
 ### Failover

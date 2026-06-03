@@ -67,13 +67,11 @@ _ALLOWED_CONFIG_KEYS = frozenset(
         "ALLOWED_TOOLS",
         "CUSTOM_SECURITY_PATTERNS_JSON",
         "ALLOWED_PATHS",
-        # --- New Multi-LLM Role Assignments ---
-        "ROUTER_MODEL_MODE",
+        # --- Multi-LLM Role Assignments (V15: ROUTER/SOLO removed) ---
         "STRATEGIST_MODEL_MODE",
         "EXECUTOR_MODEL_MODE",
         "EXECUTOR_MODEL_NAME",
         "AUDITOR_MODEL_MODE",
-        "SOLO_MODEL_MODE",
         # --- Failover & Retry ---
         "LLM_FAILOVER_ENABLED",
         "LLM_FAILOVER_ORDER",

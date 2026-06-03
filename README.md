@@ -31,21 +31,19 @@ Rooster is a **multi-role Agent framework** that autonomously handles complex ta
 
 ## 2. Technical Highlights
 
-### 1. Router — Five-Way Triage with Zero-Latency Reprocessing: Every Request Takes the Optimal Path
+### 1. L1 Hard-Routing + Strategist Semantic Sovereignty: Every Request Takes the Optimal Path
 
-**Intent dispatch**: The Router classifies every incoming message and routes it to the fastest processing path:
+**V15 Routing Architecture**: Three-layer triage — zero-LLM gate + capability index + semantic judgment:
 
-- `[TALK]` (~70%) → straight to SoloRunner for instant single-turn response
-- `[DIRECT]` → short-circuit route directly to MissionRunner, skipping planning
-- `[REFRAME]` → enters the semantic reprocessing chain for ambiguous or complex intents
-- `[SCHEDULE]` → parsed into a scheduled plan, triggered on time by Guardian in the background
-- `[BLOCK]` → safety intercept (download-related keywords gracefully downgrade to `REFRAME`)
+- **L1 Hard-Rule Gate** (< 5ms, pure code): Security keywords → BLOCK / Schedule keywords → SCHEDULE / Download keywords → Reframer pre-processing
+- **L2 SkillIndex** (~20ms, TF-IDF): Local capability index matching, outputs SkillHint for Strategist reference
+- **Strategist.decide()** (fast LLM): Semantic depth judgment → `DIRECT_REPLY` (streaming) / `SINGLE_STEP` (single task) / `DAG_PLAN` (multi-step DAG) / `CLARIFY` (ambiguity intercept)
 
-**Zero-latency static rule engine (0ms)**: Built-in trigger dictionaries: 17 media terms + 12 software terms + general download terms. `clean_target()` automatically strips filler phrases ("please download", "1080p", "help me with") to extract the core entity — zero LLM calls, zero latency.
+**Zero-latency static rule engine (0ms)**: Built-in download/schedule/security trigger dictionaries. Zero LLM calls, zero latency.
 
-**Dynamic short-circuit routing**: On keyword match (e.g. `resource-downloader`), completely bypasses the Strategist planning layer — parameters parsed by regex route directly to tool execution. Built-in domain trust filter: 15 trusted domains (github.com, microsoft.com, etc.) promoted; 13 known ad-heavy/malware sites (onlinedown.net, pc6.com, etc.) automatically blocked.
+**Dynamic short-circuit routing**: On keyword match, completely bypasses the Strategist planning layer — parameters parsed by regex route directly to tool execution.
 
-**LLM semantic fallback**: Only invoked when static rules miss. If the LLM determines the message doesn't need reframing, it returns `REDIRECT` for re-triage. The rule engine resolves ~80% of high-frequency requests at 0ms — LLM is a last resort, not the default.
+**LLM semantic fallback**: Only invoked when static rules miss. The rule engine resolves ~80% of high-frequency requests at 0ms — LLM is a last resort, not the default.
 
 ### 2. Full-Spectrum Security Sandbox & Privacy Isolation: Defense-in-Depth from Ingestion to Execution
 
@@ -319,7 +317,7 @@ rooster/
 │   │
 │   ├── agents/                 # Core Agent roles
 │   │   ├── protocol.py         #   Data protocol (MissionPlan / SubTask / Report / AuditVerdict)
-│   │   ├── router.py           #   Entry router: Triage → SoloRunner / MissionRunner / Schedule
+│   │   ├── router.py           #   Entry router: L1 Gate → SkillIndex → Strategist.decide() → MissionRunner
 │   │   ├── reframer.py         #   Intent normalizer (vague → structured instructions)
 │   │   ├── short_circuit.py    #   Short-circuit router (fast-path for common tasks)
 │   │   ├── strategist.py       #   Strategist (DAG subtask decomposition + replan)
@@ -332,10 +330,8 @@ rooster/
 │   │   ├── llm_client.py       #  LLM client (multi-provider rotation + cooldown + backoff)
 │   │   ├── prompt_builder.py   #   5-layer System Prompt builder
 │   │   ├── tool_dispatch.py    #   Tool call extraction & execution
-│   │   ├── routing_protocol.py #   Routing protocol definitions
 │   │   └── runners/
-│   │       ├── solo_runner.py  #     Single-turn quick mode
-│   │       └── mission_runner.py#    Multi-step mission mode
+│   │       └── mission_runner.py#    Multi-step orchestration (V15: DIRECT_REPLY / SINGLE_STEP / DAG_PLAN)
 │   │
 │   ├── toolset/                # Tool registry (55 tools, 32 exposed to LLM)
 │   │   ├── base.py             #   BaseTool base class (platform / kit / fc_hidden)
@@ -413,7 +409,7 @@ rooster/
 │   │   ├── executor.md         #   Executor prompt
 │   │   ├── auditor.md          #   Auditor prompt
 │   │   ├── replan.md           #   Replan prompt
-│   │   ├── router_triage.md    #   Router triage prompt
+│   │   ├── strategist_triage.md #   V15 depth judgment prompt
 │   │   └── intent_reframer.md  #   Intent reframer prompt
 │   │
 │   └── utils/                  # Utilities
@@ -459,22 +455,22 @@ rooster/
 User Message (CLI / Feishu / WebSocket / Dashboard)
     │
     ▼
-Router (Triage) ─── Keyword / intent classification
-    │
-    ├─ TALK (70%+) ──► SoloRunner (quick reply) ──► Response
-    ├─ BLOCK ────────► Safety intercept ──► Response
+L1 Hard-Rule Gate (< 5ms, pure code)
+    ├─ BLOCK ────────► Safety intercept
     ├─ SCHEDULE ─────► Scheduled task registration → schedules.json
-    │
-    ├─ DIRECT ───────► ShortCircuit ──► MissionRunner (skip reframing)
-    │
-    └─ REFRAME ──────► Reframer (Semantic Cleaning Engine)  ◄── Only for sensitive/ambiguous intents
+    ├─ Download KW ──► Reframer pre-processing → Strategist.decide()
+    └─ Other ────────► PASS_TO_PLANNER
                            │
-                           ├─ Static Rule Engine (local, 0ms, no LLM call)
-                           │   Movie/Software/Download → neutral tool instructions
-                           │   "download the movie Inception" → "resource-downloader(title=Inception, type=movie)"
-                           │   Bypasses LLM content moderation entirely
+                           ▼
+                    L2 SkillIndex (~20ms, TF-IDF)
                            │
-                           └─ LLM Reframing (fallback, when static rules miss)
+                           ▼
+                    Strategist.decide() (fast LLM)
+                           │
+                           ├─ DIRECT_REPLY ──► Streaming response
+                           ├─ SINGLE_STEP ───► MissionRunner single task
+                           ├─ DAG_PLAN ──────► MissionRunner multi-step DAG
+                           └─ CLARIFY ────────► Send clarification question
                                                      │
                                                      ▼
                                              MissionRunner
@@ -819,8 +815,6 @@ WEBHOOK_HMAC_SECRET=your-hmac      # Webhook signing key
 STRATEGIST_MODEL_MODE=zhipu        # Strategist (default: zhipu)
 EXECUTOR_MODEL_MODE=jiutian        # Executor (default: jiutian)
 AUDITOR_MODEL_MODE=jiutian         # Auditor (default: jiutian)
-ROUTER_MODEL_MODE=zhipu            # Router (default: zhipu)
-SOLO_MODEL_MODE=jiutian            # Solo chat (default: jiutian)
 ```
 
 ### Failover

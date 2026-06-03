@@ -67,33 +67,6 @@ class AgentRunConfig(BaseModel):
     spawn_depth: int = Field(default=0, description="Recursion depth limit for spawned subagents")
 
     @classmethod
-    def for_solo(cls, msg, session, tool_registry, allowed_paths=None, images=None) -> "AgentRunConfig":
-        window = int(getattr(settings, "SESSION_HISTORY_WINDOW", 20))
-        history = []
-        for m in session.history[-window:]:
-            if getattr(m, "images", None):
-                vision_content = [{"type": "text", "text": m.content}]
-                for b64 in m.images:
-                    data_url = b64 if b64.startswith("data:") else f"data:image/png;base64,{b64}"
-                    vision_content.append({"type": "image_url", "image_url": {"url": data_url}})
-                history.append({"role": m.role, "content": vision_content})
-            else:
-                history.append({"role": m.role, "content": m.content})
-
-        return cls(
-            session_id=msg.session_id,
-            session_key=msg.session_id,
-            agent_id="rooster_solo",
-            prompt=msg.text,
-            model=settings.SOLO_MODEL_NAME,
-            workspace_dir=os.path.abspath("."),
-            tool_registry=tool_registry,
-            allowed_paths=allowed_paths or [str(p) for p in settings.ALLOWED_PATHS],
-            history=history,
-            images=images or [],
-        )
-
-    @classmethod
     def for_subtask(cls, msg, session, subtask, tool_registry, group_id: str, allowed_paths=None) -> "AgentRunConfig":
         window = int(getattr(settings, "SESSION_HISTORY_WINDOW", 20))
         history = []

@@ -81,26 +81,27 @@ class ProvidersConfig:
     AUDITOR_VISION_MODEL: str = _env("AUDITOR_VISION_MODEL", "openai/gpt-oss-120b")
     AUDITOR_TEXT_MODEL: str = _env("AUDITOR_TEXT_MODEL", "qwen/qwen3.6-35b")
 
-    ROUTER_MODEL_MODE: str = _env("ROUTER_MODEL_MODE", "zhipu")
-    ROUTER_MODEL_NAME: str = _env("ROUTER_MODEL_NAME", "")
-
     ENABLE_REFRAMER: bool = _env_bool("ENABLE_REFRAMER", False)
     REFRAMER_MODEL_MODE: str = _env("REFRAMER_MODEL_MODE", "local")
     REFRAMER_MODEL_NAME: str = _env("REFRAMER_MODEL_NAME", _env("LOCAL_MODEL", ""))
-
-    SOLO_MODEL_MODE: str = _env("SOLO_MODEL_MODE", "jiutian")
-    SOLO_MODEL_NAME: str = _env("SOLO_MODEL_NAME", "openai/gpt-oss-120b")
-    SOLO_FAILOVER_ORDER: list = _env_list("SOLO_FAILOVER_ORDER", "jiutian,zhipu,mimo,local")
 
     # --- Fast model (lightweight for summarization) ---
     FAST_MODEL_PROVIDER: str = _env("FAST_MODEL_PROVIDER", "jiutian")
     FAST_MODEL_NAME: str = _env("FAST_MODEL_NAME", "qwen/qwen3.6-35b")
 
+    # --- V15: L1 硬路由 + Strategist 语义主权 ---
+    MODEL_TIER_FAST: str = _env("MODEL_TIER_FAST", "")  # 空则回退 FAST_MODEL_NAME
+    MODEL_TIER_STANDARD: str = _env("MODEL_TIER_STANDARD", "")  # 空则回退 EXECUTOR_MODEL_NAME
+    MODEL_TIER_REASONING: str = _env("MODEL_TIER_REASONING", "")  # 空则回退 EXECUTOR_MODEL_NAME
+    EXECUTOR_AUTO_UPGRADE: bool = _env_bool("EXECUTOR_AUTO_UPGRADE", True)
+    EXECUTOR_UPGRADE_THRESHOLD: int = _env_int("EXECUTOR_UPGRADE_THRESHOLD", 2)
+    SKILL_INDEX_THRESHOLD: float = _env_float("SKILL_INDEX_THRESHOLD", 0.3)
+
     # --- Ollama local routing ---
     OLLAMA_DOMAINS: list = _env_list("OLLAMA_DOMAINS", "recon,craft")
 
     # --- Local lightweight domains ---
-    # Comma-separated keywords; when a SOLO message matches any keyword AND no explicit
+    # Comma-separated keywords; when a message matches any keyword AND no explicit
     # model override is set, traffic is automatically routed to the local provider.
     LOCAL_LIGHTWEIGHT_DOMAINS: list = _env_list("LOCAL_LIGHTWEIGHT_DOMAINS", "")
 

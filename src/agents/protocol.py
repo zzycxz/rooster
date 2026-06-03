@@ -1,6 +1,6 @@
 # src/agents/protocol.py
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from enum import Enum
 
 
@@ -212,3 +212,82 @@ class AuditVerdict(BaseModel):
     command: Optional[str] = Field(None, description="修正建议")  # Correction suggestion
     process_integrity: int = Field(0)
     artifact_quality: int = Field(0)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# V15: PlanMode / PlanDecision / MissionState
+# Strategist 语义主权层数据结构
+# ──────────────────────────────────────────────────────────────────────
+
+
+class MissionState(str, Enum):
+    """任务运行时状态（只在内存，不写 checkpoint，从 checkpoint 字段推导）。"""
+
+    CREATED = "created"
+    PLANNED = "planned"
+    EXECUTING = "executing"
+    VERIFYING = "verifying"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    BLOCKED = "blocked"
+
+
+class MissionStateHistoryEntry(BaseModel):
+    """状态变更历史记录。"""
+
+    state: MissionState
+    changed_at: str = Field(description="ISO 格式时间戳")
+    reason: str = ""
+
+
+class PlanMode(str, Enum):
+    """Strategist.decide() 输出的任务深度判断。"""
+
+    DIRECT_REPLY = "direct_reply"  # 原 TALK：纯回复，流式输出
+    SINGLE_STEP = "single_step"  # 原 DIRECT：单子任务
+    DAG_PLAN = "dag_plan"  # 原 MISSION：多步 DAG 规划
+    CLARIFY = "clarify"  # 歧义拦截，缺少执行必需信息
+
+
+class PlanDecision(BaseModel):
+    """
+    Strategist.decide() 返回的决策结构。
+    MissionRunner.run_with_decision() 消费此结构。
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    mode: PlanMode
+    model_tier: str = Field("standard", description="fast | standard | reasoning")
+
+    # DIRECT_REPLY 模式：lazy 异步生成器，被迭代时才发起 LLM 调用
+    reply_stream: Optional[Any] = Field(None, description="AsyncGenerator[str, None]，DIRECT_REPLY 时填充")
+
+    # CLARIFY 模式：澄清问题文本
+    clarify_question: str = Field("", description="CLARIFY 模式时填充的澄清问题")
+
+    # SINGLE_STEP / DAG_PLAN 模式：任务计划
+    plan: Optional[MissionPlan] = Field(None, description="SINGLE_STEP / DAG_PLAN 时必填")
+
+    @model_validator(mode="after")
+    def validate_plan_decision(self) -> "PlanDecision":
+        if self.mode == PlanMode.DIRECT_REPLY and self.reply_stream is None:
+            raise ValueError("DIRECT_REPLY 模式必须提供 reply_stream")
+        if self.mode == PlanMode.CLARIFY and not self.clarify_question.strip():
+            raise ValueError("CLARIFY 模式必须提供 clarify_question")
+        if self.mode in (PlanMode.SINGLE_STEP, PlanMode.DAG_PLAN) and self.plan is None:
+            raise ValueError(f"{self.mode} 模式必须提供 plan")
+        return self
+
+
+def infer_mission_state(checkpoint: dict) -> MissionState:
+    """从 checkpoint 字段推导任务状态（避免双写分叉）。"""
+    if not checkpoint:
+        return MissionState.CREATED
+    completed = len(checkpoint.get("completed_task_ids", []))
+    total = len(checkpoint.get("subtasks", []))
+    if completed == 0:
+        return MissionState.PLANNED
+    if completed < total:
+        return MissionState.EXECUTING
+    return MissionState.VERIFYING

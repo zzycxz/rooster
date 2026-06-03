@@ -510,11 +510,9 @@
             </div>
             <div class="flex items-center gap-2">
               <button @click="
-                setupForm.ROUTER_MODEL_MODE = '';
                 setupForm.STRATEGIST_MODEL_MODE = '';
                 setupForm.EXECUTOR_MODEL_MODE = '';
                 setupForm.AUDITOR_MODEL_MODE = '';
-                setupForm.SOLO_MODEL_MODE = '';
               " class="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-650 text-slate-300 font-medium transition-colors">
                 ⚡ <span x-text="t('smart_defaults')"></span>
               </button>
@@ -529,25 +527,6 @@
             <p class="text-xs text-slate-400" x-text="t('smart_broker_desc') || '在这里，您可以为 5 个核心角色指派专属的模型通道。选择“自动 (Auto)”或留空将启用智能自动分配（单模型全指派，双模型动静分离黄金分配，多模型自适应）。'"></p>
             
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <!-- Router -->
-              <label class="space-y-1">
-                <span class="text-xs text-slate-300 font-semibold" x-text="t('role_router') || '主脑决策路由 (Router)'"></span>
-                <select x-model="setupForm.ROUTER_MODEL_MODE"
-                        class="w-full bg-slate-900 border border-slate-600 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-green-500">
-                  <option value="" x-text="t('auto_broker')"></option>
-                  <option value="zhipu" x-text="t('setup_option_zhipu')"></option>
-                  <option value="zhipu_glm" x-text="t('setup_option_zhipu_glm')"></option>
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic Claude</option>
-                  <option value="kimi" x-text="t('setup_option_kimi')"></option>
-                  <option value="qwen" x-text="t('setup_option_qwen')"></option>
-                  <option value="cloud" x-text="t('setup_option_cloud')"></option>
-                  <option value="mimo" x-text="t('setup_option_mimo')"></option>
-                  <option value="jiutian" x-text="t('setup_option_jiutian')"></option>
-                  <option value="local" x-text="t('setup_option_local')"></option>
-                </select>
-              </label>
-
               <!-- Strategist -->
               <label class="space-y-1">
                 <span class="text-xs text-slate-300 font-semibold" x-text="t('role_strategist') || '任务战略规划 (Strategist)'"></span>
@@ -606,24 +585,6 @@
                 </select>
               </label>
 
-              <!-- Solo -->
-              <label class="space-y-1 md:col-span-2">
-                <span class="text-xs text-slate-300 font-semibold" x-text="t('role_solo') || '单轮快捷问答 (Solo Chat)'"></span>
-                <select x-model="setupForm.SOLO_MODEL_MODE"
-                        class="w-full bg-slate-900 border border-slate-600 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-green-500">
-                  <option value="" x-text="t('auto_broker')"></option>
-                  <option value="zhipu" x-text="t('setup_option_zhipu')"></option>
-                  <option value="zhipu_glm" x-text="t('setup_option_zhipu_glm')"></option>
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic Claude</option>
-                  <option value="kimi" x-text="t('setup_option_kimi')"></option>
-                  <option value="qwen" x-text="t('setup_option_qwen')"></option>
-                  <option value="cloud" x-text="t('setup_option_cloud')"></option>
-                  <option value="mimo" x-text="t('setup_option_mimo')"></option>
-                  <option value="jiutian" x-text="t('setup_option_jiutian')"></option>
-                  <option value="local" x-text="t('setup_option_local')"></option>
-                </select>
-              </label>
             </div>
           </div>
         </div>

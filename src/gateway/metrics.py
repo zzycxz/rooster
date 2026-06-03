@@ -155,13 +155,23 @@ class MetricsRegistry:
         self.counter("llm_errors_total", "Total LLM call errors").inc()
         self.counter(f"llm_errors_{provider}_total", f"Total LLM call errors for provider {provider}").inc()
 
-    def observe_route_decision(self, target: str, llm_used: bool, duration_s: float):
-        """Record routing decision distribution, LLM usage ratio, and triage latency."""
-        self.counter("route_decision_total", "Total routing decisions").inc()
-        self.counter(f"route_decision_{target}_total", f"Routing decisions to {target}").inc()
-        if llm_used:
-            self.counter("route_triage_llm_total", "Triages that used LLM").inc()
-        self.histogram("route_triage_seconds", "Triage latency in seconds").observe(duration_s)
+    # V15: L1 硬路由 + Strategist 语义主权 metrics
+    def observe_v15_l1_gate(self, result: str, duration_s: float):
+        """Record L1 hard-rule gate hit."""
+        self.counter("route_l1_gate_total", "L1 gate total hits").inc()
+        self.counter(f"route_l1_gate_{result}_total", f"L1 gate {result}").inc()
+        self.histogram("route_l1_gate_seconds", "L1 gate latency").observe(duration_s)
+
+    def observe_v15_plan_decision(self, mode: str, model_tier: str):
+        """Record Strategist.decide() output distribution."""
+        self.counter("plan_decision_total", "PlanDecision total").inc()
+        self.counter(f"plan_decision_{mode}_total", f"PlanDecision mode={mode}").inc()
+        self.counter(f"model_tier_{model_tier}_selected_total", f"Model tier {model_tier} selected").inc()
+
+    def observe_v15_skill_hint(self, skill: str):
+        """Record SkillIndex hint hit."""
+        self.counter("route_skill_hint_total", "SkillIndex hint total").inc()
+        self.counter(f"route_skill_hint_{skill}_total", f"SkillIndex hint: {skill}").inc()
 
 
 # Global singleton

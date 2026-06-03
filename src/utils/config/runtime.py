@@ -174,14 +174,3 @@ class RuntimeConfig:
     TOOL_ROUTER_RULES_JSON: str = _env("TOOL_ROUTER_RULES_JSON", "")
 
     # NOTE: LLM_API_TIMEOUT and WAIT_CONFIRM_TIMEOUT are defined above (L70/L76).
-
-    # --- Executor-first gateway migration flags (Phase 0, default OFF) ---
-    # 启用 Edge Gateway 模式（Phase 1）：前置确定性规则，LLM triage 降为兜底
-    # Enable Edge Gateway mode (Phase 1): deterministic rules first, LLM triage becomes fallback
-    ENABLE_EDGE_GATEWAY: bool = _env_bool("ENABLE_EDGE_GATEWAY", False)
-    # 启用 ExecutorEntry 模式（Phase 2）：DIRECT 路径直达 Executor，不经过 MissionRunner
-    # Enable ExecutorEntry mode (Phase 2): DIRECT path goes straight to Executor, bypasses MissionRunner
-    ENABLE_EXECUTOR_ENTRY: bool = _env_bool("ENABLE_EXECUTOR_ENTRY", False)
-    # 是否保留 LLM triage 作为兜底（默认 True = 保留现有行为；Phase 5 可关闭）
-    # Keep LLM triage as fallback (default True = keep current behavior; can be turned off in Phase 5)
-    ENABLE_ROUTER_LLM_FALLBACK: bool = _env_bool("ENABLE_ROUTER_LLM_FALLBACK", True)

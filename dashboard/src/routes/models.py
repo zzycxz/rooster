@@ -100,10 +100,8 @@ async def api_models_ollama_apply(req: OllamaApplyRequest):
     ollama_base = settings.OLLAMA_URL.rstrip("/")
     updates = {"LOCAL_URL": f"{ollama_base}/v1", "LOCAL_KEY": "ollama", "LOCAL_MODEL": model_name}
     if target_key == "PRIMARY":
-        updates["ROUTER_MODEL_MODE"] = "local"
         updates["STRATEGIST_MODEL_MODE"] = "local"
         updates["AUDITOR_MODEL_MODE"] = "local"
-        updates["SOLO_MODEL_MODE"] = "local"
     elif target_key == "EXECUTOR":
         updates["EXECUTOR_MODEL_MODE"] = "local"
         updates["EXECUTOR_MODEL_NAME"] = "local"

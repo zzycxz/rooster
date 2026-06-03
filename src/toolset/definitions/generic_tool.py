@@ -19,7 +19,7 @@ class GenericTool(BaseTool):
     触发场景:
     1. Strategist 规划失败（超时、JSON 解析失败、异常）→ FAILSAFE SubTask
     2. Strategist 输出了未注册的 tool 名 → 降级为 generic_tool
-    3. is_direct 模式 → 直接执行用户指令
+    3. SINGLE_STEP 模式 → 直接执行用户指令
     """
 
     name: str = "generic_tool"

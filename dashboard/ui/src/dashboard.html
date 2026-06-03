@@ -455,7 +455,7 @@ function app() {
         welcome_desc: 'No .env.local found. Fill in at least one API key below and save to get started. The service will auto-restart.',
         config_note: 'Config saved to .env.local (local file, gitignore protected). Empty fields will not overwrite existing values.',
         zhipu_title: 'Quick Setup — ZHIPU (Recommended)',
-        primary_title: 'Primary Model (Router / Strategist / Auditor)',
+        primary_title: 'Primary Model (Strategist / Executor / Auditor)',
         model_name: 'Model name',
         executor_title: 'Executor Model',
         base_url_opt: 'API Base URL (optional, shares with primary)',
@@ -1103,7 +1103,7 @@ function app() {
         welcome_desc: '未找到 .env.local。请在下方填写至少一个 API Key，保存后服务将自动重启。',
         config_note: '配置保存到 .env.local（本地文件，已加入 gitignore）。空字段不会覆盖已有值。',
         zhipu_title: '快速配置 — 智谱（推荐）',
-        primary_title: '主模型（Router / Strategist / Auditor）',
+        primary_title: '主模型（Strategist / Executor / Auditor）',
         model_name: '模型名称',
         executor_title: '执行模型（Executor）',
         base_url_opt: 'API Base URL（留空则与主模型共用）',
@@ -1681,12 +1681,10 @@ function app() {
       FEISHU_APP_SECRET:   '',
       FEISHU_USER_OPEN_ID: '',
       // --- Role assignments ---
-      ROUTER_MODEL_MODE:  '',
       STRATEGIST_MODEL_MODE: '',
       EXECUTOR_MODEL_MODE: '',
       EXECUTOR_MODEL_NAME: '',
       AUDITOR_MODEL_MODE: '',
-      SOLO_MODEL_MODE:    '',
       // --- Failover ---
       LLM_FAILOVER_ENABLED: 'True',
       LLM_FAILOVER_ORDER: 'mimo,zhipu,jiutian,local',
@@ -2240,9 +2238,9 @@ function app() {
         'FEISHU_APP_ID','FEISHU_APP_SECRET','FEISHU_USER_OPEN_ID',
       ],
       roles: [
-        'ROUTER_MODEL_MODE','STRATEGIST_MODEL_MODE',
+        'STRATEGIST_MODEL_MODE',
         'EXECUTOR_MODEL_MODE','EXECUTOR_MODEL_NAME',
-        'AUDITOR_MODEL_MODE','SOLO_MODEL_MODE',
+        'AUDITOR_MODEL_MODE',
       ],
       failover: [
         'LLM_FAILOVER_ENABLED','LLM_FAILOVER_ORDER',

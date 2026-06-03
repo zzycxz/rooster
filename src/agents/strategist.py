@@ -4,7 +4,7 @@ import json
 import logging
 from typing import List, Optional
 from .llm_client import LLMClient
-from .protocol import MissionPlan, SubTask
+from .protocol import MissionPlan, PlanDecision, PlanMode, SubTask
 from utils.config import settings
 import re
 import os
@@ -643,3 +643,156 @@ class Strategist:
                     )
                 ],
             )
+
+    # ──────────────────────────────────────────────────────────────────
+    # V15: decide() — Strategist 语义主权入口
+    # ──────────────────────────────────────────────────────────────────
+
+    async def decide(
+        self,
+        user_request: str,
+        skill_hint: Optional[dict] = None,
+    ) -> PlanDecision:
+        """
+        V15 语义判断入口。
+        调用 fast LLM 判断任务深度，返回 PlanDecision。
+        不修改现有 plan/plan_stream/replan。
+
+        Args:
+            user_request: 用户原始请求
+            skill_hint: SkillIndex 输出的 hint（可选）
+        """
+        logger.info(f"🎯 [Strategist.decide] 判断任务深度: {user_request[:80]}...")
+
+        # 1. 调用 fast LLM 判断深度
+        mode, model_tier = await self._judge_depth(user_request, skill_hint)
+
+        # 2. DIRECT_REPLY: 返回 lazy 流式生成器
+        if mode == PlanMode.DIRECT_REPLY:
+            async def _reply_stream():
+                try:
+                    async for delta in _stream_with_chunk_timeout(
+                        self.llm_client.chat_stream(
+                            messages=[
+                                {"role": "system", "content": "你是一个有帮助的助手。简洁、准确地回答用户问题。"},
+                                {"role": "user", "content": user_request},
+                            ],
+                            model=settings.FAST_MODEL_NAME,
+                            temperature=0.3,
+                        ),
+                        chunk_timeout=getattr(settings, "LLM_STREAM_CHUNK_TIMEOUT", 30.0),
+                    ):
+                        if delta.content:
+                            yield delta.content
+                except Exception as e:
+                    logger.error(f"[DIRECT_REPLY] 流式生成异常: {e}")
+                    yield f"\n[流式中断: {e}]"
+
+            return PlanDecision(mode=PlanMode.DIRECT_REPLY, model_tier=model_tier, reply_stream=_reply_stream())
+
+        # 3. CLARIFY: 返回澄清问题
+        if mode == PlanMode.CLARIFY:
+            return PlanDecision(
+                mode=PlanMode.CLARIFY,
+                model_tier=model_tier,
+                clarify_question="抱歉，您的请求缺少必要信息。能否补充更多细节？",
+            )
+
+        # 4. SINGLE_STEP: 创建单子任务计划
+        if mode == PlanMode.SINGLE_STEP:
+            import uuid
+
+            single_task = SubTask(
+                id=f"ST_{uuid.uuid4().hex[:6]}",
+                instruction=user_request,
+                domain="SYSTEM",
+                tool="generic_tool",
+            )
+            plan = MissionPlan(
+                task_id=f"T{int(__import__('time').time())}",
+                goal=user_request,
+                subtasks=[single_task],
+            )
+            return PlanDecision(mode=PlanMode.SINGLE_STEP, model_tier=model_tier, plan=plan)
+
+        # 5. DAG_PLAN: 复用现有 plan_stream()
+        subtasks = []
+        async for st in self.plan_stream(user_request):
+            subtasks.append(st)
+        plan = MissionPlan(
+            task_id=f"T{int(__import__('time').time())}",
+            goal=user_request,
+            subtasks=subtasks,
+        )
+        return PlanDecision(mode=PlanMode.DAG_PLAN, model_tier=model_tier, plan=plan)
+
+    async def _judge_depth(
+        self,
+        user_request: str,
+        skill_hint: Optional[dict] = None,
+    ) -> tuple:
+        """
+        调用 fast LLM 判断任务深度。
+        Returns: (PlanMode, model_tier_str)
+        """
+        _prompts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
+        triage_prompt_path = os.path.join(_prompts_dir, "strategist_triage.md")
+
+        try:
+            with open(triage_prompt_path, encoding="utf-8") as f:
+                system_prompt = f.read()
+        except FileNotFoundError:
+            logger.warning("[decide] strategist_triage.md not found, using inline prompt")
+            system_prompt = "判断用户请求的执行深度，输出 JSON: {\"mode\": \"direct_reply|single_step|dag_plan|clarify\", \"model_tier\": \"fast|standard|reasoning\"}"
+
+        # 注入 skill_hint 到 prompt
+        hint_text = ""
+        if skill_hint:
+            hint_text = f"\n\n[能力索引提示] 最匹配的技能: {skill_hint.get('hint_skill', 'N/A')} (置信度: {skill_hint.get('confidence', 0)})"
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_request + hint_text},
+        ]
+
+        try:
+            response = await asyncio.wait_for(
+                self.llm_client.chat_non_stream(
+                    messages=messages,
+                    model=settings.FAST_MODEL_NAME,
+                    temperature=0.1,
+                    max_tokens=256,
+                ),
+                timeout=15,  # 分诊必须快
+            )
+
+            raw = response.content.strip()
+            # 提取 JSON
+            match = re.search(r'\{[^}]+\}', raw)
+            if match:
+                data = json.loads(match.group())
+                mode_str = data.get("mode", "single_step")
+                tier_str = data.get("model_tier", "standard")
+
+                mode_map = {
+                    "direct_reply": PlanMode.DIRECT_REPLY,
+                    "single_step": PlanMode.SINGLE_STEP,
+                    "dag_plan": PlanMode.DAG_PLAN,
+                    "clarify": PlanMode.CLARIFY,
+                }
+                mode = mode_map.get(mode_str, PlanMode.SINGLE_STEP)
+
+                # model_tier 兜底校验
+                if tier_str not in ("fast", "standard", "reasoning"):
+                    tier_str = "standard"
+
+                logger.info(f"🎯 [Strategist.decide] 判断结果: mode={mode.value}, tier={tier_str}")
+                return mode, tier_str
+
+        except asyncio.TimeoutError:
+            logger.error("[Strategist.decide] 分诊超时 (15s)，降级为 SINGLE_STEP")
+        except Exception as e:
+            logger.error(f"[Strategist.decide] 分诊异常: {e}")
+
+        # 兜底：SINGLE_STEP + standard
+        return PlanMode.SINGLE_STEP, "standard"
