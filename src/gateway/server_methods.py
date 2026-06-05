@@ -127,6 +127,9 @@ class MethodHandler:
         from .router import global_router
 
         agent_task = asyncio.create_task(global_router.process_run(run, session, message_text, self.event_handler))
+        agent_task.add_done_callback(
+            lambda t: logger.error(f"Agent task failed: {t.exception()}") if not t.cancelled() and t.exception() else None
+        )
         # Register the asyncio Task so abort_run() can actually cancel it
         global_run_manager.register_task(run.run_id, agent_task)
 

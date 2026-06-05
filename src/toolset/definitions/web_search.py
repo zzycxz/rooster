@@ -29,7 +29,7 @@ class WebSearchArgs(BaseModel):
 
 def get_exa_active() -> bool:
     try:
-        path = getattr(settings, "SEARCH_STATUS_FILE", ".rooster/search_status.json")
+        path = os.path.join(settings.ROOSTER_HOME, "search_status.json")
         if not os.path.exists(path):
             return True
         with open(path, "r") as f:
@@ -41,7 +41,7 @@ def get_exa_active() -> bool:
 
 def disable_exa():
     try:
-        path = getattr(settings, "SEARCH_STATUS_FILE", ".rooster/search_status.json")
+        path = os.path.join(settings.ROOSTER_HOME, "search_status.json")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         data = {}
         if os.path.exists(path):
@@ -59,7 +59,7 @@ _MONTHLY_QUOTA = 1000
 
 def _get_exa_usage() -> int:
     try:
-        path = getattr(settings, "SEARCH_STATUS_FILE", ".rooster/search_status.json")
+        path = os.path.join(settings.ROOSTER_HOME, "search_status.json")
         if not os.path.exists(path):
             return 0
         with open(path, "r") as f:
@@ -71,7 +71,7 @@ def _get_exa_usage() -> int:
 
 def _increment_exa_usage():
     try:
-        path = getattr(settings, "SEARCH_STATUS_FILE", ".rooster/search_status.json")
+        path = os.path.join(settings.ROOSTER_HOME, "search_status.json")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         data = {}
         if os.path.exists(path):
@@ -86,7 +86,7 @@ def _increment_exa_usage():
 
 def get_mcp_status() -> bool:
     try:
-        path = getattr(settings, "SEARCH_STATUS_FILE", ".rooster/search_status.json")
+        path = os.path.join(settings.ROOSTER_HOME, "search_status.json")
         if not os.path.exists(path):
             return True
         with open(path, "r") as f:
@@ -98,7 +98,7 @@ def get_mcp_status() -> bool:
 
 def set_mcp_status(active: bool):
     try:
-        path = getattr(settings, "SEARCH_STATUS_FILE", ".rooster/search_status.json")
+        path = os.path.join(settings.ROOSTER_HOME, "search_status.json")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         data = {}
         if os.path.exists(path):
@@ -759,7 +759,10 @@ class WebSearchTool(BaseTool):
 
             # 6. [Plan A async rerank sentinel] — silently launch LLM semantic rerank in background, refresh cache after 1s!
             # 6. 【方案一异步重排哨兵】—— 后台默默拉起大模型语义 Rerank，1秒后刷新缓存矫正记忆！
-            asyncio.create_task(self._async_llm_rerank_and_update_cache(query, all_raw, cache_key, now, en_keywords))
+            _rerank_task = asyncio.create_task(self._async_llm_rerank_and_update_cache(query, all_raw, cache_key, now, en_keywords))
+            _rerank_task.add_done_callback(
+                lambda t: logger.warning(f"Background rerank failed: {t.exception()}") if not t.cancelled() and t.exception() else None
+            )
 
             # 7. Return the first-screen 1ms physical result instantly!
             # 7. 瞬间把首屏 1ms 物理结果返回，速度快得不可思议！

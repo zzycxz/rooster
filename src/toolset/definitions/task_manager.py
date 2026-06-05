@@ -16,13 +16,14 @@ import logging
 from typing import Type, Optional, List
 from pydantic import BaseModel, Field
 from toolset.base import BaseTool, ToolResult
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
 # 常量
 # --------------------------------------------------------------------------- #
-_TASK_STORE_PATH = os.path.join(".rooster", "tasks", "tasks.json")
+_TASK_STORE_PATH = os.path.join(settings.ROOSTER_HOME, "tasks", "tasks.json")
 _VALID_STATUSES = {"PENDING", "RUNNING", "DONE", "FAILED", "CANCELLED"}
 
 

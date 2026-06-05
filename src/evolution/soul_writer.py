@@ -2,6 +2,7 @@ import os
 import logging
 from datetime import datetime
 from filelock import FileLock
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -12,8 +13,8 @@ class SoulWriter:
     支持白名单、文件锁、去重和 Git 版本保护逻辑预留。
     """
 
-    def __init__(self, soul_path: str = ".rooster/SOUL.md"):
-        self.soul_path = os.path.abspath(soul_path)
+    def __init__(self, soul_path: str = ""):
+        self.soul_path = os.path.abspath(soul_path or os.path.join(settings.ROOSTER_HOME, "SOUL.md"))
         self.lock_path = self.soul_path + ".lock"
         # 允许进化的白名单章节
         # Whitelist sections allowed for evolution

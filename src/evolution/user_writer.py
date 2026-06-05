@@ -3,6 +3,7 @@ import logging
 import json
 from datetime import datetime
 from filelock import FileLock
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +17,9 @@ class UserWriter:
     # USER.md field-level updater.
     # Supports debounce mechanism (State Tracking) and whitelist updates
 
-    def __init__(self, user_path: str = ".rooster/USER.md", state_path: str = ".rooster/state/evolution_state.json"):
-        self.user_path = os.path.abspath(user_path)
-        self.state_path = os.path.abspath(state_path)
+    def __init__(self, user_path: str = "", state_path: str = ""):
+        self.user_path = os.path.abspath(user_path or os.path.join(settings.ROOSTER_HOME, "USER.md"))
+        self.state_path = os.path.abspath(state_path or os.path.join(settings.ROOSTER_HOME, "state", "evolution_state.json"))
         self.lock_path = self.user_path + ".lock"
 
         os.makedirs(os.path.dirname(self.state_path), exist_ok=True)

@@ -1,6 +1,7 @@
 """SQLite 索引：FTS5 全文检索 + numpy 向量余弦相似度。"""
 
 import logging
+import os
 import re
 import sqlite3
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 from .models import TextChunk
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +35,8 @@ class SQLiteIndex:
     外加 metadata 表存配置（嵌入模型、维度等）。
     """
 
-    def __init__(self, db_path: str = ".rooster/memory_index.db"):
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: str = ""):
+        self.db_path = Path(db_path or os.path.join(settings.ROOSTER_HOME, "memory_index.db"))
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self.conn.execute("PRAGMA journal_mode=WAL")

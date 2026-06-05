@@ -1,6 +1,7 @@
 import os
 import asyncio
 import logging
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class SoulLoader:
         # 上一级 = rooster/src/memory/ → 上两级 = rooster/src/ → 上三级 = rooster/（项目根）
         _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # rooster/src/
         _project_root = os.path.dirname(_src_dir)  # rooster/
-        self.rooster_dir = os.path.abspath(rooster_dir) if rooster_dir else os.path.join(_project_root, ".rooster")
+        self.rooster_dir = os.path.abspath(rooster_dir) if rooster_dir else os.path.abspath(settings.ROOSTER_HOME)
         self.prompts_dir = os.path.abspath(prompts_dir) if prompts_dir else os.path.join(_src_dir, "prompts")
         self.soul_path = os.path.join(self.rooster_dir, "SOUL.md")
         self.user_path = os.path.join(self.rooster_dir, "USER.md")

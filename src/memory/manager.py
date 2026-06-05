@@ -7,6 +7,7 @@ Rooster 记忆管理器 v3.0
 import hashlib
 import json
 import logging
+import os
 import re
 import asyncio
 from datetime import datetime
@@ -38,7 +39,7 @@ class MemoryManager:
 
     def __init__(
         self,
-        storage_path: str = ".rooster/project_memory.json",
+        storage_path: str = "",
         llm_client=None,
         model: str = "",
         # --- v3 新参数 ---
@@ -47,7 +48,7 @@ class MemoryManager:
         enable_session_index: bool = False,
         enable_file_watcher: bool = False,
     ):
-        self.storage_path = Path(storage_path)
+        self.storage_path = Path(storage_path or os.path.join(settings.ROOSTER_HOME, "project_memory.json"))
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         self.llm_client = llm_client
         self.model = model
@@ -57,8 +58,6 @@ class MemoryManager:
 
         # ─── 1. 后端选择 ───
         if backend_type is None:
-            from utils.config import settings
-
             backend_type = settings.MEMORY_BACKEND_TYPE
         self._backend_type = backend_type
 
@@ -75,7 +74,6 @@ class MemoryManager:
         if self._embedder is None:
             try:
                 from .embeddings import create_embedder
-                from utils.config import settings
 
                 self._embedder = create_embedder(
                     provider=settings.EMBEDDING_PROVIDER,

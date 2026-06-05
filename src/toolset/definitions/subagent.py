@@ -26,7 +26,7 @@ from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
-_SUBAGENT_DIR = os.path.join(".rooster", "subagents")
+_SUBAGENT_DIR = os.path.join(settings.ROOSTER_HOME, "subagents")
 
 
 def _subagent_result_path(agent_id: str) -> str:

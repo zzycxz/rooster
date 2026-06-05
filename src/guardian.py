@@ -4,10 +4,11 @@ import json
 import asyncio
 import logging
 from typing import Optional
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
-_CHECKPOINT_DIR = os.path.join(".rooster", "checkpoints")
+_CHECKPOINT_DIR = os.path.join(settings.ROOSTER_HOME, "checkpoints")
 _HEARTBEAT_TIMEOUT_S = 180
 
 

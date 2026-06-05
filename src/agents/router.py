@@ -314,8 +314,8 @@ class Router:
             "enabled": True,
         }
 
-        schedules_path = os.path.join(".rooster", "schedules.json")
-        os.makedirs(".rooster", exist_ok=True)
+        schedules_path = os.path.join(settings.ROOSTER_HOME, "schedules.json")
+        os.makedirs(settings.ROOSTER_HOME, exist_ok=True)
         schedules = []
         if os.path.exists(schedules_path):
             try:

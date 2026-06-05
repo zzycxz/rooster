@@ -7,6 +7,7 @@ from .triggers import TriggerChecker
 from .soul_writer import SoulWriter
 from .user_writer import UserWriter
 from .prompt_templates import USER_PREFERENCE_EXTRACTOR, CORRECTION_ANALYZER
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,8 @@ class EvolutionEngine:
     # Rooster Evolution Engine core scheduler.
     # Receives conversation events, trigger logic judgment, calls LLM analysis and writes back memory files
 
-    def __init__(self, rooster_root: str = ".rooster", llm_client: Any = None):
+    def __init__(self, rooster_root: str = "", llm_client: Any = None):
+        rooster_root = rooster_root or settings.ROOSTER_HOME
         self.trigger = TriggerChecker()
         self.soul_writer = SoulWriter(os.path.join(rooster_root, "SOUL.md"))
         self.user_writer = UserWriter(os.path.join(rooster_root, "USER.md"))

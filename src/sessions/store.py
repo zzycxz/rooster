@@ -1,9 +1,11 @@
+import os
 import logging
 import json
 from typing import Dict, Optional, Any
 from pathlib import Path
 from sessions.models import Session
 from .epilogue import SessionEpilogue
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -11,10 +13,10 @@ logger = logging.getLogger(__name__)
 class SessionStore:
     _instance: Optional["SessionStore"] = None
 
-    def __init__(self, storage_dir: str = ".rooster/sessions"):
+    def __init__(self, storage_dir: str = ""):
         # 会话存档目录
         # Session archive directory
-        self.storage_dir = Path(storage_dir)
+        self.storage_dir = Path(storage_dir or os.path.join(settings.ROOSTER_HOME, "sessions"))
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
         # 内存缓存

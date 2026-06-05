@@ -45,9 +45,7 @@ _provider_fail_counts: Dict[str, int] = {}  # provider -> 连续失败次数 / c
 
 # ===== 冷却状态持久化 =====
 # ===== Cooldown state persistence =====
-_COOLDOWN_STATE_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".rooster", "state", "provider_cooldowns.json"
-)
+_COOLDOWN_STATE_FILE = os.path.join(settings.ROOSTER_HOME, "state", "provider_cooldowns.json")
 
 
 def _persist_cooldowns():
@@ -343,6 +341,7 @@ class LLMClient:
 
     async def chat_stream(self, messages: List[Dict[str, str]], **kwargs) -> AsyncGenerator[LLMResponseDelta, None]:
         """流式对话 — 支持 Provider 轮转 + Per-Provider 冷却"""  # Streaming chat — supports Provider rotation + Per-Provider cooldown
+        self._ensure_client_alive()
         await self._wait_rate_limit()
         caller_model = kwargs.pop("model", self.model_name)
 
@@ -452,6 +451,7 @@ class LLMClient:
 
     async def chat_non_stream(self, messages: List[Dict[str, str]], **kwargs) -> LLMResponseDelta:
         """非流式对话 — 支持 Provider 轮转 + Per-Provider 冷却"""  # Non-streaming chat — supports Provider rotation + Per-Provider cooldown
+        self._ensure_client_alive()
         await self._wait_rate_limit()
         caller_model = kwargs.pop("model", self.model_name)
 
@@ -527,6 +527,15 @@ class LLMClient:
             logger.debug("Skipping LLMClient.close() for shared ModelFactory-managed client.")
             return
         await self._internal_client.close()
+
+    def _ensure_client_alive(self):
+        """检查共享客户端是否已被 ModelFactory.clear_instances() 关闭，如果是则自动重建。"""
+        if not getattr(self, "_uses_shared_internal_client", False):
+            return
+        httpx_client = getattr(self._internal_client, "client", None)
+        if httpx_client is not None and getattr(httpx_client, "is_closed", False):
+            logger.warning(f"♻️ [Client] {self.provider} httpx 客户端已关闭，从工厂重建...")
+            self._internal_client = ModelFactory.get_client(self.provider)
 
     def switch_provider(self, provider: str):
         if provider != self.provider:

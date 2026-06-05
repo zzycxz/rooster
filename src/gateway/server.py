@@ -15,6 +15,7 @@ from .connection_manager import ConnectionManager
 from .auth import APIKeyMiddleware, RateLimiter
 from .security import SecurityHeadersMiddleware, RequestSizeLimitMiddleware
 from channels.registry import ChannelRegistry
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ def _mount_dashboard():
         mount_dashboard(
             main_app=app,
             skills_dir=_skills_dir,
-            rooster_dir=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".rooster"),
+            rooster_dir=os.path.abspath(settings.ROOSTER_HOME),
             get_skill_loader=get_skill_loader,
             invalidate_skill_loader=invalidate_skill_loader,
             hf_downloads=_hf_downloads,

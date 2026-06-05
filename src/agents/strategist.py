@@ -582,6 +582,12 @@ class Strategist:
                             on_failure=t.get("on_failure", "RETRY"),
                             requires_confirm=t.get("requires_confirm", False),
                             timeout=t.get("timeout", settings.SUBTASK_MIN_TIMEOUT),
+                            mode=t.get("mode", "ATOMIC"),
+                            sub_agent_mode=t.get("sub_agent_mode", "NORMAL"),
+                            race_group=t.get("race_group", ""),
+                            owner=t.get("owner", "AGENT"),
+                            confidence=t.get("confidence", "HIGH"),
+                            risk_note=t.get("risk_note", ""),
                         )
                     )
 

@@ -19,6 +19,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["ws"])
 
+
+def _fire_and_forget(coro):
+    """Fire-and-forget with exception logging. / 启动后台任务并记录异常。"""
+    task = asyncio.create_task(coro)
+    task.add_done_callback(
+        lambda t: logger.error(f"Background task failed: {t.exception()}") if not t.cancelled() and t.exception() else None
+    )
+    return task
+
 # Shared state — wired by server.py
 manager: ConnectionManager = None
 channel_registry: ChannelRegistry = None
@@ -120,6 +129,9 @@ async def http_chat(request: Request):
     await event_handler.emit(run.run_id, session_id, "lifecycle", {"phase": "start"})
 
     agent_task = asyncio.create_task(global_router.process_run(run, session, message_text, event_handler))
+    agent_task.add_done_callback(
+        lambda t: logger.error(f"Agent task failed: {t.exception()}") if not t.cancelled() and t.exception() else None
+    )
     global_run_manager.register_task(run.run_id, agent_task)
 
     return {"status": "started", "runId": run.run_id, "sessionKey": session_id}
@@ -247,7 +259,7 @@ async def universal_webhook(channel_id: str, request: Request):
                 session_id=f"feishu_{sender_id}",
                 id=str(uuid.uuid4()),
             )
-            asyncio.create_task(global_router.route_request_and_push(request, channel))
+            _fire_and_forget(global_router.route_request_and_push(request, channel))
             return {"status": "success", "action_received": True}
 
         inbound = channel.standardize_message(data)
@@ -258,7 +270,7 @@ async def universal_webhook(channel_id: str, request: Request):
             request = GatewayRequest(
                 method="chat", params={"text": inbound.text}, session_id=inbound.session_id, id=str(uuid.uuid4())
             )
-            asyncio.create_task(global_router.route_request_and_push(request, channel))
+            _fire_and_forget(global_router.route_request_and_push(request, channel))
             return {"status": "success", "event_received": True}
 
         return {"status": "ignored", "reason": "No business event extracted."}

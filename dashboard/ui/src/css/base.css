@@ -2,50 +2,91 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+@theme {
+  --color-slate-50: #ffffff;
+  --color-slate-100: #ebebf5;
+  --color-slate-200: #d1d1d6;
+  --color-slate-300: #aeaeb2;
+  --color-slate-400: #8e8e93;
+  --color-slate-500: #636366;
+  --color-slate-600: #48484a;
+  --color-slate-700: #3a3a3c;
+  --color-slate-800: #2c2c2e;
+  --color-slate-900: #1c1c1e;
+  --color-slate-950: #000000;
+}
+
 [x-cloak] { display: none !important; }
 
 * { box-sizing: border-box; }
 
 body {
-  font-family: 'Cascadia Code', 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  background-color: var(--color-slate-900);
+  color: var(--color-slate-100);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── Scrollbars ── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: #0f172a; }
-::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #475569; }
+/* ── Typography Utility Overrides ── */
+.font-mono, .log-line, .json-block, pre, code {
+  font-family: 'Cascadia Code', 'JetBrains Mono', 'SF Mono', Consolas, Menlo, monospace !important;
+}
+
+/* ── Apple-Style Scrollbars ── */
+::-webkit-scrollbar { width: 14px; height: 14px; background: transparent; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { 
+  background-color: rgba(255, 255, 255, 0); 
+  border: 4px solid transparent; 
+  background-clip: padding-box; 
+  border-radius: 9999px; 
+  transition: background-color 0.2s;
+}
+*:hover::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.2); }
+::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.3) !important; border: 3px solid transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* ── Global Tactile Interactions ── */
+button, .cursor-pointer, .tab-item {
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+button:active:not(:disabled), .cursor-pointer:active {
+  transform: scale(0.97);
+}
 
 /* ── Sidebar tabs ── */
-.tab-item  { transition: background 0.12s, color 0.12s; }
-.tab-item:hover { background: rgba(255,255,255,0.05); }
+.tab-item:hover { background: rgba(255,255,255,0.08); }
 .tab-active {
-  background: rgba(34,197,94,0.1) !important;
-  color: #4ade80 !important;
-  border-left: 2px solid #4ade80;
+  background: rgba(10, 132, 255, 0.15) !important;
+  color: #0A84FF !important;
+  border-left: 3px solid #0A84FF;
 }
 
 /* ── Pipeline nodes ── */
 .pipeline-node { transition: border-color 0.2s, background 0.2s; }
 
-/* ── Premium Chat Blocks ── */
+/* ── Premium Chat Blocks (Apple Style) ── */
 .bubble-user { 
-  background: rgba(37, 99, 235, 0.15); 
-  border: 1px solid rgba(59, 130, 246, 0.4);
-  border-radius: 8px; 
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: #0A84FF; 
+  color: #FFFFFF;
+  border: none;
+  border-radius: 18px 18px 4px 18px; 
+  box-shadow: 0 4px 12px rgba(10, 132, 255, 0.2);
 }
 .bubble-ai { 
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(51, 65, 85, 0.8);
-  border-radius: 8px; 
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: #2C2C2E;
+  color: #EBEBF5;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 18px 18px 18px 4px; 
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
-.bubble-err  { 
-  background: rgba(127, 29, 29, 0.4); 
-  border: 1px solid rgba(153, 27, 27, 0.8); 
-  border-radius: 8px; 
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+.bubble-err { 
+  background: rgba(255, 69, 58, 0.15); 
+  border: 1px solid rgba(255, 69, 58, 0.3); 
+  border-radius: 18px; 
+  box-shadow: 0 4px 12px rgba(255, 69, 58, 0.1);
+  color: #FF453A;
 }
 
 /* ── Bubble content overflow fix ── */

@@ -1,5 +1,5 @@
   <!-- ────────── SIDEBAR ────────── -->
-  <aside class="main-sidebar flex-none w-52 xl:w-64 bg-slate-800 border-r border-slate-700 flex-col"
+  <aside class="main-sidebar flex-none w-52 xl:w-64 bg-slate-900/60 backdrop-blur-xl border-r border-slate-700/30 flex-col transition-all duration-300"
          :class="{ 'open': sidebarOpen, 'hidden md:flex': !desktopSidebarCollapsed, 'hidden md:hidden': desktopSidebarCollapsed }">
     <nav class="flex-1 py-2 space-y-0.5 overflow-y-auto">
       <template x-for="tab in tabs" :key="tab.id">

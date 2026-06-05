@@ -635,10 +635,9 @@ class AgentExecutor:
                                 {
                                     "role": "user",
                                     "content": (
-                                        "[SYSTEM: You have been repeating the same action "
-                                        f"{_STUCK_THRESHOLD * _stuck_break_count} times. "
-                                        "STOP immediately. Summarize what you've tried and why it failed, "
-                                        "then output your final answer. Do NOT call any more tools.]"
+                                        "【系统干预】你已经重复执行相同的操作 "
+                                        f"{_STUCK_THRESHOLD * _stuck_break_count} 次。\n"
+                                        "请立即停止调用工具！总结你尝试了什么以及为什么失败，然后给出你的最终答复。"
                                     ),
                                 }
                             )
@@ -652,8 +651,8 @@ class AgentExecutor:
                                 {
                                     "role": "user",
                                     "content": (
-                                        "[SYSTEM: You seem to be repeating the same action. "
-                                        "Consider a different approach or provide your final answer now.]"
+                                        "【系统警告】你似乎在重复执行相同的动作。\n"
+                                        "请考虑换一种方式，或者现在就给出最终答复。"
                                     ),
                                 }
                             )
@@ -671,9 +670,8 @@ class AgentExecutor:
                             "Injecting synthesis pass."
                         )
                         synthesis_msg = (
-                            "[SYSTEM: All tool calls complete. The results are shown above. "
-                            "Output your final answer now — state the result clearly and directly. "
-                            "Do NOT call any more tools.]"
+                            "【系统提示】所有工具调用均已完成，结果如上所示。\n"
+                            "请现在输出你的最终答复——直接且清晰地陈述结果，不要再调用任何工具。"
                         )
                         session_history.append({"role": "user", "content": synthesis_msg})
                         synth_content = ""
@@ -733,7 +731,7 @@ class AgentExecutor:
                     except Exception as tool_exc:
                         # Individual tool failure does not crash other tools
                         executor_logger.warning(f"Tool execution failed: {tool_exc}")
-                        return (idx, f"Tool execution error: {type(tool_exc).__name__}")
+                        return (idx, f"Tool execution error: {type(tool_exc).__name__}: {tool_exc}")
 
                 indexed_results = await asyncio.gather(
                     *[_run_tool(i, name, args) for i, (name, args) in enumerate(tool_calls)]
@@ -833,8 +831,8 @@ class AgentExecutor:
             executor_logger.info(f"Reached max_steps ({config.max_steps}). Requesting emergency summary.")
             _task_hint = (config.prompt or "").split("\n\n任务指令：")[-1].strip()[:300]
             summary_prompt = (
-                f"[SYSTEM: Maximum steps reached. Immediately provide a complete final answer. "
-                f"Do NOT call any more tools.\nTask: {_task_hint}]"
+                f"【系统紧急指令】已达到最大执行步数限制。请立即提供完整的最终答复。\n"
+                f"绝不允许再调用任何工具。\n当前任务：{_task_hint}"
             )
             session_history.append({"role": "user", "content": summary_prompt})
             system_prompt = self.prompt_builder.build_system_prompt(
@@ -921,16 +919,16 @@ class AgentExecutor:
         phase_lines = []
         if is_leaf:
             phase_lines.append(
-                "[COMMIT PHASE] This is the FINAL delivery step. "
-                "Execute any required tool calls, then immediately state the answer clearly and directly. "
-                "IMPORTANT: If multiple tools were called, prioritize the results of ACTION tools (e.g. taking a screenshot, clicking, writing files) over QUERY tools (e.g. tool_info). If an action tool succeeded, do not let a query tool failure hide the success. "
-                "After all tools complete, your last message MUST contain the actual result — "
-                "a number, a sentence, a file path, or whatever the task demands. "
-                "Do NOT output boilerplate. Do NOT ask for further instructions."
+                "【系统严格指令 - 交付阶段】\n"
+                "这是当前任务的最终交付阶段。请在调用任何必要的工具后，直接且清晰地给出最终答案。\n"
+                "重要：如果调用了多个工具，请优先参考“动作类工具”（如截图、点击、修改文件）的结果，即便“查询类工具”报错也不要掩盖动作的成功。\n"
+                "在所有工具执行完毕后，你的最后一次回复【必须】包含实际结果——例如一个数字、一句话、一个文件路径等。\n"
+                "警告：绝对不要输出无意义的套话，绝对不要反问用户寻求进一步指示。"
             )
         else:
             phase_lines.append(
-                "[EXECUTE PHASE] Intermediate step — run tools and pass raw results downstream. No final answer needed."
+                "【系统严格指令 - 执行阶段】\n"
+                "这是一个中间执行步骤。请调用必要的工具执行操作，无需向用户进行总结或对话，系统会自动将结果传递给下游。"
             )
 
         # Resolve template variables
@@ -971,7 +969,7 @@ class AgentExecutor:
             # Extract physical evidence
             safe_session_id = sanitize_path_name(config.session_id)
             evidence_dir = os.path.join(
-                ".rooster", "evidence", datetime.datetime.now().strftime("%Y%m%d"), safe_session_id
+                settings.ROOSTER_HOME, "evidence", datetime.datetime.now().strftime("%Y%m%d"), safe_session_id
             )
             os.makedirs(evidence_dir, exist_ok=True)
 

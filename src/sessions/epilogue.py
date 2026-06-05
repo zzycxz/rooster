@@ -2,6 +2,7 @@ import os
 import logging
 from datetime import datetime
 from typing import List, Dict
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -12,8 +13,8 @@ class SessionEpilogue:
     负责在会话结束时固化知识，防止知识流失。
     """
 
-    def __init__(self, storage_dir: str = ".rooster/sessions"):
-        self.storage_dir = storage_dir
+    def __init__(self, storage_dir: str = ""):
+        self.storage_dir = storage_dir or os.path.join(settings.ROOSTER_HOME, "sessions")
         os.makedirs(self.storage_dir, exist_ok=True)
 
     async def finalize_session(

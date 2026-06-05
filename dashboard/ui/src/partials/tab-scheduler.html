@@ -262,14 +262,14 @@
             </div>
             <div x-show="editorForm._execution_mode === 'script'">
               <label class="block text-xs text-slate-400 mb-1" x-text="t('sch_arguments') + ' (JSON)'"></label>
-              <input x-model="editorForm.execution.args_str" @change="try{editorForm.execution.args=JSON.parse($el.value||'[]')}catch(e){}"
+              <input x-model="editorForm.execution.args_str" @change="(() => { try{editorForm.execution.args=JSON.parse($el.value||'[]')}catch(e){} })()"
                      :value="JSON.stringify(editorForm.execution.args||[])"
                      class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500" placeholder='["arg1"]' />
             </div>
             <div x-show="editorForm._execution_mode === 'script'">
               <label class="block text-xs text-slate-400 mb-1" x-text="t('sch_env_vars') + ' (key=value, one per line)'"></label>
               <textarea x-model="editorForm.execution.env_str"
-                        @change="try{const o={};($el.value||'').split('\n').filter(l=>l.includes('=')).forEach(l=>{const[k,...v]=l.split('=');o[k.trim()]=v.join('=').trim()});editorForm.execution.env_vars=o}catch(e){}"
+                        @change="(() => { try{const o={};($el.value||'').split('\n').filter(l=>l.includes('=')).forEach(l=>{const[k,...v]=l.split('=');o[k.trim()]=v.join('=').trim()});editorForm.execution.env_vars=o}catch(e){} })()"
                         :value="Object.entries(editorForm.execution.env_vars||{}).map(([k,v])=>k+'='+v).join('\n')"
                         rows="4" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500 resize-none" placeholder="KEY=value"></textarea>
             </div>

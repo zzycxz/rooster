@@ -157,6 +157,7 @@ Your tools and their schemas are provided in the `tools` parameter. **NEVER call
   "subtask_id": "ST1",
   "status": "SUCCESS | FAILED | TIMEOUT",
   "reason": "One-line explanation",
+  "observation": "One-sentence summary for the user and auditor. Synthesize what was accomplished or what went wrong.",
   "evidence": {
     "summary": "REQUIRED: For EXECUTE tasks — quote actual tool return values. For COMMIT tasks — write the complete final answer here, synthesizing all prior results. This field is what the user and auditor will read.",
     "tool_call_trace": [

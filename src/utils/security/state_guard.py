@@ -5,6 +5,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ class StateGuard:
             return
 
         self.workspace_root = Path(workspace_root) if workspace_root else Path.cwd()
-        self.state_dir = self.workspace_root / ".rooster" / "state"
+        self.state_dir = Path(settings.ROOSTER_HOME) / "state"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         self.lock_file = self.state_dir / "task_locks.json"

@@ -305,15 +305,15 @@ class Guardian:
         """On Guardian start, proactively clean any leftover processes on the monitored port."""
         logger.info(f"🔍 Checking port {self._gateway_port} for leftovers...")
         self._free_port(f"Address already in use: ('0.0.0.0', {self._gateway_port})")
-        # Auto-start aria2c daemon if not already running
-        self._ensure_aria2_running()
+        # Auto-start aria2c daemon in the background to avoid blocking main process startup
+        threading.Thread(target=self._ensure_aria2_running, daemon=True).start()
 
     def _ensure_aria2_running(self):
         """Check if aria2c RPC is responding; if not, launch it as a daemon."""
         aria2_port = int(os.environ.get("ARIA2_RPC_PORT", "6800"))
         # Quick connectivity check
         try:
-            conn = http.client.HTTPConnection("127.0.0.1", aria2_port, timeout=2)
+            conn = http.client.HTTPConnection("127.0.0.1", aria2_port, timeout=0.1)
             conn.request(
                 "POST",
                 "/jsonrpc",
@@ -352,8 +352,7 @@ class Guardian:
                 kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
 
             subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kwargs)
-            time.sleep(1)
-            logger.info(f"✅ aria2c daemon started on port {aria2_port}.")
+            logger.info(f"✅ aria2c daemon started in background on port {aria2_port}.")
         except Exception as e:
             logger.warning(f"⚠️ Failed to auto-start aria2c: {e}")
 

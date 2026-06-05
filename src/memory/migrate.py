@@ -2,10 +2,12 @@
 
 import json
 import logging
+import os
 import shutil
 from pathlib import Path
 
 from .models import MemoryFact, MemoryFactType
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -13,9 +15,11 @@ _MARKER_NAME = ".migrated_to_markdown"
 
 
 def migrate_json_to_markdown(
-    json_path: str = ".rooster/project_memory.json",
-    base_dir: str = ".rooster",
+    json_path: str = "",
+    base_dir: str = "",
 ) -> int:
+    json_path = json_path or os.path.join(settings.ROOSTER_HOME, "project_memory.json")
+    base_dir = base_dir or settings.ROOSTER_HOME
     """
     将 JSON 后端的事实迁移到 Markdown 后端。
     返回迁移的事实数量。已完成则跳过。
@@ -113,10 +117,12 @@ def migrate_json_to_markdown(
 
 
 def auto_migrate_if_needed(
-    json_path: str = ".rooster/project_memory.json",
-    base_dir: str = ".rooster",
+    json_path: str = "",
+    base_dir: str = "",
     backend_type: str = "markdown",
 ) -> bool:
+    json_path = json_path or os.path.join(settings.ROOSTER_HOME, "project_memory.json")
+    base_dir = base_dir or settings.ROOSTER_HOME
     """
     自动检测并执行迁移。仅在以下条件同时满足时执行：
     1. 目标后端是 markdown

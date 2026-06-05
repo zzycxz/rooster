@@ -806,8 +806,8 @@ AUDITOR_MODEL_MODE=jiutian         # 审计官（默认 jiutian）
 ### V15 薄路由 / 模型档位
 
 ```ini
-FAST_MODEL_PROVIDER=jiutian        # decide()/自愈修正轻量模型 provider
-FAST_MODEL_NAME=qwen/qwen3.6-35b   # fast 档模型
+FAST_MODEL_PROVIDER=mimo            # decide()/自愈修正轻量模型 provider
+FAST_MODEL_NAME=mimo-v2.5           # fast 档模型（须与 FAST_MODEL_PROVIDER 匹配，见 providers.py 注释）
 
 MODEL_TIER_FAST=                   # 空则回退 FAST_MODEL_NAME
 MODEL_TIER_STANDARD=               # 空则回退 EXECUTOR_MODEL_NAME

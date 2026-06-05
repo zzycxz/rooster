@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>🐓 Rooster Dashboard</title>
+  <title>Rooster Dashboard</title>
+  <link rel="icon" type="image/png" href="/ui/favicon.png" />
   <!-- Base CSS with Tailwind utility generation -->
   <link rel="stylesheet" href="./css/base.css" />
   <!-- highlight.js theme — bundled by Vite -->
@@ -15,35 +16,7 @@
 
     * { box-sizing: border-box; }
 
-    body {
-      font-family: 'Inter', 'Roboto', 'Segoe UI', system-ui, sans-serif;
-    }
-    .font-mono, .json-block, pre, code, .log-line {
-      font-family: 'Cascadia Code', 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
-    }
 
-    /* ── Scrollbars ── */
-    ::-webkit-scrollbar { width: 5px; height: 5px; }
-    ::-webkit-scrollbar-track { background: #0f172a; }
-    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: #475569; }
-
-    /* ── Sidebar tabs ── */
-    .tab-item  { transition: background 0.12s, color 0.12s; }
-    .tab-item:hover { background: rgba(255,255,255,0.05); }
-    .tab-active {
-      background: rgba(34,197,94,0.1) !important;
-      color: #4ade80 !important;
-      border-left: 2px solid #4ade80;
-    }
-
-    /* ── Pipeline nodes ── */
-    .pipeline-node { min-width: 90px; transition: border-color 0.2s, background 0.2s; }
-
-    /* ── Chat bubbles ── */
-    .bubble-user { background: #1e3a8a; border-radius: 16px 16px 4px 16px; }
-    .bubble-ai   { background: #1e293b; border-radius: 16px 16px 16px 4px; border: 1px solid #334155; }
-    .bubble-err  { background: rgba(127,29,29,0.4); border: 1px solid #7f1d1d; border-radius: 12px; }
 
     /* ── Cursor blink for streaming ── */
     .cursor-blink::after {
@@ -154,8 +127,22 @@
   class="bg-slate-900 text-slate-100 h-screen flex flex-col overflow-hidden text-sm"
   x-data="app()"
   x-init="init()"
-  x-cloak
 >
+
+<!-- CSS-only Initial Loader (hidden by Alpine once ready) -->
+<div x-show="!isReady" 
+     x-transition.opacity.duration.600ms
+     class="fixed inset-0 z-[999] bg-slate-900 flex flex-col items-center justify-center">
+  <div class="relative w-24 h-24 mb-8">
+    <div class="absolute inset-0 border-4 border-slate-700 rounded-full"></div>
+    <div class="absolute inset-0 border-4 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
+    <div class="absolute inset-0 flex items-center justify-center">
+      <img src="/ui/logo-192.png?v=2" alt="Rooster Logo" class="w-16 h-16 object-contain drop-shadow-[0_0_8px_rgba(10,132,255,0.6)]" />
+    </div>
+  </div>
+  <h2 class="text-xl font-bold text-slate-200 tracking-widest pulse">ROOSTER OS</h2>
+  <p class="text-slate-500 mt-2 text-sm" x-text="t('loading_modules') || 'Initializing cognitive engines...'"></p>
+</div>
 
 <!-- Auth Overlay -->
 <div x-show="needsAuth" x-cloak class="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1499,7 +1486,7 @@ function app() {
         setup_ollama_placeholder: '例如 qwen3:4b, llama3:8b',
         setup_smtp_pass_placeholder: 'POP3/SMTP 授权码',
         setup_base_url: 'API Base URL',
-        setup_local_key_optional: 'API Key（可选）',
+        setup_local_key_optional: 'API 密钥（可选）',
         setup_local_model_path: '物理 GGML 路径/名称',
         setup_ollama_pull_title: '从 Ollama 库拉取模型',
         setup_set_primary: '设为主模型',
@@ -1568,6 +1555,7 @@ function app() {
     },
 
     // ── Connection ──────────────────────────────────────────
+    isReady:          false,
     wsConnected:      false,
     gatewayConnected: false,
     _dashWs:          null,
@@ -1582,7 +1570,7 @@ function app() {
     activeTab: 'logs',
     sidebarOpen: false,
     desktopSidebarCollapsed: false,
-    desktopChatSidebarCollapsed: false,
+    desktopChatSidebarCollapsed: true,
     chatSidebarOpen: false,
     isMobile: window.innerWidth < 768,
     tabs: [
@@ -3552,6 +3540,9 @@ function app() {
       fetch('/api/version').then(r => r.json()).then(d => { if (d.version) this.appVersion = d.version; }).catch(() => {});
       // Poll metrics every 15s (was 10s)
       setInterval(() => { this.fetchMetricsSummary(); this.fetchGuardianStatus(); }, 15000);
+
+      // Hide loading animation after initial render
+      setTimeout(() => { this.isReady = true; }, 300);
     },
 
     _resolveWsToken() {

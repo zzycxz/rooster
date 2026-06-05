@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import re
 import uuid
 from abc import ABC, abstractmethod
@@ -10,6 +11,7 @@ from typing import List, Optional, Dict
 from pathlib import Path
 
 from .models import MemoryFact, MemoryFactType, TYPE_PRIORITY
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -203,8 +205,8 @@ class MarkdownBackend(MemoryBackend):
     每条事实渲染为一个 ### section，解析时按 ### 分割还原。
     """
 
-    def __init__(self, base_dir: str = ".rooster"):
-        self.base_dir = Path(base_dir)
+    def __init__(self, base_dir: str = ""):
+        self.base_dir = Path(base_dir or settings.ROOSTER_HOME)
         self.memory_file = self.base_dir / "MEMORY.md"
         self.daily_dir = self.base_dir / "memory" / "daily"
         self.daily_dir.mkdir(parents=True, exist_ok=True)

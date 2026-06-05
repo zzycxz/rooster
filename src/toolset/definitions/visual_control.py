@@ -7,6 +7,7 @@ from typing import Dict, Any
 from PIL import Image
 from pydantic import BaseModel, Field
 from utils.vision.interaction import DesktopInteraction
+from utils.config import settings
 
 # pywinauto is Windows-only; skip import on other platforms
 # pywinauto 是 Windows 专属依赖，其他平台跳过导入
@@ -166,7 +167,7 @@ class DesktopSnapTool(BaseTool):
 
         # 保存图片
         if not save_path:
-            evidence_dir = os.path.join(os.getcwd(), ".rooster", "evidence", "temp_snapshots")
+            evidence_dir = os.path.join(settings.ROOSTER_HOME, "evidence", "temp_snapshots")
             os.makedirs(evidence_dir, exist_ok=True)
             ts = time.strftime("%Y%m%d_%H%M%S")
             save_path = os.path.join(evidence_dir, f"{ts}_desktop_snap.png")
@@ -266,7 +267,7 @@ class DesktopGroundingScanTool(BaseTool):
 
         # 保存打标图
         if not save_path:
-            evidence_dir = os.path.join(os.getcwd(), ".rooster", "evidence", "temp_snapshots")
+            evidence_dir = os.path.join(settings.ROOSTER_HOME, "evidence", "temp_snapshots")
             os.makedirs(evidence_dir, exist_ok=True)
             ts = time.strftime("%Y%m%d_%H%M%S")
             save_path = os.path.join(evidence_dir, f"{ts}_grounding_scan.png")
@@ -421,7 +422,7 @@ class DesktopReadScreenTool(BaseTool):
         # Step 2: Save screenshot to disk (ocr_extract needs file path)
         # Step 2: 保存截图到磁盘（ocr_extract 需要文件路径）
         if not save_path:
-            evidence_dir = os.path.join(os.getcwd(), ".rooster", "evidence", "temp_snapshots")
+            evidence_dir = os.path.join(settings.ROOSTER_HOME, "evidence", "temp_snapshots")
             os.makedirs(evidence_dir, exist_ok=True)
             ts = time.strftime("%Y%m%d_%H%M%S")
             save_path = os.path.join(evidence_dir, f"{ts}_read_screen.png")

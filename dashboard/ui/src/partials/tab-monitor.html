@@ -185,7 +185,7 @@
                       x-text="(metricsData?.rooster_active_sessions?.value ?? 0) > 0 ? t('mon_running') : t('mon_idle')"></span>
               </div>
               <div x-show="(metricsData?.rooster_active_subtasks?.value ?? 0) > 0" class="text-xs text-slate-400 mt-1.5">
-                <span x-text="t('mon_subtasks') + ': ' + metricsData.rooster_active_subtasks.value"></span>
+                <span x-text="t('mon_subtasks') + ': ' + (metricsData?.rooster_active_subtasks?.value ?? 0)"></span>
               </div>
             </div>
             <!-- Cumulative -->
@@ -211,10 +211,10 @@
                   <span class="text-blue-400 font-mono font-bold" x-text="Math.round(metricsData?.rooster_llm_calls_total?.value ?? 0)"></span> <span x-text="t('mon_calls')"></span>
                 </span>
                 <span class="text-slate-500" x-show="(metricsData?.rooster_llm_errors_total?.value ?? 0) > 0">
-                  <span class="text-red-400 font-mono font-bold" x-text="Math.round(metricsData.rooster_llm_errors_total.value)"></span> <span x-text="t('mon_errors')"></span>
+                  <span class="text-red-400 font-mono font-bold" x-text="Math.round(metricsData?.rooster_llm_errors_total?.value ?? 0)"></span> <span x-text="t('mon_errors')"></span>
                 </span>
                 <span class="text-slate-500" x-show="(metricsData?.rooster_llm_failover_total?.value ?? 0) > 0">
-                  <span class="text-amber-400 font-mono font-bold" x-text="Math.round(metricsData.rooster_llm_failover_total.value)"></span> <span x-text="t('mon_failovers')"></span>
+                  <span class="text-amber-400 font-mono font-bold" x-text="Math.round(metricsData?.rooster_llm_failover_total?.value ?? 0)"></span> <span x-text="t('mon_failovers')"></span>
                 </span>
               </div>
             </div>
@@ -247,7 +247,7 @@
                   <span class="text-blue-400 font-mono font-bold" x-text="Math.round(metricsData?.rooster_tool_calls_total?.value ?? 0)"></span> <span x-text="t('mon_invocations')"></span>
                 </span>
                 <span class="text-slate-500" x-show="(metricsData?.rooster_tool_errors_total?.value ?? 0) > 0">
-                  <span class="text-red-400 font-mono font-bold" x-text="Math.round(metricsData.rooster_tool_errors_total.value)"></span> <span x-text="t('mon_errors')"></span>
+                  <span class="text-red-400 font-mono font-bold" x-text="Math.round(metricsData?.rooster_tool_errors_total?.value ?? 0)"></span> <span x-text="t('mon_errors')"></span>
                 </span>
               </div>
             </div>

@@ -820,8 +820,8 @@ AUDITOR_MODEL_MODE=jiutian         # Auditor (default: jiutian)
 ### V15 Thin Routing / Model Tiers
 
 ```ini
-FAST_MODEL_PROVIDER=jiutian        # Lightweight provider for decide() / validator repair
-FAST_MODEL_NAME=qwen/qwen3.6-35b   # Fast-path model
+FAST_MODEL_PROVIDER=mimo            # Lightweight provider for decide() / validator repair
+FAST_MODEL_NAME=mimo-v2.5           # Fast-path model (must match FAST_MODEL_PROVIDER; see providers.py comment)
 
 MODEL_TIER_FAST=                   # Optional override for fast tier
 MODEL_TIER_STANDARD=               # Optional override for standard executor tier

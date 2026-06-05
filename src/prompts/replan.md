@@ -46,7 +46,10 @@ Output a pure JSON plan strictly following v11.0 schema:
             "depends_on": [],
             "on_failure": "RETRY | ABORT | REPLAN | REROUTE",
             "requires_confirm": false,
+            "mode": "ATOMIC | CONCURRENT",
             "timeout": 1800,
+            "sub_agent_mode": "NORMAL | ISOLATED | PARALLEL | SANDBOXED | RACE",
+            "race_group": "",
             "owner": "AGENT",
             "confidence": "HIGH",
             "risk_note": ""

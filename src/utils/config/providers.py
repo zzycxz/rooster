@@ -85,9 +85,12 @@ class ProvidersConfig:
     REFRAMER_MODEL_MODE: str = _env("REFRAMER_MODEL_MODE", "local")
     REFRAMER_MODEL_NAME: str = _env("REFRAMER_MODEL_NAME", _env("LOCAL_MODEL", ""))
 
-    # --- Fast model (lightweight for summarization) ---
-    FAST_MODEL_PROVIDER: str = _env("FAST_MODEL_PROVIDER", "jiutian")
-    FAST_MODEL_NAME: str = _env("FAST_MODEL_NAME", "qwen/qwen3.6-35b")
+    # --- Fast model (lightweight for summarization / Strategist triage) ---
+    # 默认使用 mimo：当前部署未启用 Jiutian 引擎，fast tier 请求通过 mimo 端点发出，
+    # 因此模型名必须是 mimo 支持的型号（mimo-v2.5），否则 API 会返回 400 "Not supported model"。
+    # 如需切回 Jiutian，同步修改 FAST_MODEL_PROVIDER + FAST_MODEL_NAME + JIUTIAN_MODEL_FAST。
+    FAST_MODEL_PROVIDER: str = _env("FAST_MODEL_PROVIDER", "mimo")
+    FAST_MODEL_NAME: str = _env("FAST_MODEL_NAME", "mimo-v2.5")
 
     # --- V15: L1 硬路由 + Strategist 语义主权 ---
     MODEL_TIER_FAST: str = _env("MODEL_TIER_FAST", "")  # 空则回退 FAST_MODEL_NAME

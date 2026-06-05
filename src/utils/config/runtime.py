@@ -11,6 +11,11 @@ from utils.config._base import (
 
 
 class RuntimeConfig:
+    # --- Data directory root ---
+    # 所有 .rooster/ 子路径的根目录，可通过 ROOSTER_HOME 环境变量覆盖
+    # Root directory for all .rooster/ sub-paths, overridable via ROOSTER_HOME env var
+    ROOSTER_HOME: str = _env("ROOSTER_HOME", ".rooster")
+
     # --- Agent execution ---
     AGENT_MAX_STEPS: int = _env_int("AGENT_MAX_STEPS", 100)
     AGENT_STUCK_THRESHOLD: int = _env_int("AGENT_STUCK_THRESHOLD", 4)
@@ -112,10 +117,10 @@ class RuntimeConfig:
 
     # --- Vision Debug ---
     VISION_DEBUG_SAVE: bool = _env_bool("VISION_DEBUG_SAVE", False)
-    VISION_DEBUG_DIR: str = _env("VISION_DEBUG_DIR", "logs/vision")
+    VISION_DEBUG_DIR: str = _env("VISION_DEBUG_DIR", ".rooster/vision")
 
     # --- Output ---
-    OUTPUT_DIR: str = _env("OUTPUT_DIR", "output")
+    OUTPUT_DIR: str = _env("OUTPUT_DIR", ".rooster/output")
 
     # --- Evolution ---
     EVOLUTION_ENABLED: bool = _env_bool("EVOLUTION_ENABLED", False)

@@ -47,7 +47,7 @@ class AuditManager:
             return
 
         self.enabled = settings.AUDIT_LOG_ENABLED
-        self.root_path = os.path.abspath(os.path.join(os.getcwd(), ".rooster", "logs"))
+        self.root_path = os.path.abspath(os.path.join(settings.ROOSTER_HOME, "logs"))
         self.queue = asyncio.Queue()
         self.worker_task = None
         self._ref_count = 0

@@ -31,7 +31,7 @@ from utils.exceptions import EscalateSignal, AbortSignal
 
 logger = logging.getLogger(__name__)
 
-_CHECKPOINT_DIR = os.path.join(".rooster", "checkpoints")
+_CHECKPOINT_DIR = os.path.join(settings.ROOSTER_HOME, "checkpoints")
 
 
 class MissionRunner:
@@ -583,7 +583,7 @@ class MissionRunner:
                         digest = summarize_dependency_observation(
                             observation=dep_report.observation,
                             task_id=dep_id,
-                            run_dir=getattr(settings, "WORKSPACE_DIR", ".rooster/runs"),
+                            run_dir=os.path.join(settings.ROOSTER_HOME, "runs"),
                         )
                         dep_results.append(f"[{dep_id}]\n{digest.to_prompt_string()}")
 
@@ -1015,6 +1015,21 @@ class MissionRunner:
                             text=f"🔍 [审计纠错] {st.id}: {verdict.reason}",
                         )
                         continue
+                    elif verdict is not None and verdict.verdict == AuditVerdictType.CLOSURE:
+                        # CLOSURE: 任务客观不可完成，优雅关闭，不走重规划
+                        inability_reason = verdict.reason or "任务在当前环境下客观不可完成"
+                        await channel.send_message(
+                            to=msg.sender_id,
+                            text=f"🏁 [优雅关闭] {st.id}: {inability_reason}",
+                        )
+                        executed_tasks[st.id] = Report(
+                            subtask_id=st.id,
+                            status="CLOSURE",
+                            observation=inability_reason,
+                        )
+                        completed_task_ids.add(st.id)
+                        state_guard.release_locks(st.id)
+                        return
                     else:
                         reason = verdict.reason if verdict else "叶节点审计未通过"
                         raise EscalateSignal(f"审计官拒绝放行 ({st.id})。原因: {reason}")
