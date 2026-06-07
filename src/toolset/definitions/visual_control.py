@@ -198,7 +198,7 @@ class DesktopGroundingScanArgs(BaseModel):
     )
     mode: Optional[str] = Field(
         default=None,
-        description="扫描模式：low=仅前台窗口（默认）| medium=全屏+仅可交互元素 | high=全屏+全量标注。不填则使用 .env 中 VISION_SCAN_MODE 配置。"
+        description="扫描模式：low=仅前台窗口（默认）| medium=全屏+仅可交互元素 | high=全屏+全量标注。不填则使用 .env 中 VISION_SCAN_MODE 配置。",
     )
 
 
@@ -231,6 +231,7 @@ class DesktopGroundingScanTool(BaseTool):
         # 截图（medium/high 用全屏，low 用主显示器）
         if mode in ("medium", "high"):
             import mss
+
             with mss.mss() as sct:
                 monitor = sct.monitors[0]
                 raw = sct.grab(monitor)

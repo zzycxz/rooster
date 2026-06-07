@@ -104,7 +104,9 @@ class AgentEventHandler:
             run_id=client_run_id, session_id=session_key, stream="error", data={"message": message, "status": "error"}
         )
 
-    async def emit_tool_call(self, session_key: str, client_run_id: str, tool_name: str, args: Dict[str, Any], step: Optional[int] = None):
+    async def emit_tool_call(
+        self, session_key: str, client_run_id: str, tool_name: str, args: Dict[str, Any], step: Optional[int] = None
+    ):
         data = {"tool": tool_name, "args": args, "type": "call"}
         if step is not None:
             data["step"] = step

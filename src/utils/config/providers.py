@@ -30,8 +30,6 @@ class ProvidersConfig:
     ZHIPU_CODINGPLAN_KEY: str = _env("ZHIPU_CODINGPLAN_KEY", "")
     ZHIPU_CODINGPLAN_MODEL: str = _env("ZHIPU_CODINGPLAN_MODEL", "GLM-4.7")
 
-
-
     # --- OpenAI ---
     OPENAI_URL: str = _env("OPENAI_URL", "https://api.openai.com/v1")
     OPENAI_KEY: str = _env("OPENAI_KEY", "")

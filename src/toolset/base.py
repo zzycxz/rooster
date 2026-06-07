@@ -84,6 +84,7 @@ class Tool:
                 return ToolResult.error(f"[ArgumentValidation] {e}")
 
             import inspect
+
             sig = inspect.signature(self.execute)
             if "ctx" in sig.parameters:
                 return await self.execute(args_obj, kwargs["ctx"])

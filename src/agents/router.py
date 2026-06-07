@@ -53,6 +53,7 @@ class Router:
         if orchestrator is None:
             try:
                 from agents.orchestrator import ToolOrchestrator
+
                 self.orchestrator = ToolOrchestrator(workspace_dir=os.path.abspath("."))
             except ImportError:
                 self.orchestrator = None
@@ -91,6 +92,7 @@ class Router:
         # 进化引擎（本地模型）
         try:
             from models.factory import ModelFactory
+
             _evo_client = ModelFactory.get_client("local")
         except Exception:
             _evo_client = self.llm_client
@@ -99,6 +101,7 @@ class Router:
         # 1. 安全检查
         try:
             from utils.security.advanced_guard import AdvancedGuard
+
             jb_report = AdvancedGuard.scan_user_message(msg.text)
             if jb_report.should_block:
                 logger.warning(f"[AdvancedGuard] 越狱尝试被阻断: {jb_report.threats[0].evidence!r}")
@@ -139,6 +142,7 @@ class Router:
         original_text = msg.text
         if flags.get("reframe"):
             from agents.reframer import Reframer
+
             reframe_mode = getattr(settings, "REFRAMER_MODEL_MODE", "local")
             reframe_name = getattr(settings, "REFRAMER_MODEL_NAME", "")
             reframe_llm = LLMClient(provider=reframe_mode, model=reframe_name)
@@ -150,11 +154,11 @@ class Router:
             _CLAR_PREFIX = "__CLARIFICATION_NEEDED__:"
             if original_text.startswith(_CLAR_PREFIX):
                 try:
-                    payload = json.loads(original_text[len(_CLAR_PREFIX):])
+                    payload = json.loads(original_text[len(_CLAR_PREFIX) :])
                     question = payload.get("question", "请问您想要哪个版本？")
                     options = payload.get("options", [])
                 except Exception:
-                    question = original_text[len(_CLAR_PREFIX):]
+                    question = original_text[len(_CLAR_PREFIX) :]
                     options = []
                 lines = [f"❓ **需要确认一下：**\n\n{question}"]
                 if options:
@@ -202,15 +206,14 @@ class Router:
             dynamic_event_handler=dynamic_event_handler,
             skill_hint=skill_hint_dict,
         )
-        self._fire_and_forget(
-            evolution_engine.on_turn_complete(msg.session_id, msg.text, "Mission Completed", [])
-        )
+        self._fire_and_forget(evolution_engine.on_turn_complete(msg.session_id, msg.text, "Mission Completed", []))
 
     def _build_event_handler(self, msg: Any, channel: Any, parent_event_handler=None) -> AgentEventHandler:
         """构建动态事件处理器（任务进度推送）。
         parent_event_handler: 来自 process_run 的事件处理器，拥有 Gateway WS 广播能力。
         生命周期事件（如 require_user_input）通过它转发到前端弹窗。
         """
+
         async def channel_broadcast(event_dict: dict):
             stream = event_dict.get("stream")
             if stream == "assistant":
@@ -245,14 +248,38 @@ class Router:
             return {"target": "schedule", "reframe": False}
 
         # 定时词表 → SCHEDULE
-        _SCHEDULE_KW = ["每天", "每周", "每小时", "每分钟", "定时", "自动提醒", "提醒我",
-                         "schedule", "every day", "every hour", "every week", "remind me at"]
+        _SCHEDULE_KW = [
+            "每天",
+            "每周",
+            "每小时",
+            "每分钟",
+            "定时",
+            "自动提醒",
+            "提醒我",
+            "schedule",
+            "every day",
+            "every hour",
+            "every week",
+            "remind me at",
+        ]
         if any(kw in t for kw in _SCHEDULE_KW):
             return {"target": "schedule", "reframe": False}
 
         # 下载词表 → flag:reframe
-        _DOWNLOAD_KW = ["下载", "download", "install", "安装", "迅雷", "磁力", "torrent", "bt下载",
-                         "fetch", "retrieve", "save file", "get file"]
+        _DOWNLOAD_KW = [
+            "下载",
+            "download",
+            "install",
+            "安装",
+            "迅雷",
+            "磁力",
+            "torrent",
+            "bt下载",
+            "fetch",
+            "retrieve",
+            "save file",
+            "get file",
+        ]
         if any(kw in t for kw in _DOWNLOAD_KW):
             return {"target": "pass_to_planner", "reframe": True}
 

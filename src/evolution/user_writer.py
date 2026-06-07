@@ -19,7 +19,9 @@ class UserWriter:
 
     def __init__(self, user_path: str = "", state_path: str = ""):
         self.user_path = os.path.abspath(user_path or os.path.join(settings.ROOSTER_HOME, "USER.md"))
-        self.state_path = os.path.abspath(state_path or os.path.join(settings.ROOSTER_HOME, "state", "evolution_state.json"))
+        self.state_path = os.path.abspath(
+            state_path or os.path.join(settings.ROOSTER_HOME, "state", "evolution_state.json")
+        )
         self.lock_path = self.user_path + ".lock"
 
         os.makedirs(os.path.dirname(self.state_path), exist_ok=True)

@@ -227,7 +227,9 @@ class OpenAILikeClient(BaseModelClient):
                     logger.info(f"🔧 [OpenAILike] 非流式 tool_calls 收到: {len(tool_calls)} 个工具调用")
                 elif not content:
                     if reasoning:
-                        logger.warning("⚠️ 模型返回内容为空，检测到 reasoning 字段，已自动兜底提取推理内容作为 content。")
+                        logger.warning(
+                            "⚠️ 模型返回内容为空，检测到 reasoning 字段，已自动兜底提取推理内容作为 content。"
+                        )
                         content = reasoning
                     else:
                         logger.warning(f"⚠️ 模型返回内容为空 | 原报文: {result}")

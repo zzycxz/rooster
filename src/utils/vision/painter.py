@@ -5,12 +5,25 @@ from typing import List, Dict, Any
 
 from utils.config.runtime import RuntimeConfig
 
+
 class ElitePainter:
     """OmniVision V3.9 精英绘图引擎 - Rooster 集成版"""
 
     # 四分类规则（medium/high 共用）
-    _ACTION_TYPES = {"button", "menuitem", "checkbox", "hyperlink", "tab", "tabitem",
-                     "splitbutton", "link", "treeitem", "listitem", "image", "radiobutton"}
+    _ACTION_TYPES = {
+        "button",
+        "menuitem",
+        "checkbox",
+        "hyperlink",
+        "tab",
+        "tabitem",
+        "splitbutton",
+        "link",
+        "treeitem",
+        "listitem",
+        "image",
+        "radiobutton",
+    }
     _KEYIN_TYPES = {"edit", "combobox", "spinner", "slider"}
     _NAV_TYPES = {"list", "tree", "menu", "toolbar"}
 

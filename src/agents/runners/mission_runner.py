@@ -1272,15 +1272,18 @@ class MissionRunner:
         except Exception as e:
             logger.error(f"[V15] Strategist.decide() 异常，降级为 SINGLE_STEP: {e}")
             import uuid
+
             fallback_plan = MissionPlan(
                 task_id=f"T{int(time.time())}",
                 goal=original_text,
-                subtasks=[SubTask(
-                    id=f"ST_{uuid.uuid4().hex[:6]}",
-                    instruction=original_text,
-                    domain="SYSTEM",
-                    tool="generic_tool",
-                )],
+                subtasks=[
+                    SubTask(
+                        id=f"ST_{uuid.uuid4().hex[:6]}",
+                        instruction=original_text,
+                        domain="SYSTEM",
+                        tool="generic_tool",
+                    )
+                ],
             )
             plan_decision = PlanDecision(
                 mode=PlanMode.SINGLE_STEP,

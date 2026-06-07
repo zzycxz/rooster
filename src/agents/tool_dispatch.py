@@ -415,7 +415,9 @@ async def _execute_tool_with_healing(tool, name: str, args: dict, reflection_eng
 
     # Helper to check if tool accepts ctx
     sig = inspect.signature(tool.run)
-    accepts_ctx = "ctx" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+    accepts_ctx = "ctx" in sig.parameters or any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+    )
 
     async def retry_with_args(corrected_args: dict):
         if accepts_ctx:

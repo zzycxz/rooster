@@ -759,9 +759,15 @@ class WebSearchTool(BaseTool):
 
             # 6. [Plan A async rerank sentinel] — silently launch LLM semantic rerank in background, refresh cache after 1s!
             # 6. 【方案一异步重排哨兵】—— 后台默默拉起大模型语义 Rerank，1秒后刷新缓存矫正记忆！
-            _rerank_task = asyncio.create_task(self._async_llm_rerank_and_update_cache(query, all_raw, cache_key, now, en_keywords))
+            _rerank_task = asyncio.create_task(
+                self._async_llm_rerank_and_update_cache(query, all_raw, cache_key, now, en_keywords)
+            )
             _rerank_task.add_done_callback(
-                lambda t: logger.warning(f"Background rerank failed: {t.exception()}") if not t.cancelled() and t.exception() else None
+                lambda t: (
+                    logger.warning(f"Background rerank failed: {t.exception()}")
+                    if not t.cancelled() and t.exception()
+                    else None
+                )
             )
 
             # 7. Return the first-screen 1ms physical result instantly!

@@ -48,8 +48,9 @@ class VisualGrounder:
 
         self.painter = ElitePainter()
 
-    def scan(self, node_id: str, screenshot: Image.Image, uia_elements: List[Dict[str, Any]],
-             mode: str = "low") -> VisualObservation:
+    def scan(
+        self, node_id: str, screenshot: Image.Image, uia_elements: List[Dict[str, Any]], mode: str = "low"
+    ) -> VisualObservation:
         """
         核心对齐与打标逻辑 (V3.9 Elite 实现)
 

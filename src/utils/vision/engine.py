@@ -170,6 +170,7 @@ class EliteEngine:
         if not scan_mode:
             try:
                 from utils.config import settings
+
                 scan_mode = getattr(settings, "VISION_SCAN_MODE", "low")
             except Exception:
                 scan_mode = "low"
@@ -233,6 +234,7 @@ class EliteEngine:
         if scan_all_visible:
             # 全屏模式：按 Z-order 从上到下累积遮挡框
             _seen_obs = []
+
             def _build_obstruction(hwnd, _):
                 if win32gui.IsWindowVisible(hwnd) and not self.is_window_cloaked(hwnd):
                     cls = win32gui.GetClassName(hwnd)
@@ -243,6 +245,7 @@ class EliteEngine:
                     rect = get_true_window_rect(hwnd)
                     if (rect[2] - rect[0]) > 10 and (rect[3] - rect[1]) > 10:
                         _seen_obs.append(rect)
+
             win32gui.EnumWindows(_build_obstruction, None)
         else:
             # 原始模式：前台窗口之上才是遮挡

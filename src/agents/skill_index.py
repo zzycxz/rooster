@@ -42,12 +42,36 @@ class SkillIndex:
     """
 
     _BUILTIN_SKILLS = [
-        {"name": "media_download", "keywords": ["下载", "download", "电影", "音乐", "安装", "install", "视频", "video"], "model_hint": "fast"},
-        {"name": "web_search", "keywords": ["搜索", "查找", "search", "find", "查询", "查一下", "搜一下"], "model_hint": "fast"},
-        {"name": "code_agent", "keywords": ["代码", "编程", "python", "写代码", "debug", "bug", "脚本", "script", "函数", "function"], "model_hint": "reasoning"},
-        {"name": "file_agent", "keywords": ["文件", "读取", "写入", "目录", "路径", "file", "read", "write", "folder"], "model_hint": "standard"},
-        {"name": "browser_agent", "keywords": ["浏览器", "网页", "截图", "点击", "browser", "screenshot", "webpage"], "model_hint": "standard"},
-        {"name": "schedule_agent", "keywords": ["定时", "提醒", "每天", "每周", "schedule", "remind", "daily", "weekly"], "model_hint": "fast"},
+        {
+            "name": "media_download",
+            "keywords": ["下载", "download", "电影", "音乐", "安装", "install", "视频", "video"],
+            "model_hint": "fast",
+        },
+        {
+            "name": "web_search",
+            "keywords": ["搜索", "查找", "search", "find", "查询", "查一下", "搜一下"],
+            "model_hint": "fast",
+        },
+        {
+            "name": "code_agent",
+            "keywords": ["代码", "编程", "python", "写代码", "debug", "bug", "脚本", "script", "函数", "function"],
+            "model_hint": "reasoning",
+        },
+        {
+            "name": "file_agent",
+            "keywords": ["文件", "读取", "写入", "目录", "路径", "file", "read", "write", "folder"],
+            "model_hint": "standard",
+        },
+        {
+            "name": "browser_agent",
+            "keywords": ["浏览器", "网页", "截图", "点击", "browser", "screenshot", "webpage"],
+            "model_hint": "standard",
+        },
+        {
+            "name": "schedule_agent",
+            "keywords": ["定时", "提醒", "每天", "每周", "schedule", "remind", "daily", "weekly"],
+            "model_hint": "fast",
+        },
     ]
 
     def __init__(self, skills_dirs: Optional[List[str]] = None, threshold: float = 0.3):
@@ -80,8 +104,8 @@ class SkillIndex:
         desc_match = re.search(r'description["\']?\s*[:：]\s*["\']?(.+)', content, re.IGNORECASE)
         if not desc_match:
             return None
-        desc = desc_match.group(1).strip().strip('"\'')
-        keywords = [w for w in re.findall(r'\w+', desc.lower()) if len(w) > 2]
+        desc = desc_match.group(1).strip().strip("\"'")
+        keywords = [w for w in re.findall(r"\w+", desc.lower()) if len(w) > 2]
         return {"name": skill_name, "keywords": keywords, "model_hint": "standard"}
 
     def query(self, text: str) -> Optional[SkillHint]:

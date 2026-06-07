@@ -42,6 +42,7 @@ async def _stream_with_chunk_timeout(generator, chunk_timeout: float):
 
 class PromptBleedFilter:
     """Intercepts LLM hallucination (prompt bleeding) before it reaches the UI."""
+
     def __init__(self):
         self.buffer = ""
         self.halted = False
@@ -601,7 +602,7 @@ class AgentExecutor:
                 bleed_markers = ["【系统严格指令", "【系统提示】", "任务指令："]
                 for marker in bleed_markers:
                     if marker in full_content:
-                        full_content = full_content[:full_content.find(marker)].strip()
+                        full_content = full_content[: full_content.find(marker)].strip()
 
                 # Record history (FC protocol format)
                 if native_tool_calls:
@@ -654,14 +655,16 @@ class AgentExecutor:
                             title="需要确认 (Confirmation Required)",
                             message=_confirm_signal.get("question", "请在下方选择或输入："),
                             options=_confirm_options,
-                            inputMode=True
+                            inputMode=True,
                         )
                         executor_logger.error(
                             f"[CONFIRM_REQUIRED] 歧义拦截门触发 (Step {step})，"
                             f"暂停执行，等待用户澄清：{_confirm_signal.get('question', '')[:80]}"
                         )
                     except Exception as confirm_exc:
-                        executor_logger.error(f">>>>> [FATAL ERROR] Failed to emit require_user_input: {confirm_exc}", exc_info=True)
+                        executor_logger.error(
+                            f">>>>> [FATAL ERROR] Failed to emit require_user_input: {confirm_exc}", exc_info=True
+                        )
 
                     break  # 不执行任何工具，退出 ReAct 循环，等待下一轮用户回复
 
@@ -773,7 +776,7 @@ class AgentExecutor:
                         # Strip prompt bleed
                         for marker in ["【系统严格指令", "【系统提示】", "任务指令："]:
                             if marker in synth_content:
-                                synth_content = synth_content[:synth_content.find(marker)].strip()
+                                synth_content = synth_content[: synth_content.find(marker)].strip()
 
                         if synth_content:
                             session_history.append({"role": "assistant", "content": synth_content})
@@ -950,7 +953,7 @@ class AgentExecutor:
             # Strip prompt bleed
             for marker in ["【系统严格指令", "【系统提示】", "任务指令："]:
                 if marker in final_content:
-                    final_content = final_content[:final_content.find(marker)].strip()
+                    final_content = final_content[: final_content.find(marker)].strip()
 
             if final_content:
                 session_history.append({"role": "assistant", "content": final_content})
@@ -1355,15 +1358,12 @@ class AgentExecutor:
 
             if fast_provider and fast_model:
                 from agents.llm_client import LLMClient
+
                 fast_client = LLMClient(provider=fast_provider, model=fast_model, lightweight=True)
-                resp = await fast_client.chat_non_stream(
-                    messages=[{"role": "user", "content": prompt}]
-                )
+                resp = await fast_client.chat_non_stream(messages=[{"role": "user", "content": prompt}])
             elif hasattr(self.llm_client, "chat_non_stream"):
                 # 安全退回：不要随意注入不兼容的 model_name
-                resp = await self.llm_client.chat_non_stream(
-                    messages=[{"role": "user", "content": prompt}]
-                )
+                resp = await self.llm_client.chat_non_stream(messages=[{"role": "user", "content": prompt}])
             else:
                 resp = None
 
@@ -1417,7 +1417,7 @@ class AgentExecutor:
                     return {
                         "type": "CONFIRM_REQUIRED",
                         "question": "检测到多个可能匹配的结果，请确认：",
-                        "options": options
+                        "options": options,
                     }
             return None
 

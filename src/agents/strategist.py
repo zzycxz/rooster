@@ -679,6 +679,7 @@ class Strategist:
 
         # 2. DIRECT_REPLY: 返回 lazy 流式生成器
         if mode == PlanMode.DIRECT_REPLY:
+
             async def _reply_stream():
                 try:
                     async for delta in _stream_with_chunk_timeout(
@@ -753,7 +754,7 @@ class Strategist:
                 system_prompt = f.read()
         except FileNotFoundError:
             logger.warning("[decide] strategist_triage.md not found, using inline prompt")
-            system_prompt = "判断用户请求的执行深度，输出 JSON: {\"mode\": \"direct_reply|single_step|dag_plan|clarify\", \"model_tier\": \"fast|standard|reasoning\"}"
+            system_prompt = '判断用户请求的执行深度，输出 JSON: {"mode": "direct_reply|single_step|dag_plan|clarify", "model_tier": "fast|standard|reasoning"}'
 
         # 注入 skill_hint 到 prompt
         hint_text = ""
@@ -778,7 +779,7 @@ class Strategist:
 
             raw = response.content.strip()
             # 提取 JSON
-            match = re.search(r'\{[^}]+\}', raw)
+            match = re.search(r"\{[^}]+\}", raw)
             if match:
                 data = json.loads(match.group())
                 mode_str = data.get("mode", "single_step")

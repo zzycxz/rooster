@@ -92,8 +92,6 @@ class MethodHandler:
             session.add_message(role="user", content=message_text, images=images)
             global_session_store.save_session(session_id)
 
-
-
         # Check if the session is currently waiting for input
         old_run_id = global_run_manager.session_to_run.get(session_id)
         if old_run_id:
@@ -124,7 +122,9 @@ class MethodHandler:
 
         agent_task = asyncio.create_task(global_router.process_run(run, session, message_text, self.event_handler))
         agent_task.add_done_callback(
-            lambda t: logger.error(f"Agent task failed: {t.exception()}") if not t.cancelled() and t.exception() else None
+            lambda t: (
+                logger.error(f"Agent task failed: {t.exception()}") if not t.cancelled() and t.exception() else None
+            )
         )
         # Register the asyncio Task so abort_run() can actually cancel it
         global_run_manager.register_task(run.run_id, agent_task)

@@ -53,7 +53,6 @@ class ModelFactory:
                 "key": settings.ZHIPU_CODINGPLAN_KEY,
                 "default_model": settings.ZHIPU_CODINGPLAN_MODEL,
             },
-
             "openai": {
                 "url": settings.OPENAI_URL,
                 "key": settings.OPENAI_KEY,

@@ -96,6 +96,7 @@ class RoosterLauncher:
             dashboard_url = f"http://127.0.0.1:{port}/dashboard"
             try:
                 import webbrowser
+
                 webbrowser.open(dashboard_url)
                 logger.info(f"🌐 Dashboard 已在浏览器中打开: {dashboard_url}")
             except Exception as e:
@@ -114,6 +115,7 @@ class RoosterLauncher:
         if self._settings.WEBHOOK_ENABLED:
             try:
                 from channels.webhook import WebhookChannel
+
                 webhook_channel = WebhookChannel()
                 self.registry.register(webhook_channel)
                 await webhook_channel.start()
@@ -125,6 +127,7 @@ class RoosterLauncher:
         if self._settings.MCP_DYNAMIC_ENABLED:
             try:
                 from utils.mcp_dynamic import register_mcp_tools_from_servers
+
                 count = await register_mcp_tools_from_servers()
                 if count > 0:
                     logger.info(f"🔌 MCP 动态工具注册完成，共 {count} 个工具")
@@ -138,8 +141,10 @@ class RoosterLauncher:
 
         async def _init_feishu():
             try:
+
                 def _load_and_create():
                     from channels.feishu import FeishuChannel
+
                     return FeishuChannel(channel_id="feishu")
 
                 feishu_channel = await asyncio.to_thread(_load_and_create)
@@ -154,6 +159,7 @@ class RoosterLauncher:
         async def _init_mem():
             try:
                 from agents.router import Router
+
                 router = Router.get_instance()
                 await asyncio.wait_for(
                     router.memory_manager.initialize_async(),

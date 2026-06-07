@@ -24,9 +24,12 @@ def _fire_and_forget(coro):
     """Fire-and-forget with exception logging. / 启动后台任务并记录异常。"""
     task = asyncio.create_task(coro)
     task.add_done_callback(
-        lambda t: logger.error(f"Background task failed: {t.exception()}") if not t.cancelled() and t.exception() else None
+        lambda t: (
+            logger.error(f"Background task failed: {t.exception()}") if not t.cancelled() and t.exception() else None
+        )
     )
     return task
+
 
 # Shared state — wired by server.py
 manager: ConnectionManager = None
