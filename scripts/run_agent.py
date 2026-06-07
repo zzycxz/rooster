@@ -36,7 +36,7 @@ async def run_mission(prompt: str):
     
     # Initialize basic components
     active_provider = None
-    for p in ["zhipu", "mimo", "cloud", "openai", "jiutian", "local"]:
+    for p in ["zhipu_codingplan", "mimo", "cloud", "openai", "jiutian", "local"]:
         if getattr(settings, f"{p.upper()}_KEY", "") or p == "local":
             active_provider = p
             break

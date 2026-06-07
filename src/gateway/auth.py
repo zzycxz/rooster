@@ -29,7 +29,7 @@ _PUBLIC_PATHS = {"/", "/docs", "/openapi.json", "/favicon.ico"}
 # All env var names that hold secrets — used for log sanitization
 _SECRET_ENV_KEYS = frozenset(
     {
-        "ZHIPU_KEY",
+        "ZHIPU_CODINGPLAN_KEY",
         "EMBEDDING_KEY",
         "JIUTIAN_KEY",
         "MIMO_KEY",

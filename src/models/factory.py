@@ -48,16 +48,12 @@ class ModelFactory:
                 "key": settings.CLOUD_KEY,
                 "default_model": settings.CLOUD_MODEL,
             },
-            "zhipu": {
-                "url": settings.ZHIPU_URL,
-                "key": settings.ZHIPU_KEY,
-                "default_model": settings.ZHIPU_MODEL,
+            "zhipu_codingplan": {
+                "url": settings.ZHIPU_CODINGPLAN_URL,
+                "key": settings.ZHIPU_CODINGPLAN_KEY,
+                "default_model": settings.ZHIPU_CODINGPLAN_MODEL,
             },
-            "zhipu_glm": {
-                "url": settings.ZHIPU_GLM_URL,
-                "key": settings.ZHIPU_GLM_KEY,
-                "default_model": settings.ZHIPU_GLM_MODEL,
-            },
+
             "openai": {
                 "url": settings.OPENAI_URL,
                 "key": settings.OPENAI_KEY,

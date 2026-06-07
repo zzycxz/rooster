@@ -48,12 +48,15 @@ class VisualGrounder:
 
         self.painter = ElitePainter()
 
-    def scan(self, node_id: str, screenshot: Image.Image, uia_elements: List[Dict[str, Any]]) -> VisualObservation:
+    def scan(self, node_id: str, screenshot: Image.Image, uia_elements: List[Dict[str, Any]],
+             mode: str = "low") -> VisualObservation:
         """
         核心对齐与打标逻辑 (V3.9 Elite 实现)
+
+        mode: low=原始过滤 | medium=A+K过滤 | high=全量
         """
         # 1. 调用 ElitePainter 进行语义过滤与 ID 分配 (Selective Focus)
-        labeled_nodes = self.painter.prepare_labels(uia_elements)
+        labeled_nodes = self.painter.prepare_labels(uia_elements, mode=mode)
 
         # 2. 物理绘图 (Selective Focus 掩码版)
         self.painter.draw_labels(screenshot, labeled_nodes)

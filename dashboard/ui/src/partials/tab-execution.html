@@ -251,6 +251,7 @@
 
             <!-- 💬 Answer bubble -->
             <div
+              x-show="msg.role !== 'tool'"
               class="flex gap-2"
               :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
             >
@@ -262,11 +263,11 @@
               />
 
               <div
-                class="max-w-[65%] px-4 py-2.5 leading-relaxed text-sm"
+                class="max-w-[65%] px-4 py-2.5 leading-relaxed text-sm transition-colors duration-300"
                 :class="[
                   msg.role === 'user'  ? 'bubble-user text-blue-100'
-                  : msg.role === 'error' ? 'bubble-err  text-red-200'
-                  :                        'bubble-ai   text-slate-100',
+                  : msg.role === 'error' ? 'bubble-err text-red-200'
+                  :                        'bubble-ai',
                   msg.streaming && !msg.isThinking ? 'cursor-blink' : ''
                 ]"
               >
@@ -284,7 +285,7 @@
                   class="break-words"
                   :class="[
                     msg.streaming && !msg.content && !msg.isThinking ? 'cursor-blink text-slate-500' : '',
-                    msg.role !== 'user' ? 'prose prose-sm prose-invert max-w-none' : 'whitespace-pre-wrap'
+                    msg.role !== 'user' ? 'prose prose-sm max-w-none ' + (isLightMode ? '' : 'prose-invert') : 'whitespace-pre-wrap'
                   ]"
                   x-html="msg.role !== 'user' ? renderMarkdown(msg.content || (msg.streaming && !msg.isThinking ? '' : (msg.content ? '' : '—'))) : (msg.content || '')"
                 ></div>
@@ -296,27 +297,50 @@
               >👤</span>
             </div>
 
+            <!-- 🔧 Tool call bubble -->
+            <div
+              x-show="msg.role === 'tool'"
+              class="flex gap-2 justify-start mb-1"
+            >
+              <!-- Invisible spacer to align with avatar -->
+              <span class="flex-shrink-0 w-7 h-7 opacity-0"></span>
+              <details
+                class="group bg-slate-800/40 rounded-lg border px-3 py-2 text-xs max-w-[80%] transition-colors duration-300"
+                :class="msg.status === 'running' ? 'border-blue-500/50 shadow-[0_0_10px_rgba(59,130,246,0.1)]' : (msg.error ? 'border-red-500/30' : 'border-slate-700/40')"
+                :open="msg.status === 'running'"
+              >
+                <summary class="list-none cursor-pointer font-semibold text-slate-400 hover:text-slate-300 flex items-center gap-1.5 select-none outline-none">
+                  <span class="transform transition-transform duration-200 text-[10px] group-open:rotate-90">▶</span>
+                  <span class="text-blue-400 font-mono text-[11px]">🔧 <span x-text="msg.toolName"></span></span>
+                  <span x-show="msg.step" class="text-slate-500 font-mono text-[9px] px-1 rounded bg-slate-800 border border-slate-700" x-text="`(Step ${msg.step}/500)`"></span>
+                  <span x-show="msg.status === 'running'" class="pulse text-blue-400/80 ml-1 text-[11px]">●</span>
+                  <span x-show="msg.status !== 'running' && !msg.error" class="text-green-500/80 ml-1 text-[10px]">✓</span>
+                  <span x-show="msg.error" class="text-red-500/80 ml-1 text-[10px]">✗</span>
+                </summary>
+                
+                <div class="mt-2 space-y-2">
+                  <!-- Args -->
+                  <div class="pl-2 border-l-2 border-blue-600/50">
+                    <div class="text-[10px] text-slate-500 mb-0.5" x-text="t('parameters') || 'Parameters:'"></div>
+                    <pre class="text-slate-300 font-mono text-[10px] whitespace-pre-wrap break-all" x-text="JSON.stringify(msg.args, null, 2)"></pre>
+                  </div>
+                  
+                  <!-- Response -->
+                  <div x-show="msg.status === 'done' || msg.error" class="pl-2 border-l-2 mt-2" :class="msg.error ? 'border-red-600/50' : 'border-green-600/50'">
+                    <div class="text-[10px] text-slate-500 mb-0.5" x-text="t('result') || 'Result:'"></div>
+                    <div class="text-slate-400 font-mono text-[10px] whitespace-pre-wrap break-words max-h-40 overflow-y-auto" x-text="typeof msg.response === 'string' ? msg.response : JSON.stringify(msg.response, null, 2)"></div>
+                  </div>
+                </div>
+              </details>
+            </div>
+
           </div>
         </template>
 
         <!-- Input box (sticky bottom inside scroll container) -->
         <div class="sticky bottom-0 mt-auto pt-2 bg-gradient-to-t from-slate-900 via-slate-900/90 to-transparent pb-1">
           <div class="bg-slate-800/80 backdrop-blur-2xl rounded-2xl border border-slate-700/50 shadow-xl flex flex-col gap-2 p-3 transition-all duration-300 focus-within:border-slate-600/80 focus-within:shadow-2xl">
-            <!-- Model selector row -->
-            <div class="flex items-center gap-2 px-1">
-              <span class="text-xs text-slate-500" x-text="t('model_selector_label')"></span>
-              <select
-                x-model="selectedProvider"
-                class="bg-slate-700 text-slate-200 text-xs rounded px-2 py-0.5 border border-slate-600 outline-none"
-                :disabled="isRunning"
-              >
-                <option value="" x-text="t('model_auto')"></option>
-                <template x-for="p in availableProviders" :key="p.id">
-                  <option :value="p.id" x-text="p.label"></option>
-                </template>
-              </select>
-              <span x-show="selectedProvider" class="text-xs text-green-500/70">●</span>
-            </div>
+
             <!-- Image thumbnails strip -->
             <div x-show="pendingImages.length > 0" class="flex gap-2 px-1 flex-wrap">
               <template x-for="(img, idx) in pendingImages" :key="idx">

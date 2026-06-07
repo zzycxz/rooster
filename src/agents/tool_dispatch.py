@@ -295,6 +295,7 @@ async def execute_orchestrated_tool(
         client_run_id=run_id,
         tool_name=name,
         args=display_args,
+        step=step,
     )
 
     try:
@@ -409,15 +410,22 @@ async def execute_orchestrated_tool(
 
 async def _execute_tool_with_healing(tool, name: str, args: dict, reflection_engine_getter, ctx) -> Any:
     """Self-healing proxy for tool execution: on failure, ReflectionEngine repairs and retries."""
+    import inspect
     from agents.reflection_engine import RepairBudgetExhausted
 
+    # Helper to check if tool accepts ctx
+    sig = inspect.signature(tool.run)
+    accepts_ctx = "ctx" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+
     async def retry_with_args(corrected_args: dict):
-        corrected_args["ctx"] = ctx
+        if accepts_ctx:
+            corrected_args["ctx"] = ctx
         return await tool.run(**corrected_args)
 
     try:
         args_with_ctx = args.copy()
-        args_with_ctx["ctx"] = ctx
+        if accepts_ctx:
+            args_with_ctx["ctx"] = ctx
         return await tool.run(**args_with_ctx)
     except RepairBudgetExhausted as budget_err:
         _logger.error(f"Self-healing budget exhausted: {budget_err}")

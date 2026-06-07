@@ -19,7 +19,7 @@ class Settings(ProvidersConfig, RuntimeConfig, HardwareConfig, ChannelsConfig, M
     Rooster unified configuration.
 
     Merges all config sub-modules into a single flat class so that
-    ``from utils.config import settings`` and ``settings.ZHIPU_KEY``
+    ``from utils.config import settings`` and ``settings.ZHIPU_CODINGPLAN_KEY``
     continue to work without changes.
     """
 

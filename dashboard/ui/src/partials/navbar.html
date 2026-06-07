@@ -11,6 +11,13 @@
   </div>
 
   <div class="flex items-center gap-5">
+    
+    <!-- Theme Toggle -->
+    <button @click="toggleTheme()" class="hidden sm:flex items-center justify-center w-8 h-8 rounded-full bg-slate-800/50 border border-slate-700/50 hover:bg-slate-700 hover:border-slate-600 transition-colors shadow-sm outline-none text-sm group" title="Toggle Theme">
+      <span x-show="!isLightMode" class="group-hover:scale-110 transition-transform">☀️</span>
+      <span x-show="isLightMode" class="group-hover:scale-110 transition-transform">🌙</span>
+    </button>
+
     <!-- Proxy Popover -->
     <div class="hidden md:block relative mr-2 pr-4 border-r border-slate-700/50" x-data="{ proxyOpen: false }" @click.outside="proxyOpen = false">
       <button @click="proxyOpen = !proxyOpen" 

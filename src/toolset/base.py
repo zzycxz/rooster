@@ -82,7 +82,13 @@ class Tool:
                 args_obj = self.args_schema(**{k: v for k, v in kwargs.items() if k != "ctx"})
             except Exception as e:
                 return ToolResult.error(f"[ArgumentValidation] {e}")
-            return await self.execute(args_obj, kwargs["ctx"])
+                
+            import inspect
+            sig = inspect.signature(self.execute)
+            if "ctx" in sig.parameters:
+                return await self.execute(args_obj, kwargs["ctx"])
+            else:
+                return await self.execute(args_obj)
         elif self.args_schema and hasattr(self, "execute"):
             # Auto-inject parameter model validation (fallback for old runners without ctx)
             try:

@@ -184,7 +184,7 @@ class WebSearchTool(BaseTool):
                 logger.warning(f"[WebSearch] Exa failed: {e}")
 
         # Tier 3: GLM
-        if os.getenv("ZHIPU_KEY"):
+        if os.getenv("ZHIPU_CODINGPLAN_KEY"):
             try:
                 res = await self._run_glm(kwargs)
                 if self._is_valid_result(res):
@@ -437,11 +437,11 @@ class WebSearchTool(BaseTool):
 
         # Prefer ZHIPU_MCP_SEARCH_KEY; fall back to global ZHIPU_KEY if absent
         # 优先读取 ZHIPU_MCP_SEARCH_KEY，如无则回退使用全局 ZHIPU_KEY
-        api_key = os.getenv("ZHIPU_MCP_SEARCH_KEY") or os.getenv("ZHIPU_KEY")
+        api_key = os.getenv("ZHIPU_MCP_SEARCH_KEY") or os.getenv("ZHIPU_CODINGPLAN_KEY")
         if not api_key:
             return (
                 "Error: Zhipu API Key is not set.\n"
-                "Please configure 'ZHIPU_MCP_SEARCH_KEY' or 'ZHIPU_KEY' in your '.env.local' file."
+                "Please configure 'ZHIPU_MCP_SEARCH_KEY' or 'ZHIPU_CODINGPLAN_KEY' in your '.env.local' file."
             )
 
         # Strip possible Bearer prefix or whitespace to ensure clean credentials

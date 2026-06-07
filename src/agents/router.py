@@ -218,12 +218,12 @@ class Router:
                 text = event_dict["data"].get("text", "")
                 if status == "done" and text:
                     await channel.send_message(to=msg.sender_id, text=text)
-            elif stream == "lifecycle" and parent_event_handler:
-                # Forward lifecycle events to Gateway WS client (for confirmCard popup)
+            elif stream in ("lifecycle", "tool") and parent_event_handler:
+                # Forward lifecycle and tool events to Gateway WS client (for confirmCard popup & tool visualization)
                 await parent_event_handler.emit(
                     run_id=event_dict.get("run_id", ""),
                     session_id=event_dict.get("session_id", msg.session_id),
-                    stream="lifecycle",
+                    stream=stream,
                     data=event_dict.get("data", {}),
                 )
 

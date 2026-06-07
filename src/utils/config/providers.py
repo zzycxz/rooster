@@ -26,15 +26,11 @@ class ProvidersConfig:
 
     # --- Zhipu AI (CodingPlan — 当前使用的编程增强版) ---
     # --- Zhipu AI (CodingPlan — current coding-enhanced version) ---
-    ZHIPU_URL: str = _env("ZHIPU_URL", "https://open.bigmodel.cn/api/coding/paas/v4")
-    ZHIPU_KEY: str = _env("ZHIPU_KEY", "")
-    ZHIPU_MODEL: str = _env("ZHIPU_MODEL", "GLM5.1")
+    ZHIPU_CODINGPLAN_URL: str = _env("ZHIPU_CODINGPLAN_URL", "https://open.bigmodel.cn/api/coding/paas/v4")
+    ZHIPU_CODINGPLAN_KEY: str = _env("ZHIPU_CODINGPLAN_KEY", "")
+    ZHIPU_CODINGPLAN_MODEL: str = _env("ZHIPU_CODINGPLAN_MODEL", "GLM-4.7")
 
-    # --- Zhipu AI (Standard API — 传统智谱 API) ---
-    # --- Zhipu AI (Standard API — traditional Zhipu API) ---
-    ZHIPU_GLM_URL: str = _env("ZHIPU_GLM_URL", "https://open.bigmodel.cn/api/paas/v4")
-    ZHIPU_GLM_KEY: str = _env("ZHIPU_GLM_KEY", "")
-    ZHIPU_GLM_MODEL: str = _env("ZHIPU_GLM_MODEL", "GLM5.1")
+
 
     # --- OpenAI ---
     OPENAI_URL: str = _env("OPENAI_URL", "https://api.openai.com/v1")
@@ -69,8 +65,15 @@ class ProvidersConfig:
     MIMO_MODEL: str = _env("MIMO_MODEL", "mimo-v2.5")
     MIMO_THINKING_ENABLED: bool = _env_bool("MIMO_THINKING_ENABLED", False)
 
+    # --- Provider-level Thinking Mode Configurations ---
+    ZHIPU_THINKING_ENABLED: bool = _env_bool("ZHIPU_THINKING_ENABLED", False)
+    JIUTIAN_THINKING_ENABLED: bool = _env_bool("JIUTIAN_THINKING_ENABLED", False)
+    OPENAI_THINKING_ENABLED: bool = _env_bool("OPENAI_THINKING_ENABLED", False)
+    DEEPSEEK_THINKING_ENABLED: bool = _env_bool("DEEPSEEK_THINKING_ENABLED", False)
+    REASONING_EFFORT: str = _env("REASONING_EFFORT", "medium")
+
     # --- Role-specific model overrides ---
-    STRATEGIST_MODEL_MODE: str = _env("STRATEGIST_MODEL_MODE", "zhipu")
+    STRATEGIST_MODEL_MODE: str = _env("STRATEGIST_MODEL_MODE", "zhipu_codingplan")
     STRATEGIST_MODEL_NAME: str = _env("STRATEGIST_MODEL_NAME", "")
 
     EXECUTOR_MODEL_MODE: str = _env("EXECUTOR_MODEL_MODE", "jiutian")
@@ -110,7 +113,7 @@ class ProvidersConfig:
 
     # --- Failover ---
     LLM_FAILOVER_ENABLED: bool = _env_bool("LLM_FAILOVER_ENABLED", True)
-    LLM_FAILOVER_ORDER: list = _env_list("LLM_FAILOVER_ORDER", "mimo,zhipu,jiutian,local")
+    LLM_FAILOVER_ORDER: list = _env_list("LLM_FAILOVER_ORDER", "mimo,zhipu_codingplan,jiutian,local")
     LLM_FAILOVER_RETRY_MAX: int = _env_int("LLM_FAILOVER_RETRY_MAX", 2)
     # Keep fallback exception-driven by default.  When disabled, providers are not
     # skipped merely because the prompt looks large; they are tried in order and
@@ -120,7 +123,7 @@ class ProvidersConfig:
     # --- Rate limiting ---
     LLM_MIN_INTERVAL: float = _env_float("LLM_MIN_INTERVAL", 1.5)
     LLM_FAST_MIN_INTERVAL: float = _env_float("LLM_FAST_MIN_INTERVAL", 1.0)
-    ZHIPU_MIN_INTERVAL: float = _env_float("ZHIPU_MIN_INTERVAL", 6.0)
+    ZHIPU_CODINGPLAN_MIN_INTERVAL: float = _env_float("ZHIPU_CODINGPLAN_MIN_INTERVAL", 6.0)
     LLM_GLOBAL_MAX_CONCURRENT: int = _env_int("LLM_GLOBAL_MAX_CONCURRENT", 6)
     LLM_PROVIDER_MAX_CONCURRENT_DEFAULT: int = _env_int("LLM_PROVIDER_MAX_CONCURRENT_DEFAULT", 2)
 
@@ -130,7 +133,7 @@ class ProvidersConfig:
 
         raw = os.environ.get(
             "LLM_PROVIDER_MAX_CONCURRENT",
-            "zhipu:1,zhipu_glm:1,jiutian:2,mimo:2,openai:2,anthropic:2,kimi:2,qwen:2,cloud:2,local:1",
+            "zhipu_codingplan:1,jiutian:2,mimo:2,openai:2,anthropic:2,kimi:2,qwen:2,cloud:2,local:1",
         )
         result: Dict[str, int] = {}
         for item in raw.split(","):

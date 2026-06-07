@@ -6,7 +6,7 @@
   <title>Rooster Dashboard</title>
   <link rel="icon" type="image/png" href="/ui/favicon.png" />
   <!-- Base CSS with Tailwind utility generation -->
-  <link rel="stylesheet" href="./css/base.css" />
+  <link rel="stylesheet" href="./css/base.css?v=2.1" />
   <!-- highlight.js theme — bundled by Vite -->
   <link rel="stylesheet" href="highlight.js/styles/github-dark.css">
   <!-- Alpine.js + marked + DOMPurify + hljs — bundled by Vite -->
@@ -376,7 +376,7 @@ function app() {
         no_active_chats: 'No active chats',
         agent_pipeline: 'Agent Pipeline',
         node_router: 'Router',
-        node_strategist: 'Strategist',
+        node_planner: 'Strategist',
         node_executor: 'Executor',
         node_auditor: 'Auditor',
         status_idle: 'Idle',
@@ -441,7 +441,7 @@ function app() {
         welcome_title: 'Welcome to Rooster!',
         welcome_desc: 'No .env.local found. Fill in at least one API key below and save to get started. The service will auto-restart.',
         config_note: 'Config saved to .env.local (local file, gitignore protected). Empty fields will not overwrite existing values.',
-        zhipu_title: 'Quick Setup — ZHIPU (Recommended)',
+        zhipu_title: 'Quick Setup — ZHIPU CODINGPLAN (Recommended)',
         primary_title: 'Primary Model (Strategist / Executor / Auditor)',
         model_name: 'Model name',
         executor_title: 'Executor Model',
@@ -763,7 +763,7 @@ function app() {
         setup_llm_matrix: 'Multi-LLM Channel Matrix',
         setup_provider_jiutian: 'China Mobile Jiutian Channel',
         setup_provider_mimo: 'Xiaomi MiMo Channel',
-        setup_provider_zhipu_glm: 'Zhipu GLM (Standard API)',
+
         setup_provider_openai: 'OpenAI Channel',
         setup_provider_claude: 'Anthropic Claude Channel',
         setup_provider_qwen: 'Tongyi Qwen',
@@ -772,8 +772,8 @@ function app() {
         setup_provider_cloud: 'Cloud 3rd-Party Compatible Channel',
         setup_provider_local: 'Local llama.cpp Channel',
         setup_direct_no_proxy: 'Native Anthropic Messages API — direct connect, no proxy needed',
-        setup_option_zhipu: 'Zhipu CodingPlan',
-        setup_option_zhipu_glm: 'Zhipu GLM Standard',
+        setup_option_zhipu_codingplan: 'Zhipu CodingPlan',
+
         setup_option_kimi: 'Kimi (Moonshot)',
         setup_option_qwen: 'Tongyi Qwen',
         setup_option_cloud: 'Cloud Compatible',
@@ -888,9 +888,9 @@ function app() {
         setup_jiutian_model_label: 'JIUTIAN_MODEL (advanced model, default gpt-oss-120b)',
         setup_jiutian_fast_label: 'JIUTIAN_MODEL_FAST (lightweight model)',
         setup_mimo_model_label: 'MIMO_MODEL (model name, optional)',
-        setup_zhipu_glm_model_label: 'ZHIPU_GLM_MODEL (default GLM5.1)',
-        setup_zhipu_key_label: 'ZHIPU_KEY (API Key)',
-        setup_zhipu_model_label: 'ZHIPU_MODEL (model name, default GLM5.1)',
+
+        setup_zhipu_codingplan_key_label: 'ZHIPU_CODINGPLAN_KEY (API Key)',
+        setup_zhipu_codingplan_model_label: 'ZHIPU_CODINGPLAN_MODEL (model name, default GLM-4.7)',
         setup_qwen_key_label: 'QWEN_KEY (API Key)',
         setup_qwen_model_label: 'QWEN_MODEL (default qwen-plus)',
         setup_kimi_key_label: 'KIMI_KEY (API Key)',
@@ -1024,7 +1024,7 @@ function app() {
         no_active_chats: '暂无历史对话',
         agent_pipeline: 'Agent 智能流水线',
         node_router: '路由节点',
-        node_strategist: '策略分析',
+        node_planner: '策略分析',
         node_executor: '代码执行',
         node_auditor: '安全审计',
         status_idle: '待命中',
@@ -1211,8 +1211,8 @@ function app() {
         installed: '已安装',
         disabled: '已禁用',
         test: '测试',
-        unload: '卸载',
-        load: '加载',
+        unload: '停用',
+        load: '启用',
         uninstall: '卸载',
         system_builtin_skills: '系统内置核心能力',
         system_builtin_desc: '内置的原生大模型高级代理能力，支撑系统的核心自主运行',
@@ -1411,7 +1411,7 @@ function app() {
         setup_llm_matrix: '大模型通道配置',
         setup_provider_jiutian: 'Jiutian',
         setup_provider_mimo: 'Xiaomi MiMo',
-        setup_provider_zhipu_glm: 'Zhipu GLM',
+
         setup_provider_openai: 'OpenAI',
         setup_provider_claude: 'Anthropic Claude',
         setup_provider_qwen: 'Qwen',
@@ -1420,8 +1420,8 @@ function app() {
         setup_provider_cloud: 'Cloud Compatible',
         setup_provider_local: 'Local llama.cpp',
         setup_direct_no_proxy: 'Native Anthropic Messages API — 直连无需代理',
-        setup_option_zhipu: 'Zhipu CodingPlan',
-        setup_option_zhipu_glm: 'Zhipu GLM',
+        setup_option_zhipu_codingplan: 'Zhipu CodingPlan',
+
         setup_option_kimi: 'Kimi',
         setup_option_qwen: 'Qwen',
         setup_option_cloud: 'Cloud',
@@ -1536,9 +1536,9 @@ function app() {
         setup_jiutian_model_label: 'JIUTIAN_MODEL（高级模型，默认 gpt-oss-120b）',
         setup_jiutian_fast_label: 'JIUTIAN_MODEL_FAST（轻量模型）',
         setup_mimo_model_label: 'MIMO_MODEL（模型名称，可选）',
-        setup_zhipu_glm_model_label: 'ZHIPU_GLM_MODEL（默认 GLM5.1）',
-        setup_zhipu_key_label: 'ZHIPU_KEY（API 密钥）',
-        setup_zhipu_model_label: 'ZHIPU_MODEL（模型名称，默认 GLM5.1）',
+
+        setup_zhipu_codingplan_key_label: 'ZHIPU_CODINGPLAN_KEY（API 密钥）',
+        setup_zhipu_codingplan_model_label: 'ZHIPU_CODINGPLAN_MODEL（模型名称，默认 GLM-4.7）',
         setup_qwen_key_label: 'QWEN_KEY（API 密钥）',
         setup_qwen_model_label: 'QWEN_MODEL（默认 qwen-plus）',
         setup_kimi_key_label: 'KIMI_KEY（API 密钥）',
@@ -1546,6 +1546,7 @@ function app() {
         setup_cloud_model_label: 'CLOUD_MODEL（模型名称，默认 gpt-4o）',
         setup_local_key_label: 'LOCAL_KEY（API 密钥，可选）',
         setup_local_model_label: 'LOCAL_MODEL（物理 GGML 路径/名称）',
+        proxy_label: '🌐 网络代理',
       },
     },
 
@@ -1634,11 +1635,8 @@ function app() {
     // ── Setup Wizard ─────────────────────────────────────────
     setupForm: {
       // --- Zhipu CodingPlan ---
-      ZHIPU_KEY:         '',
-      ZHIPU_MODEL:       '',
-      // --- Zhipu GLM Standard ---
-      ZHIPU_GLM_KEY:     '',
-      ZHIPU_GLM_MODEL:   '',
+      ZHIPU_CODINGPLAN_KEY:         '',
+      ZHIPU_CODINGPLAN_MODEL:       '',
       // --- OpenAI ---
       OPENAI_KEY:        '',
       OPENAI_MODEL:      'gpt-4o',
@@ -1677,7 +1675,7 @@ function app() {
       AUDITOR_MODEL_MODE: '',
       // --- Failover ---
       LLM_FAILOVER_ENABLED: 'True',
-      LLM_FAILOVER_ORDER: 'mimo,zhipu,jiutian,local',
+      LLM_FAILOVER_ORDER: 'mimo,zhipu_codingplan,jiutian,local',
       LLM_FAILOVER_RETRY_MAX: '2',
       LLM_MIN_INTERVAL:   '1.5',
       // --- Aria2 ---
@@ -1717,6 +1715,7 @@ function app() {
     setupTestLoading: false,
     setupTestOk:    false,
     setupTestResult: '',
+    providerTestStatus: {},
     ollamaStatus:   { running: false, models: [] },
     ollamaScanning: false,
     ollamaPulling: false,
@@ -1761,8 +1760,7 @@ function app() {
       selectedOption: null,
     },
     _lastRunId:   null,
-    availableProviders: [],
-    selectedProvider:   '',
+
     pendingImages:      [],   // base64 images awaiting the next send
     subtaskTotal:       0,    // progress bar: total subtasks in current mission
     subtaskCompleted:   0,    // progress bar: completed subtasks so far
@@ -2431,6 +2429,7 @@ function app() {
         const res  = await fetch('/api/config/test', { headers });
         const json = await res.json();
         const results = json.results || {};
+        this.providerTestStatus = results;
         const entries = Object.entries(results);
         if (entries.length === 0) {
           this.setupTestOk = false;
@@ -2505,16 +2504,7 @@ function app() {
     },
 
     async fetchModels() {
-      try {
-        const headers = {};
-        if (this._wsToken) headers['X-API-Key'] = this._wsToken;
-        const res  = await fetch('/api/config/models', { headers });
-        const json = await res.json();
-        this.availableProviders = (json.providers || []).filter(p => p.configured);
-        if (!this.selectedProvider && json.default) {
-          this.selectedProvider = json.default;
-        }
-      } catch (_) { /* silently fail if backend not yet ready */ }
+      // Intentionally empty since we removed the chat dropdown UI
     },
 
     async fetchConfig() {
@@ -3502,9 +3492,25 @@ function app() {
       }
     },
 
+    // ── Theme (Light/Dark) ───────────────────────────────────
+    isLightMode: localStorage.getItem('theme') === 'light',
+    toggleTheme() {
+      this.isLightMode = !this.isLightMode;
+      localStorage.setItem('theme', this.isLightMode ? 'light' : 'dark');
+      if (this.isLightMode) {
+        document.documentElement.classList.add('theme-light');
+      } else {
+        document.documentElement.classList.remove('theme-light');
+      }
+    },
 
     // ── Init ─────────────────────────────────────────────────
     init() {
+      // Initialize theme
+      if (this.isLightMode) {
+        document.documentElement.classList.add('theme-light');
+      }
+
       // Responsive: track viewport width
       window.addEventListener('resize', () => {
         this.isMobile = window.innerWidth < 768;
@@ -3839,6 +3845,22 @@ function app() {
           argsOpen: true,
           respOpen: false,
         });
+
+        // Add to chatMessages for UI visibility
+        this.chatMessages.push({
+          id: 'tool-' + ev.run_id + '-' + ev.seq,
+          role: 'tool',
+          toolName: d.tool || '?',
+          args: d.args || {},
+          response: null,
+          status: 'running',
+          error: false
+        });
+        this.$nextTick(() => {
+          const el = document.getElementById('chat-container');
+          if (el) el.scrollTop = el.scrollHeight;
+        });
+
       } else if (d.type === 'response') {
         const call = [...this.tools].reverse()
           .find(t => t.toolName === d.tool && t.run_id === ev.run_id && t.status === 'running');
@@ -3847,6 +3869,15 @@ function app() {
           call.status    = 'done';
           call.durationMs = Math.round(((ev.ts || Date.now()/1000) - call.ts) * 1000);
           call.respOpen  = true;
+        }
+
+        // Update chatMessages
+        const chatCall = [...this.chatMessages].reverse()
+          .find(m => m.role === 'tool' && m.toolName === d.tool && m.status === 'running');
+        if (chatCall) {
+          chatCall.status = 'done';
+          chatCall.response = d.response;
+          if (String(d.response).includes('Error:')) chatCall.error = true;
         }
       }
       this._schedSave();
@@ -4118,7 +4149,7 @@ function app() {
       
       const payload = {
         method: 'chat.send',
-        params: { sessionKey: this.sessionId, message: text, modelOverride: this.selectedProvider },
+        params: { sessionKey: this.sessionId, message: text },
         id: 'req_' + Date.now(),
       };
       this._gatewayWs.send(JSON.stringify(payload));
@@ -4141,7 +4172,7 @@ function app() {
 
       const payload = {
         method: 'chat.send',
-        params: { sessionKey: this.sessionId, message: text, modelOverride: this.selectedProvider },
+        params: { sessionKey: this.sessionId, message: text },
         id: 'req_' + Date.now(),
       };
       if (images.length > 0) payload.params.images = images;

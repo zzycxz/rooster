@@ -40,3 +40,9 @@ class HardwareConfig:
     AUDIT_VISUAL_SNAPSHOT: bool = _env_bool("AUDIT_VISUAL_SNAPSHOT", True)
     AUDIT_SNAPSHOT_DIR: str = _env("AUDIT_SNAPSHOT_DIR", ".rooster/audit/vision/")
     MEMORY_VISUAL_BUFFER_SIZE: int = _env_int("MEMORY_VISUAL_BUFFER_SIZE", 5)
+
+    # --- Vision scan mode ---
+    # low    = foreground window only, ElitePainter filtering (fastest, default)
+    # medium = all visible windows, A+K only, type suppression + occlusion
+    # high   = all visible windows, all categories A/N/K/U (most thorough)
+    VISION_SCAN_MODE: str = _env("VISION_SCAN_MODE", "low")

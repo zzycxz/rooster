@@ -49,7 +49,7 @@ class DesktopController:
                 return {"status": "error", "message": f"Screenshot failed, fallback failed: {inner_e}"}
 
     @staticmethod
-    async def dump_uia(depth: int = 6) -> Dict[str, Any]:
+    async def dump_uia(depth: int = 6, scan_mode: str = "") -> Dict[str, Any]:
         """物理抓取 UIA 结构 (V3.9 Elite 整合版)"""
         try:
             from utils.vision.engine import EliteEngine
@@ -58,7 +58,7 @@ class DesktopController:
 
             # Use elite detection engine, auto PID lock and black-box compensation
             # 使用精英探测引擎，自动执行 PID 锁定与黑盒补偿
-            elements = engine.dump()
+            elements = engine.dump(scan_mode=scan_mode)
 
             # For forward compatibility, unify control_type field name
             # 为了保持向前兼容，统一 control_type 字段名
@@ -166,12 +166,16 @@ class DesktopSnapTool(BaseTool):
             return f"❌ 截图失败：{result.get('message')}"
 
         # 保存图片
+        ts = time.strftime("%Y%m%d_%H%M%S")
         if not save_path:
             evidence_dir = os.path.join(settings.ROOSTER_HOME, "evidence", "temp_snapshots")
             os.makedirs(evidence_dir, exist_ok=True)
-            ts = time.strftime("%Y%m%d_%H%M%S")
             save_path = os.path.join(evidence_dir, f"{ts}_desktop_snap.png")
         else:
+            if not save_path.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp")):
+                save_path = f"{save_path}.png"
+            directory, filename = os.path.split(save_path)
+            save_path = os.path.join(directory, f"{ts}_{filename}")
             os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
 
         img_bytes = base64.b64decode(result["base64"])
@@ -192,6 +196,10 @@ class DesktopGroundingScanArgs(BaseModel):
     save_path: Optional[str] = Field(
         default=None, description="打标图片保存路径。不填则自动保存到 .rooster/evidence/temp_snapshots/"
     )
+    mode: Optional[str] = Field(
+        default=None,
+        description="扫描模式：low=仅前台窗口（默认）| medium=全屏+仅可交互元素 | high=全屏+全量标注。不填则使用 .env 中 VISION_SCAN_MODE 配置。"
+    )
 
 
 class DesktopGroundingScanTool(BaseTool):
@@ -201,11 +209,12 @@ class DesktopGroundingScanTool(BaseTool):
     name: str = "desktop_grounding_scan"
     kit: str = "Vision"
     description: str = (
-        "Capture the local desktop screen, scan all interactive UI elements via UIA, "
+        "Capture the local desktop screen, scan interactive UI elements via UIA, "
         "draw labeled bounding boxes (ID like A, B, AA...) on the screenshot, and return "
         "the element list (id, name, type, center coordinates). "
-        "After calling this tool, use desktop_click to click any element by its ID. "
-        "Use this after launching apps (e.g. Thunder/Xunlei download dialog) to find confirm buttons."
+        "Supports 3 scan modes (set via VISION_SCAN_MODE in .env or mode param): "
+        "low=foreground only (fastest, default), medium=all windows+A/K only, high=all windows+all categories. "
+        "After calling this tool, use desktop_click to click any element by its ID."
     )
     domain = "vision"
     platforms: list = ["Windows", "Darwin"]
@@ -214,20 +223,27 @@ class DesktopGroundingScanTool(BaseTool):
     async def run(self, **kwargs) -> str:
         wait_secs = float(kwargs.get("wait_seconds", 2.0))
         save_path = kwargs.get("save_path")
+        mode = kwargs.get("mode") or getattr(settings, "VISION_SCAN_MODE", "low")
 
         if wait_secs > 0:
             await asyncio.sleep(wait_secs)
 
-        # 截图
-        snap = await DesktopController.get_screenshot()
-        if snap["status"] != "success":
-            return f"❌ 截图失败：{snap.get('message')}"
-
-        img_bytes = base64.b64decode(snap["base64"])
-        screenshot = Image.open(io.BytesIO(img_bytes))
+        # 截图（medium/high 用全屏，low 用主显示器）
+        if mode in ("medium", "high"):
+            import mss
+            with mss.mss() as sct:
+                monitor = sct.monitors[0]
+                raw = sct.grab(monitor)
+                screenshot = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+        else:
+            snap = await DesktopController.get_screenshot()
+            if snap["status"] != "success":
+                return f"❌ 截图失败：{snap.get('message')}"
+            img_bytes = base64.b64decode(snap["base64"])
+            screenshot = Image.open(io.BytesIO(img_bytes))
 
         # UIA 扫描
-        uia_result = await DesktopController.dump_uia()
+        uia_result = await DesktopController.dump_uia(scan_mode=mode)
         if uia_result["status"] != "success":
             return f"❌ UIA 扫描失败：{uia_result.get('message')}"
 
@@ -238,7 +254,7 @@ class DesktopGroundingScanTool(BaseTool):
             from utils.vision.grounding import VisualGrounder
 
             grounder = VisualGrounder()
-            observation = grounder.scan("local", screenshot, elements_raw)
+            observation = grounder.scan("local", screenshot, elements_raw, mode=mode)
             labeled_elements = [
                 {
                     "id": el.id,
@@ -266,12 +282,16 @@ class DesktopGroundingScanTool(BaseTool):
             labeled_image = screenshot
 
         # 保存打标图
+        ts = time.strftime("%Y%m%d_%H%M%S")
         if not save_path:
             evidence_dir = os.path.join(settings.ROOSTER_HOME, "evidence", "temp_snapshots")
             os.makedirs(evidence_dir, exist_ok=True)
-            ts = time.strftime("%Y%m%d_%H%M%S")
             save_path = os.path.join(evidence_dir, f"{ts}_grounding_scan.png")
         else:
+            if not save_path.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp")):
+                save_path = f"{save_path}.png"
+            directory, filename = os.path.split(save_path)
+            save_path = os.path.join(directory, f"{ts}_{filename}")
             os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
 
         labeled_image.save(save_path)
@@ -421,12 +441,16 @@ class DesktopReadScreenTool(BaseTool):
 
         # Step 2: Save screenshot to disk (ocr_extract needs file path)
         # Step 2: 保存截图到磁盘（ocr_extract 需要文件路径）
+        ts = time.strftime("%Y%m%d_%H%M%S")
         if not save_path:
             evidence_dir = os.path.join(settings.ROOSTER_HOME, "evidence", "temp_snapshots")
             os.makedirs(evidence_dir, exist_ok=True)
-            ts = time.strftime("%Y%m%d_%H%M%S")
             save_path = os.path.join(evidence_dir, f"{ts}_read_screen.png")
         else:
+            if not save_path.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp")):
+                save_path = f"{save_path}.png"
+            directory, filename = os.path.split(save_path)
+            save_path = os.path.join(directory, f"{ts}_{filename}")
             os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
 
         img_bytes = base64.b64decode(snap["base64"])

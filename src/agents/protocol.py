@@ -170,7 +170,7 @@ class Report(BaseModel):
     process_snapshots: List[str] = Field(default_factory=list)
     artifacts: List[str] = Field(default_factory=list)
     provider_used: Optional[str] = Field(
-        None, description="local | cloud | zhipu — which LLM provider served this subtask"
+        None, description="local | cloud | zhipu_codingplan — which LLM provider served this subtask"
     )
 
 

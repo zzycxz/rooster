@@ -180,12 +180,12 @@ class RoosterLauncher:
                 distill_model = getattr(self._settings, "DISTILLATION_MODEL", "") or getattr(
                     self._settings, "CLOUD_MODEL", ""
                 )
-                # 蒸馏使用独立 LLMClient，首选 mimo (1.5s) 避免 zhipu (6s) 限速瓶颈
-                # Distillation uses a dedicated LLMClient, preferring mimo (1.5s) over zhipu (6s)
+                # 蒸馏使用独立 LLMClient，首选 mimo (1.5s) 避免 zhipu_codingplan (6s) 限速瓶颈
+                # Distillation uses a dedicated LLMClient, preferring mimo (1.5s) over zhipu_codingplan (6s)
                 # 如果 DISTILLATION_MODEL 与 provider 不兼容（如 glm-5.1 配 mimo），
                 # 不传 model，使用 provider 默认模型
                 # If DISTILLATION_MODEL is incompatible with provider, omit model to use provider default
-                if distill_provider == "zhipu":
+                if distill_provider == "zhipu_codingplan":
                     distill_llm_client = LLMClient(provider=distill_provider, model=distill_model)
                 else:
                     distill_llm_client = LLMClient(provider=distill_provider)

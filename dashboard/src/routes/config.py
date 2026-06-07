@@ -19,8 +19,8 @@ router = APIRouter(prefix="/api/config", tags=["config"])
 # Keys that should be masked when returned to the frontend
 MASK_KEYS = frozenset(
     {
-        "ZHIPU_KEY",
-        "ZHIPU_GLM_KEY",
+        "ZHIPU_CODINGPLAN_KEY",
+
         "OPENAI_KEY",
         "ANTHROPIC_KEY",
         "KIMI_KEY",
@@ -83,8 +83,8 @@ def _parse_env_file(path: str) -> Dict[str, str]:
 
 # Provider → API Key mapping for safety checks
 _PROVIDER_KEY_MAP = {
-    "zhipu": "ZHIPU_KEY",
-    "zhipu_glm": "ZHIPU_GLM_KEY",
+    "zhipu_codingplan": "ZHIPU_CODINGPLAN_KEY",
+
     "openai": "OPENAI_KEY",
     "anthropic": "ANTHROPIC_KEY",
     "kimi": "KIMI_KEY",
@@ -157,8 +157,8 @@ async def handle_config_save(data: Dict[str, Any]) -> Dict[str, Any]:
             "QWEN_KEY": "qwen",
             "JIUTIAN_KEY": "jiutian",
             "MIMO_KEY": "mimo",
-            "ZHIPU_GLM_KEY": "zhipu_glm",
-            "ZHIPU_KEY": "zhipu",
+
+            "ZHIPU_CODINGPLAN_KEY": "zhipu_codingplan",
             "LOCAL_MODEL": "local",
         }
         for k, name in keys_mapping.items():
@@ -180,13 +180,12 @@ async def handle_config_save(data: Dict[str, Any]) -> Dict[str, Any]:
                 "qwen",
                 "kimi",
                 "jiutian",
-                "zhipu_glm",
-                "zhipu",
+                "zhipu_codingplan",
                 "mimo",
                 "local",
             ]
             fast_priority = [
-                "zhipu",
+                "zhipu_codingplan",
                 "local",
                 "mimo",
                 "qwen",
@@ -195,7 +194,7 @@ async def handle_config_save(data: Dict[str, Any]) -> Dict[str, Any]:
                 "openai",
                 "cloud",
                 "anthropic",
-                "zhipu_glm",
+
             ]
 
             if not is_explicit_any:
@@ -430,8 +429,8 @@ async def api_config_yaml():
 async def api_config_models():
     _providers = [
         ("mimo", "MIMO_KEY", "MiMo"),
-        ("zhipu", "ZHIPU_KEY", "智谱 CodingPlan"),
-        ("zhipu_glm", "ZHIPU_GLM_KEY", "智谱 GLM 标准版"),
+        ("zhipu_codingplan", "ZHIPU_CODINGPLAN_KEY", "智谱 CodingPlan"),
+
         ("openai", "OPENAI_KEY", "OpenAI"),
         ("anthropic", "ANTHROPIC_KEY", "Anthropic Claude"),
         ("kimi", "KIMI_KEY", "Kimi 月之暗面"),
@@ -468,7 +467,7 @@ async def api_config_test():
 
     _providers = [
         ("mimo", "MIMO_KEY", "MIMO_URL", "MIMO_MODEL", "https://api.xiaomimimo.com/v1"),
-        ("zhipu", "ZHIPU_KEY", "ZHIPU_URL", "ZHIPU_MODEL", "https://open.bigmodel.cn/api/coding/paas/v4"),
+        ("zhipu_codingplan", "ZHIPU_CODINGPLAN_KEY", "ZHIPU_CODINGPLAN_URL", "ZHIPU_CODINGPLAN_MODEL", "https://open.bigmodel.cn/api/coding/paas/v4"),
         ("openai", "OPENAI_KEY", "OPENAI_URL", "OPENAI_MODEL", "https://api.openai.com/v1"),
         ("anthropic", "ANTHROPIC_KEY", "ANTHROPIC_URL", "ANTHROPIC_MODEL", "https://api.anthropic.com"),
         ("kimi", "KIMI_KEY", "KIMI_URL", "KIMI_MODEL", "https://api.moonshot.cn/v1"),

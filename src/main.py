@@ -5,6 +5,12 @@ import sys
 import os
 import getpass
 
+if sys.platform == "win32":
+    import asyncio
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # Disable tqdm progress bars globally (they pollute logs)
 os.environ["TQDM_DISABLE"] = "1"
 # Suppress noisy warnings
@@ -208,7 +214,7 @@ def _preflight_check():
 
     # Check at least one provider has an API key
     providers = {
-        "ZHIPU_KEY (智谱)": _s.ZHIPU_KEY,
+        "ZHIPU_CODINGPLAN_KEY (智谱 CodingPlan)": _s.ZHIPU_CODINGPLAN_KEY,
         "MIMO_KEY (小米)": _s.MIMO_KEY,
         "JIUTIAN_KEY (九天)": _s.JIUTIAN_KEY,
         "CLOUD_KEY (云端)": _s.CLOUD_KEY,
@@ -231,13 +237,13 @@ def _preflight_check():
             errors.append(
                 "No LLM API keys configured and local model server is unreachable.\n"
                 "Please set at least one key in .env.local:\n"
-                "  - ZHIPU_KEY=...  (智谱, recommended)\n"
+                "  - ZHIPU_CODINGPLAN_KEY=...  (智谱 CodingPlan, recommended)\n"
                 "  - MIMO_KEY=...   (小米)\n"
                 "  - CLOUD_KEY=...  (OpenAI-compatible)\n"
                 "Run: cp .env.local.example .env.local && edit .env.local"
             )
 
-    if not _s.CLOUD_MODEL and not _s.ZHIPU_MODEL and not _s.MIMO_MODEL:
+    if not _s.CLOUD_MODEL and not _s.ZHIPU_CODINGPLAN_MODEL and not _s.MIMO_MODEL:
         warnings.append("No model name configured. Using provider defaults.")
 
     if errors:
@@ -266,7 +272,7 @@ def _preflight_check():
 # ── Interactive setup wizard ────────────────────────────────────────────────
 
 _PROVIDERS = [
-    ("Zhipu AI", "ZHIPU_KEY", "GLM5.1", "https://open.bigmodel.cn/api/paas/v4"),
+    ("Zhipu CodingPlan", "ZHIPU_CODINGPLAN_KEY", "GLM-4.7", "https://open.bigmodel.cn/api/coding/paas/v4"),
     ("Xiaomi MiMo", "MIMO_KEY", "mimo-v2.5", ""),
     ("OpenAI-compatible", "CLOUD_KEY", "gpt-4o", "https://api.openai.com/v1"),
     ("Jiutian", "JIUTIAN_KEY", "", ""),
@@ -407,13 +413,6 @@ async def main():
 
 def main_cli():
     """pip install 后的 CLI 入口点 (pyproject.toml [project.scripts])"""  # CLI entry point after pip install
-    if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-        # 修复 Windows 控制台 GBK 编码导致 emoji 日志崩溃
-        # Fix Windows console GBK encoding causing emoji log crashes
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-
     # Handle subcommands
     if len(sys.argv) > 1 and sys.argv[1] == "init":
         if _interactive_setup():

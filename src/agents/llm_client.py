@@ -99,8 +99,8 @@ def _get_provider_lock(provider: str) -> asyncio.Lock:
 
 def _get_provider_min_interval(provider: str) -> float:
     """每个 provider 的最小请求间隔（秒）"""  # Minimum request interval per provider (seconds)
-    if provider == "zhipu":
-        return settings.ZHIPU_MIN_INTERVAL
+    if provider == "zhipu_codingplan":
+        return settings.ZHIPU_CODINGPLAN_MIN_INTERVAL
     return settings.LLM_MIN_INTERVAL
 
 
@@ -110,7 +110,7 @@ def _get_provider_min_interval(provider: str) -> float:
 # ===== Provider rotation pool =====
 # All available providers, select the least busy each call
 # Ordered by response speed, fastest to slowest; local as final fallback
-PROVIDER_POOL = ["mimo", "zhipu", "jiutian", "local"]
+PROVIDER_POOL = ["mimo", "zhipu_codingplan", "jiutian", "local"]
 
 
 def _inline_system_for_mimo(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
@@ -202,7 +202,7 @@ class LLMClient:
         failover_order: Optional[List[str]] = None,
     ):
         self._lightweight = lightweight  # 必须在 _get_default_model 之前赋值
-        self.preferred_provider = provider or ("cloud" if settings.CLOUD_KEY else "zhipu")
+        self.preferred_provider = provider or ("cloud" if settings.CLOUD_KEY else "zhipu_codingplan")
         self.provider = self.preferred_provider
         self._internal_client = ModelFactory.get_client(self.provider)
         self._uses_shared_internal_client = True
@@ -211,10 +211,9 @@ class LLMClient:
 
     def _get_default_model(self, provider: str) -> str:
         """根据提供商获取默认模型名。jiutian 按轻量/重量路径分别选模型。"""
-        if provider == "zhipu":
-            return settings.ZHIPU_MODEL
-        if provider == "zhipu_glm":
-            return settings.ZHIPU_GLM_MODEL
+        if provider == "zhipu_codingplan":
+            return settings.ZHIPU_CODINGPLAN_MODEL
+
         if provider == "openai":
             return settings.OPENAI_MODEL
         if provider == "anthropic":
@@ -382,12 +381,23 @@ class LLMClient:
                 else:
                     send_messages = [{k: v for k, v in m.items() if k != "reasoning_content"} for m in messages]
 
-                # Enable MiMo thinking mode. mimo-v2.5 thinks via reasoning_content field.
-                mimo_kwargs = dict(kwargs)
-                if current_p == "mimo" and getattr(settings, "MIMO_THINKING_ENABLED", False):
-                    mimo_kwargs.setdefault("enable_thinking", True)
+                # Provider-specific thinking mode adaptations
+                provider_kwargs = dict(kwargs)
+                
+                if current_p == "mimo":
+                    if getattr(settings, "MIMO_THINKING_ENABLED", False):
+                        provider_kwargs.setdefault("enable_thinking", True)
+                elif current_p == "zhipu_codingplan" or current_p == "zhipu":
+                    if not getattr(settings, "ZHIPU_THINKING_ENABLED", False):
+                        provider_kwargs.setdefault("thinking", {"type": "disabled"})
+                elif current_p == "jiutian":
+                    if not getattr(settings, "JIUTIAN_THINKING_ENABLED", False):
+                        provider_kwargs.setdefault("reasoning", {"enabled": False})
+                elif current_p == "openai":
+                    if getattr(settings, "OPENAI_THINKING_ENABLED", False):
+                        provider_kwargs.setdefault("reasoning_effort", getattr(settings, "REASONING_EFFORT", "medium"))
 
-                async def _do_stream(msgs=send_messages, _kw=mimo_kwargs if current_p == "mimo" else kwargs):
+                async def _do_stream(msgs=send_messages, _kw=provider_kwargs):
                     nonlocal committed
                     yielded_any = False
                     last_usage = None
@@ -481,14 +491,26 @@ class LLMClient:
                     else [{k: v for k, v in m.items() if k != "reasoning_content"} for m in messages]
                 )
 
-                mimo_kwargs = dict(kwargs)
-                if current_p == "mimo" and getattr(settings, "MIMO_THINKING_ENABLED", False):
-                    mimo_kwargs.setdefault("thinking", {"type": "enabled"})
+                # Provider-specific thinking mode adaptations
+                provider_kwargs = dict(kwargs)
+                
+                if current_p == "mimo":
+                    if getattr(settings, "MIMO_THINKING_ENABLED", False):
+                        provider_kwargs.setdefault("enable_thinking", True)
+                elif current_p == "zhipu_codingplan" or current_p == "zhipu":
+                    if not getattr(settings, "ZHIPU_THINKING_ENABLED", False):
+                        provider_kwargs.setdefault("thinking", {"type": "disabled"})
+                elif current_p == "jiutian":
+                    if not getattr(settings, "JIUTIAN_THINKING_ENABLED", False):
+                        provider_kwargs.setdefault("reasoning", {"enabled": False})
+                elif current_p == "openai":
+                    if getattr(settings, "OPENAI_THINKING_ENABLED", False):
+                        provider_kwargs.setdefault("reasoning_effort", getattr(settings, "REASONING_EFFORT", "medium"))
 
                 async def _do_non_stream(
                     _m=model,
                     _msgs=send_messages,
-                    _kw=mimo_kwargs if current_p == "mimo" else kwargs,
+                    _kw=provider_kwargs,
                     _provider=current_p,
                 ):
                     await self._wait_provider_rate_limit(_provider)

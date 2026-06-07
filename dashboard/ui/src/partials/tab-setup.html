@@ -34,11 +34,18 @@
         <div class="space-y-4">
           <div class="flex items-center justify-between">
             <h3 class="text-sm font-bold text-slate-300 border-l-2 border-green-500 pl-2" x-text="t('setup_llm_matrix')"></h3>
-            <button @click="saveSection('providers')"
-                    :disabled="setupSaving"
-                    class="text-[11px] px-3 py-1 rounded font-semibold bg-green-900/40 hover:bg-green-800/60 border border-green-700/50 text-green-300 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95">
-              <span x-text="t('save_section_providers')"></span>
-            </button>
+            <div class="flex items-center gap-2">
+              <span x-show="setupTestResult" :class="setupTestOk ? 'text-green-400' : 'text-red-400'" class="text-xs font-semibold" x-text="setupTestResult"></span>
+              <button @click="testSetupConnection()" :disabled="setupTestLoading" class="text-[11px] px-3 py-1 rounded font-semibold bg-blue-900/40 hover:bg-blue-800/60 border border-blue-700/50 text-blue-300 transition-all cursor-pointer disabled:opacity-40" title="Test all LLM channels">
+                <span x-show="!setupTestLoading">🔌 <span x-text="t('test_conn')"></span></span>
+                <span x-show="setupTestLoading">⏳ <span x-text="t('testing')"></span></span>
+              </button>
+              <button @click="saveSection('providers')"
+                      :disabled="setupSaving"
+                      class="text-[11px] px-3 py-1 rounded font-semibold bg-green-900/40 hover:bg-green-800/60 border border-green-700/50 text-green-300 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95">
+                <span x-text="t('save_section_providers')"></span>
+              </button>
+            </div>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -46,7 +53,10 @@
             <div class="bg-slate-850/80 border border-slate-700/60 rounded-xl p-4 space-y-3 shadow-lg hover:border-amber-500/30 transition-all">
               <div class="flex items-center justify-between">
                 <span class="text-xs font-bold text-amber-300 flex items-center gap-1.5">📡 <span x-text="t('setup_provider_jiutian')"></span></span>
-                <span class="text-[10px] text-slate-500 uppercase font-mono">JIUTIAN</span>
+                
+                  <span x-show="providerTestStatus?.jiutian?.ok === true" class="text-[10px] text-green-400 font-bold px-1.5 py-0.5">✓ OK</span>
+                  <span x-show="providerTestStatus?.jiutian?.ok === false" class="text-[10px] text-red-400 font-bold px-1.5 py-0.5" :title="providerTestStatus.jiutian?.error">✗ FAIL</span>
+                  <span class="text-[10px] text-slate-500 uppercase font-mono">JIUTIAN</span>
               </div>
               <div class="space-y-2">
                 <label class="block space-y-1">
@@ -71,7 +81,10 @@
             <div class="bg-slate-850/80 border border-slate-700/60 rounded-xl p-4 space-y-3 shadow-lg hover:border-purple-500/30 transition-all">
               <div class="flex items-center justify-between">
                 <span class="text-xs font-bold text-purple-300 flex items-center gap-1.5">📱 <span x-text="t('setup_provider_mimo')"></span></span>
-                <span class="text-[10px] text-slate-500 uppercase font-mono">MIMO</span>
+                
+                  <span x-show="providerTestStatus?.mimo?.ok === true" class="text-[10px] text-green-400 font-bold px-1.5 py-0.5">✓ OK</span>
+                  <span x-show="providerTestStatus?.mimo?.ok === false" class="text-[10px] text-red-400 font-bold px-1.5 py-0.5" :title="providerTestStatus.mimo?.error">✗ FAIL</span>
+                  <span class="text-[10px] text-slate-500 uppercase font-mono">MIMO</span>
               </div>
               <div class="space-y-2">
                 <label class="block space-y-1">
@@ -87,31 +100,16 @@
               </div>
             </div>
 
-            <!-- Zhipu GLM Standard API Card -->
-            <div class="bg-slate-850/80 border border-slate-700/60 rounded-xl p-4 space-y-3 shadow-lg hover:border-green-500/30 transition-all">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-emerald-300 flex items-center gap-1.5">  <span x-text="t('setup_provider_zhipu_glm')"></span></span>
-                <span class="text-[10px] text-slate-500 uppercase font-mono">ZHIPU GLM</span>
-              </div>
-              <div class="space-y-2">
-                <label class="block space-y-1">
-                  <span class="text-[10px] text-slate-400">ZHIPU_GLM_KEY (API Key)</span>
-                  <input type="password" x-model="setupForm.ZHIPU_GLM_KEY" placeholder="your-zhipu-api-key"
-                         class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-green-500 font-mono" />
-                </label>
-                <label class="block space-y-1">
-                  <span class="text-[10px] text-slate-400">ZHIPU_GLM_MODEL (默认 GLM5.1)</span>
-                  <input type="text" x-model="setupForm.ZHIPU_GLM_MODEL" placeholder="GLM5.1"
-                         class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-green-500 font-mono" />
-                </label>
-              </div>
-            </div>
+
 
             <!-- OpenAI Card -->
             <div class="bg-slate-850/80 border border-slate-700/60 rounded-xl p-4 space-y-3 shadow-lg hover:border-teal-500/30 transition-all">
               <div class="flex items-center justify-between">
                 <span class="text-xs font-bold text-teal-300 flex items-center gap-1.5">  <span x-text="t('setup_provider_openai')"></span></span>
-                <span class="text-[10px] text-slate-500 uppercase font-mono">OPENAI</span>
+                
+                  <span x-show="providerTestStatus?.openai?.ok === true" class="text-[10px] text-green-400 font-bold px-1.5 py-0.5">✓ OK</span>
+                  <span x-show="providerTestStatus?.openai?.ok === false" class="text-[10px] text-red-400 font-bold px-1.5 py-0.5" :title="providerTestStatus.openai?.error">✗ FAIL</span>
+                  <span class="text-[10px] text-slate-500 uppercase font-mono">OPENAI</span>
               </div>
               <div class="space-y-2">
                 <label class="block space-y-1">
@@ -131,7 +129,10 @@
             <div class="bg-slate-850/80 border border-slate-700/60 rounded-xl p-4 space-y-3 shadow-lg hover:border-orange-500/30 transition-all">
               <div class="flex items-center justify-between">
                 <span class="text-xs font-bold text-orange-300 flex items-center gap-1.5">  <span x-text="t('setup_provider_claude')"></span></span>
-                <span class="text-[10px] text-slate-500 uppercase font-mono">ANTHROPIC</span>
+                
+                  <span x-show="providerTestStatus?.anthropic?.ok === true" class="text-[10px] text-green-400 font-bold px-1.5 py-0.5">✓ OK</span>
+                  <span x-show="providerTestStatus?.anthropic?.ok === false" class="text-[10px] text-red-400 font-bold px-1.5 py-0.5" :title="providerTestStatus.anthropic?.error">✗ FAIL</span>
+                  <span class="text-[10px] text-slate-500 uppercase font-mono">ANTHROPIC</span>
               </div>
               <div class="space-y-2">
                 <label class="block space-y-1">
@@ -152,7 +153,10 @@
             <div class="bg-slate-850/80 border border-slate-700/60 rounded-xl p-4 space-y-3 shadow-lg hover:border-indigo-500/30 transition-all">
               <div class="flex items-center justify-between">
                 <span class="text-xs font-bold text-indigo-300 flex items-center gap-1.5">  <span x-text="t('setup_provider_qwen')"></span></span>
-                <span class="text-[10px] text-slate-500 uppercase font-mono">QWEN</span>
+                
+                  <span x-show="providerTestStatus?.qwen?.ok === true" class="text-[10px] text-green-400 font-bold px-1.5 py-0.5">✓ OK</span>
+                  <span x-show="providerTestStatus?.qwen?.ok === false" class="text-[10px] text-red-400 font-bold px-1.5 py-0.5" :title="providerTestStatus.qwen?.error">✗ FAIL</span>
+                  <span class="text-[10px] text-slate-500 uppercase font-mono">QWEN</span>
               </div>
               <div class="space-y-2">
                 <label class="block space-y-1">
@@ -172,17 +176,22 @@
             <div class="bg-slate-850/80 border border-slate-700/60 rounded-xl p-4 space-y-3 shadow-lg hover:border-green-500/30 transition-all">
               <div class="flex items-center justify-between">
                 <span class="text-xs font-bold text-green-300 flex items-center gap-1.5">⚡ <span x-text="t('setup_provider_zhipu_coding')"></span></span>
-                <span class="text-[10px] text-slate-500 uppercase font-mono">ZHIPU CODING</span>
+                <div class="flex items-center gap-2">
+                  
+                  <span x-show="providerTestStatus?.zhipu_codingplan?.ok === true" class="text-[10px] text-green-400 font-bold px-1.5 py-0.5">✓ OK</span>
+                  <span x-show="providerTestStatus?.zhipu_codingplan?.ok === false" class="text-[10px] text-red-400 font-bold px-1.5 py-0.5" :title="providerTestStatus.zhipu_codingplan?.error">✗ FAIL</span>
+                  <span class="text-[10px] text-slate-500 uppercase font-mono">ZHIPU CODING</span>
+                </div>
               </div>
               <div class="space-y-2">
                 <label class="block space-y-1">
-                  <span class="text-[10px] text-slate-400">ZHIPU_KEY (API Key)</span>
-                  <input type="password" x-model="setupForm.ZHIPU_KEY" placeholder="your-zhipu-api-key"
+                  <span class="text-[10px] text-slate-400">ZHIPU_CODINGPLAN_KEY (API Key)</span>
+                  <input type="password" x-model="setupForm.ZHIPU_CODINGPLAN_KEY" placeholder="your-zhipu-api-key"
                          class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-green-500 font-mono" />
                 </label>
                 <label class="block space-y-1">
-                  <span class="text-[10px] text-slate-400">ZHIPU_MODEL (模型名称，默认 GLM5.1)</span>
-                  <input type="text" x-model="setupForm.ZHIPU_MODEL" placeholder="GLM5.1"
+                  <span class="text-[10px] text-slate-400">ZHIPU_CODINGPLAN_MODEL (模型名称，默认 GLM-4.7)</span>
+                  <input type="text" x-model="setupForm.ZHIPU_CODINGPLAN_MODEL" placeholder="GLM-4.7"
                          class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-green-500 font-mono" />
                 </label>
               </div>
@@ -192,7 +201,10 @@
             <div class="bg-slate-850/80 border border-slate-700/60 rounded-xl p-4 space-y-3 shadow-lg hover:border-cyan-500/30 transition-all">
               <div class="flex items-center justify-between">
                 <span class="text-xs font-bold text-cyan-300 flex items-center gap-1.5">  <span x-text="t('setup_provider_kimi')"></span></span>
-                <span class="text-[10px] text-slate-500 uppercase font-mono">KIMI</span>
+                
+                  <span x-show="providerTestStatus?.kimi?.ok === true" class="text-[10px] text-green-400 font-bold px-1.5 py-0.5">✓ OK</span>
+                  <span x-show="providerTestStatus?.kimi?.ok === false" class="text-[10px] text-red-400 font-bold px-1.5 py-0.5" :title="providerTestStatus.kimi?.error">✗ FAIL</span>
+                  <span class="text-[10px] text-slate-500 uppercase font-mono">KIMI</span>
               </div>
               <div class="space-y-2">
                 <label class="block space-y-1">
@@ -212,7 +224,10 @@
             <div class="bg-slate-850/80 border border-slate-700/60 rounded-xl p-4 space-y-3 shadow-lg hover:border-blue-500/30 transition-all">
               <div class="flex items-center justify-between">
                 <span class="text-xs font-bold text-blue-300 flex items-center gap-1.5">☁️ <span x-text="t('setup_provider_cloud')"></span></span>
-                <span class="text-[10px] text-slate-500 uppercase font-mono">CLOUD / OPENAI</span>
+                
+                  <span x-show="providerTestStatus?.cloud?.ok === true" class="text-[10px] text-green-400 font-bold px-1.5 py-0.5">✓ OK</span>
+                  <span x-show="providerTestStatus?.cloud?.ok === false" class="text-[10px] text-red-400 font-bold px-1.5 py-0.5" :title="providerTestStatus.cloud?.error">✗ FAIL</span>
+                  <span class="text-[10px] text-slate-500 uppercase font-mono">CLOUD / OPENAI</span>
               </div>
               <div class="space-y-2">
                 <label class="block space-y-1">
@@ -262,7 +277,10 @@
             <div class="bg-slate-850/80 border border-slate-700/60 rounded-xl p-4 space-y-3 shadow-lg hover:border-violet-500/30 transition-all lg:col-span-3">
               <div class="flex items-center justify-between">
                 <span class="text-xs font-bold text-violet-300 flex items-center gap-1.5">  <span x-text="t('feishu_channel')"></span></span>
-                <span class="text-[10px] text-slate-500 uppercase font-mono">FEISHU</span>
+                
+                  <span x-show="providerTestStatus?.feishu?.ok === true" class="text-[10px] text-green-400 font-bold px-1.5 py-0.5">✓ OK</span>
+                  <span x-show="providerTestStatus?.feishu?.ok === false" class="text-[10px] text-red-400 font-bold px-1.5 py-0.5" :title="providerTestStatus.feishu?.error">✗ FAIL</span>
+                  <span class="text-[10px] text-slate-500 uppercase font-mono">FEISHU</span>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <label class="block space-y-1">
@@ -531,10 +549,10 @@
               <label class="space-y-1">
                 <span class="text-xs text-slate-300 font-semibold" x-text="t('role_strategist') || '任务战略规划 (Strategist)'"></span>
                 <select x-model="setupForm.STRATEGIST_MODEL_MODE"
+                        @change="setupForm.STRATEGIST_MODEL_NAME = ''"
                         class="w-full bg-slate-900 border border-slate-600 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-green-500">
                   <option value="" x-text="t('auto_broker')"></option>
-                  <option value="zhipu" x-text="t('setup_option_zhipu')"></option>
-                  <option value="zhipu_glm" x-text="t('setup_option_zhipu_glm')"></option>
+                  <option value="zhipu_codingplan" x-text="t('setup_option_zhipu_codingplan')"></option>
                   <option value="openai">OpenAI</option>
                   <option value="anthropic">Anthropic Claude</option>
                   <option value="kimi" x-text="t('setup_option_kimi')"></option>
@@ -550,11 +568,10 @@
               <label class="space-y-1">
                 <span class="text-xs text-slate-300 font-semibold" x-text="t('role_executor') || '代码执行与工具人 (Executor)'"></span>
                 <select x-model="setupForm.EXECUTOR_MODEL_MODE"
-                        @change="setupForm.EXECUTOR_MODEL_NAME = setupForm.EXECUTOR_MODEL_MODE"
+                        @change="setupForm.EXECUTOR_MODEL_NAME = ''"
                         class="w-full bg-slate-900 border border-slate-600 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-green-500">
                   <option value="" x-text="t('auto_broker')"></option>
-                  <option value="zhipu" x-text="t('setup_option_zhipu')"></option>
-                  <option value="zhipu_glm" x-text="t('setup_option_zhipu_glm')"></option>
+                  <option value="zhipu_codingplan" x-text="t('setup_option_zhipu_codingplan')"></option>
                   <option value="openai">OpenAI</option>
                   <option value="anthropic">Anthropic Claude</option>
                   <option value="kimi" x-text="t('setup_option_kimi')"></option>
@@ -570,10 +587,10 @@
               <label class="space-y-1">
                 <span class="text-xs text-slate-300 font-semibold" x-text="t('role_auditor') || '安全审计卫士 (Auditor)'"></span>
                 <select x-model="setupForm.AUDITOR_MODEL_MODE"
+                        @change="setupForm.AUDITOR_MODEL_NAME = ''"
                         class="w-full bg-slate-900 border border-slate-600 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-green-500">
                   <option value="" x-text="t('auto_broker')"></option>
-                  <option value="zhipu" x-text="t('setup_option_zhipu')"></option>
-                  <option value="zhipu_glm" x-text="t('setup_option_zhipu_glm')"></option>
+                  <option value="zhipu_codingplan" x-text="t('setup_option_zhipu_codingplan')"></option>
                   <option value="openai">OpenAI</option>
                   <option value="anthropic">Anthropic Claude</option>
                   <option value="kimi" x-text="t('setup_option_kimi')"></option>
@@ -649,19 +666,10 @@
           </div>
         </div>
 
-        <!-- Action Buttons -->
+        <!-- Action status hints -->
         <div class="flex items-center gap-3 pt-2">
-          <button @click="testSetupConnection()"
-                  :disabled="setupTestLoading"
-                  class="px-4 py-2 bg-slate-700 hover:bg-slate-650 disabled:opacity-50 rounded text-sm font-semibold text-slate-200 transition-colors cursor-pointer border border-slate-600">
-            <span x-show="!setupTestLoading" x-text="t('test_conn')"></span>
-            <span x-show="setupTestLoading" x-text="t('testing')"></span>
-          </button>
           <span x-show="setupSaved" class="text-green-400 text-xs font-semibold" x-text="t('saved_hint')"></span>
           <span x-show="setupError" class="text-red-400 text-xs font-semibold" x-text="'❌ ' + setupError"></span>
-          <span x-show="setupTestResult"
-                :class="setupTestOk ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'"
-                class="text-xs" x-text="setupTestResult"></span>
         </div>
 
       </div>

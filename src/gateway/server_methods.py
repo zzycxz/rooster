@@ -92,11 +92,7 @@ class MethodHandler:
             session.add_message(role="user", content=message_text, images=images)
             global_session_store.save_session(session_id)
 
-        # 存储 model override（session 级别，前端选择的 provider）
-        # Store model override (session-level, provider selected by frontend)
-        model_override = params.get("modelOverride", "").strip()
-        if model_override:
-            session.metadata["model_override"] = model_override
+
 
         # Check if the session is currently waiting for input
         old_run_id = global_run_manager.session_to_run.get(session_id)

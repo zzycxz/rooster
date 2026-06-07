@@ -40,6 +40,96 @@ async def _stream_with_chunk_timeout(generator, chunk_timeout: float):
         raise
 
 
+class PromptBleedFilter:
+    """Intercepts LLM hallucination (prompt bleeding) before it reaches the UI."""
+    def __init__(self):
+        self.buffer = ""
+        self.halted = False
+        self.markers = ["【系统严格指令", "【系统提示】", "任务指令："]
+
+    def process(self, chunk: str) -> str:
+        if self.halted or not chunk:
+            return ""
+        self.buffer += chunk
+        
+        for m in self.markers:
+            if m in self.buffer:
+                self.halted = True
+                idx = self.buffer.find(m)
+                to_emit = self.buffer[:idx]
+                self.buffer = ""
+                return to_emit
+                
+        hold_len = 0
+        for m in self.markers:
+            for i in range(1, len(m)):
+                if self.buffer.endswith(m[:i]):
+                    hold_len = max(hold_len, i)
+                    
+        if hold_len == 0:
+            to_emit = self.buffer
+            self.buffer = ""
+            return to_emit
+        elif hold_len < len(self.buffer):
+            to_emit = self.buffer[:-hold_len]
+            self.buffer = self.buffer[-hold_len:]
+            return to_emit
+        else:
+            return ""
+
+    def flush(self) -> str:
+        if self.halted:
+            return ""
+        to_emit = self.buffer
+        self.buffer = ""
+        return to_emit
+
+
+class PromptBleedFilter:
+    """Intercepts LLM hallucination (prompt bleeding) before it reaches the UI."""
+    def __init__(self):
+        self.buffer = ""
+        self.halted = False
+        self.markers = ["【系统严格指令", "【系统提示】", "任务指令："]
+
+    def process(self, chunk: str) -> str:
+        if self.halted or not chunk:
+            return ""
+        self.buffer += chunk
+        
+        for m in self.markers:
+            if m in self.buffer:
+                self.halted = True
+                idx = self.buffer.find(m)
+                to_emit = self.buffer[:idx]
+                self.buffer = ""
+                return to_emit
+                
+        hold_len = 0
+        for m in self.markers:
+            for i in range(1, len(m)):
+                if self.buffer.endswith(m[:i]):
+                    hold_len = max(hold_len, i)
+                    
+        if hold_len == 0:
+            to_emit = self.buffer
+            self.buffer = ""
+            return to_emit
+        elif hold_len < len(self.buffer):
+            to_emit = self.buffer[:-hold_len]
+            self.buffer = self.buffer[-hold_len:]
+            return to_emit
+        else:
+            return ""
+
+    def flush(self) -> str:
+        if self.halted:
+            return ""
+        to_emit = self.buffer
+        self.buffer = ""
+        return to_emit
+
+
 class AgentRunConfig(BaseModel):
     """Run configuration for a single agent turn."""
 
@@ -315,8 +405,9 @@ class AgentExecutor:
 
             # Only inject the delimiter on step 1; after that the prompt is
             # part of the ongoing ReAct exchange inside session_history.
+            # Marked as _internal so it doesn't leak into the user-facing chat UI.
             if _current_user_input:
-                session_history.append({"role": "user", "content": _current_user_input})
+                session_history.append({"role": "user", "content": _current_user_input, "_internal": True})
                 _current_user_input = ""
 
             # On the first step, if the request includes images, upgrade the user
@@ -389,15 +480,18 @@ class AgentExecutor:
             full_reasoning_content = ""
             native_tool_calls = []
             try:
+                # Add step info to the initial stream delta
+                think_msg = f"\n> ⏳ **[执行回合 {step}]** 大脑思考中...\n" if step > 1 else ""
                 await self.event_handler.emit_assistant_delta(
-                    session_key=config.session_key, client_run_id=run_id, text="Thinking..." if step > 1 else ""
+                    session_key=config.session_key, client_run_id=run_id, text=think_msg
                 )
 
                 _buffer = ""
                 in_think = False
+                bleed_filter = PromptBleedFilter()
 
                 async def perform_chat():
-                    nonlocal full_content, native_tool_calls, full_reasoning_content, _buffer, in_think
+                    nonlocal full_content, native_tool_calls, full_reasoning_content, _buffer, in_think, bleed_filter
                     chat_kwargs = {"model": config.model, "messages": messages}
                     if fc_schemas:
                         chat_kwargs["tools"] = fc_schemas
@@ -429,9 +523,11 @@ class AgentExecutor:
                                             flush_len = len(_buffer) - 7
                                             text_to_flush = _buffer[:flush_len]
                                             full_content += text_to_flush
-                                            await self.event_handler.emit_assistant_delta(
-                                                session_key=config.session_key, client_run_id=run_id, text=text_to_flush
-                                            )
+                                            safe_text = bleed_filter.process(text_to_flush)
+                                            if safe_text:
+                                                await self.event_handler.emit_assistant_delta(
+                                                    session_key=config.session_key, client_run_id=run_id, text=safe_text
+                                                )
                                             _buffer = _buffer[flush_len:]
                                         break
                                 else:
@@ -488,6 +584,12 @@ class AgentExecutor:
                             native_tool_calls = []
 
                         await perform_chat()
+                        final_flush = bleed_filter.flush()
+                        if final_flush:
+                            full_content += final_flush
+                            await self.event_handler.emit_assistant_delta(
+                                session_key=config.session_key, client_run_id=run_id, text=final_flush
+                            )
                         break
                     except (asyncio.TimeoutError, TimeoutError) as e:
                         executor_logger.warning(
@@ -522,6 +624,12 @@ class AgentExecutor:
                         in_think = False
                         try:
                             await perform_chat()
+                            final_flush = bleed_filter.flush()
+                            if final_flush:
+                                full_content += final_flush
+                                await self.event_handler.emit_assistant_delta(
+                                    session_key=config.session_key, client_run_id=run_id, text=final_flush
+                                )
                         except Exception as e:
                             executor_logger.warning(f"Retry failed: {e}")
                         if full_content.strip():
@@ -533,6 +641,12 @@ class AgentExecutor:
                 # Strip thinking blocks
                 if "<think" in full_content:
                     full_content = re.sub(r"<think.*?>.*?</think>", "", full_content, flags=re.DOTALL).strip()
+                    
+                # Strip prompt bleed
+                bleed_markers = ["【系统严格指令", "【系统提示】", "任务指令："]
+                for marker in bleed_markers:
+                    if marker in full_content:
+                        full_content = full_content[:full_content.find(marker)].strip()
 
                 # Record history (FC protocol format)
                 if native_tool_calls:
@@ -606,7 +720,7 @@ class AgentExecutor:
                 # --- NEW: UI Feedback for micro-steps ---
                 if tool_calls and self.event_handler:
                     tool_names = ", ".join([f"`{tc[0]}`" for tc in tool_calls])
-                    ui_msg = f"\n> ⚙️ **正在执行底层工具**: {tool_names}...\n\n"
+                    ui_msg = f"\n> ⚙️ **[执行回合 {step}]** 正在调用底层工具: {tool_names}...\n\n"
                     # Emit to UI without creating a new message bubble (append to current assistant text)
                     await self.event_handler.emit_assistant_delta(
                         session_key=config.session_key, client_run_id=run_id, text=ui_msg
@@ -639,6 +753,7 @@ class AgentExecutor:
                                         f"{_STUCK_THRESHOLD * _stuck_break_count} 次。\n"
                                         "请立即停止调用工具！总结你尝试了什么以及为什么失败，然后给出你的最终答复。"
                                     ),
+                                    "_internal": True,
                                 }
                             )
                             tool_calls = []
@@ -654,6 +769,7 @@ class AgentExecutor:
                                         "【系统警告】你似乎在重复执行相同的动作。\n"
                                         "请考虑换一种方式，或者现在就给出最终答复。"
                                     ),
+                                    "_internal": True,
                                 }
                             )
                     else:
@@ -673,22 +789,37 @@ class AgentExecutor:
                             "【系统提示】所有工具调用均已完成，结果如上所示。\n"
                             "请现在输出你的最终答复——直接且清晰地陈述结果，不要再调用任何工具。"
                         )
-                        session_history.append({"role": "user", "content": synthesis_msg})
+                        session_history.append({"role": "user", "content": synthesis_msg, "_internal": True})
                         synth_content = ""
                         synth_messages = self.prompt_builder.compose_messages(
                             system_prompt=system_prompt, history=session_history, user_input=""
                         )
                         try:
+                            synth_bleed_filter = PromptBleedFilter()
                             async for delta in self.llm_client.chat_stream(model=config.model, messages=synth_messages):
                                 if delta.content:
-                                    synth_content += delta.content
-                                    await self.event_handler.emit_assistant_delta(
-                                        session_key=config.session_key, client_run_id=run_id, text=delta.content
-                                    )
+                                    safe_text = synth_bleed_filter.process(delta.content)
+                                    synth_content += safe_text
+                                    if safe_text:
+                                        await self.event_handler.emit_assistant_delta(
+                                            session_key=config.session_key, client_run_id=run_id, text=safe_text
+                                        )
+                            final_flush = synth_bleed_filter.flush()
+                            if final_flush:
+                                synth_content += final_flush
+                                await self.event_handler.emit_assistant_delta(
+                                    session_key=config.session_key, client_run_id=run_id, text=final_flush
+                                )
                         except asyncio.TimeoutError:
                             executor_logger.warning("[COMMIT] Synthesis pass timed out (120s), using current content")
                         except Exception as e:
                             executor_logger.warning(f"[COMMIT] Synthesis pass failed: {e}")
+                            
+                        # Strip prompt bleed
+                        for marker in ["【系统严格指令", "【系统提示】", "任务指令："]:
+                            if marker in synth_content:
+                                synth_content = synth_content[:synth_content.find(marker)].strip()
+                                
                         if synth_content:
                             session_history.append({"role": "assistant", "content": synth_content})
                             executor_logger.info(f"[COMMIT] Synthesis complete: {len(synth_content)} chars")
@@ -834,23 +965,38 @@ class AgentExecutor:
                 f"【系统紧急指令】已达到最大执行步数限制。请立即提供完整的最终答复。\n"
                 f"绝不允许再调用任何工具。\n当前任务：{_task_hint}"
             )
-            session_history.append({"role": "user", "content": summary_prompt})
+            session_history.append({"role": "user", "content": summary_prompt, "_internal": True})
             system_prompt = self.prompt_builder.build_system_prompt(
                 SystemPromptParams(agent_id=config.agent_id, workspace_dir=config.workspace_dir)
             )
             final_messages = self.prompt_builder.compose_messages(system_prompt, session_history, "")
             final_content = ""
+            final_bleed_filter = PromptBleedFilter()
             try:
                 async for delta in self.llm_client.chat_stream(model=config.model, messages=final_messages):
                     if delta.content:
-                        final_content += delta.content
-                        await self.event_handler.emit_assistant_delta(
-                            session_key=config.session_key, client_run_id=run_id, text=delta.content
-                        )
+                        safe_text = final_bleed_filter.process(delta.content)
+                        final_content += safe_text
+                        if safe_text:
+                            await self.event_handler.emit_assistant_delta(
+                                session_key=config.session_key, client_run_id=run_id, text=safe_text
+                            )
+                final_flush = final_bleed_filter.flush()
+                if final_flush:
+                    final_content += final_flush
+                    await self.event_handler.emit_assistant_delta(
+                        session_key=config.session_key, client_run_id=run_id, text=final_flush
+                    )
             except asyncio.TimeoutError:
                 executor_logger.warning("[EMERGENCY] Max-steps summary timed out (120s), using what we have")
             except Exception as e:
                 executor_logger.warning(f"[EMERGENCY] Max-steps summary failed: {e}")
+                
+            # Strip prompt bleed
+            for marker in ["【系统严格指令", "【系统提示】", "任务指令："]:
+                if marker in final_content:
+                    final_content = final_content[:final_content.find(marker)].strip()
+                    
             if final_content:
                 session_history.append({"role": "assistant", "content": final_content})
 
@@ -1239,24 +1385,35 @@ class AgentExecutor:
 
         # 尝试调用小模型做快速摘要
         try:
-            # 优先使用配置中的 LOCAL_MODEL，或者 fallback 为基础模型
-            local_model_name = getattr(settings, "LOCAL_MODEL", None) or "gemini-2.5-flash"
-            # 为了避免循环依赖，我们直接使用当前 executor 的 llm_client，但传入小模型名称
-            if hasattr(self.llm_client, "chat_non_stream"):
-                prompt = (
-                    "请将以下大模型的历史执行记录压缩为一段 500 字以内的执行摘要。\n"
-                    "你只需要提取核心逻辑，不要赘述废话。\n"
-                    "【必须保留】: 关键工具的调用结果、取得的核心数据、已确认的失败尝试。\n"
-                    "【可以省略】: 啰嗦的思考过程、重复循环的重试、毫无意义的文本截断提示。\n\n"
-                    f"原始记录：\n{rule_summary}"
+            # 优先使用配置中的 FAST_MODEL，如果未配置则降级
+            fast_provider = getattr(settings, "FAST_MODEL_PROVIDER", None)
+            fast_model = getattr(settings, "FAST_MODEL_NAME", None)
+            
+            executor_logger.info("⏳ 触发 [B2] 渐进式中间层摘要 (Progressive History Compression)...")
+            prompt = (
+                "请将以下大模型的历史执行记录压缩为一段 500 字以内的执行摘要。\n"
+                "你只需要提取核心逻辑，不要赘述废话。\n"
+                "【必须保留】: 关键工具的调用结果、取得的核心数据、已确认的失败尝试。\n"
+                "【可以省略】: 啰嗦的思考过程、重复循环的重试、毫无意义的文本截断提示。\n\n"
+                f"原始记录：\n{rule_summary}"
+            )
+            
+            if fast_provider and fast_model:
+                from agents.llm_client import LLMClient
+                fast_client = LLMClient(provider=fast_provider, model=fast_model, lightweight=True)
+                resp = await fast_client.chat_non_stream(
+                    messages=[{"role": "user", "content": prompt}]
                 )
-                executor_logger.info("⏳ 触发 [B2] 渐进式中间层摘要 (Progressive History Compression)...")
+            elif hasattr(self.llm_client, "chat_non_stream"):
+                # 安全退回：不要随意注入不兼容的 model_name
                 resp = await self.llm_client.chat_non_stream(
-                    messages=[{"role": "user", "content": prompt}],
-                    model=local_model_name,
+                    messages=[{"role": "user", "content": prompt}]
                 )
-                if resp and resp.content:
-                    return resp.content[:600]
+            else:
+                resp = None
+
+            if resp and resp.content:
+                return resp.content[:600]
         except Exception as e:
             executor_logger.debug(f"LLM 渐进式摘要压缩失败，退化为规则提取: {e}")
 

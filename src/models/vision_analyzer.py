@@ -178,8 +178,8 @@ class VisionAnalyzer:
         providers_to_try = []
         if settings.CLOUD_KEY and settings.CLOUD_URL:
             providers_to_try.append(("cloud", settings.CLOUD_MODEL))
-        if settings.ZHIPU_KEY:
-            providers_to_try.append(("zhipu", settings.ZHIPU_MODEL))
+        if settings.ZHIPU_CODINGPLAN_KEY:
+            providers_to_try.append(("zhipu_codingplan", settings.ZHIPU_CODINGPLAN_MODEL))
         for provider, default_model in providers_to_try:
             client = ModelFactory.get_client(provider)
             models = [m for m in models_to_try if m != "local"]

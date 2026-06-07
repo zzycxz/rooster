@@ -8,14 +8,44 @@ from utils.config.runtime import RuntimeConfig
 class ElitePainter:
     """OmniVision V3.9 精英绘图引擎 - Rooster 集成版"""
 
+    # 四分类规则（medium/high 共用）
+    _ACTION_TYPES = {"button", "menuitem", "checkbox", "hyperlink", "tab", "tabitem",
+                     "splitbutton", "link", "treeitem", "listitem", "image", "radiobutton"}
+    _KEYIN_TYPES = {"edit", "combobox", "spinner", "slider"}
+    _NAV_TYPES = {"list", "tree", "menu", "toolbar"}
+
     def __init__(self, output_path="rooster_vision_output.png"):
         self.output_path = output_path
         self.silent_types = ["Text", "Static", "Label"]
 
-    def prepare_labels(self, elements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    @staticmethod
+    def classify(type_name: str) -> str:
+        """A/N/K/U 四分类。"""
+        t = type_name.lower()
+        if any(k in t for k in ElitePainter._ACTION_TYPES):
+            return "A"
+        elif any(k in t for k in ElitePainter._KEYIN_TYPES):
+            return "K"
+        elif any(k in t for k in ElitePainter._NAV_TYPES):
+            return "N"
+        return "U"
+
+    def prepare_labels(self, elements: List[Dict[str, Any]], mode: str = "low") -> List[Dict[str, Any]]:
         """
         [展现层] 核心职责：执行'Selective Focus'语义过滤并分配连续 ID。
+
+        mode:
+          low    = 原始逻辑（静默+容器抑制，包含遮挡）
+          medium = 类型抑制+包含遮挡，只保留 A/K
+          high   = 最少抑制，保留 A/N/K/U 全量
         """
+        mode = mode.lower()
+
+        # 分类（medium/high 需要）
+        if mode in ("medium", "high"):
+            for el in elements:
+                el["_cat"] = self.classify(el.get("type", ""))
+
         # 1. 面积计算和初步状态设定
         # 1. Area calculation and initial state setup
         for el in elements:
@@ -25,39 +55,52 @@ class ElitePainter:
             el["is_suppressed"] = False
 
             el_type = el.get("type", "Unknown")
-            # 基础不展现：静默类型，或者无明确业务意义的超大面板，或者被标记为遮挡
-            # Default suppressed: silent types, or oversized panels with no business significance, or marked obstructed
-            if el_type in self.silent_types or (
-                el_type in ["Pane", "Group", "Window"] and not el.get("force_draw", False)
-            ):
-                el["is_suppressed"] = True
+
+            if mode == "low":
+                # 原始逻辑：静默类型 + 容器类型抑制
+                if el_type in self.silent_types or (
+                    el_type in ["Pane", "Group", "Window"] and not el.get("force_draw", False)
+                ):
+                    el["is_suppressed"] = True
+            elif mode == "medium":
+                # 静默类型 + 容器类型抑制，且只保留 A/K
+                if el_type in self.silent_types or el_type in ["Pane", "Group", "Window"]:
+                    el["is_suppressed"] = True
+                if el.get("_cat") not in ("A", "K"):
+                    el["is_suppressed"] = True
+            elif mode == "high":
+                # 只抑制 Text/Static/Label，保留容器和全分类
+                if el_type in ("Text", "Static", "Label"):
+                    el["is_suppressed"] = True
 
         # 2. 物理包含遮挡 (大吞小) - Selective Focus 核心实现
         # 2. Physical containment obstruction (large swallows small) - Selective Focus core
+        # high 模式跳过包含遮挡，保留所有元素
         sorted_elements = sorted(elements, key=lambda x: x["_area"], reverse=True)
-        for i, parent in enumerate(sorted_elements):
-            if parent["is_suppressed"] or not parent.get("is_container", False):
-                continue
-
-            p_box = parent["box"]
-            for j, child in enumerate(sorted_elements):
-                if i == j:
-                    continue
-                if child.get("is_suppressed", False):
+        if mode != "high":
+            for i, parent in enumerate(sorted_elements):
+                if parent["is_suppressed"] or not parent.get("is_container", False):
                     continue
 
-                c_box = child["box"]
-                # 容差 5 像素
-                # 5-pixel tolerance
-                is_inside = (
-                    c_box[0] >= p_box[0] - 5
-                    and c_box[1] >= p_box[1] - 5
-                    and c_box[2] <= p_box[2] + 5
-                    and c_box[3] <= p_box[3] + 5
-                )
-                if is_inside:
-                    parent["is_suppressed"] = True
-                    break
+                p_box = parent["box"]
+                for j, child in enumerate(sorted_elements):
+                    if i == j:
+                        continue
+                    if child.get("is_suppressed", False):
+                        continue
+
+                    c_box = child["box"]
+                    # 容差 5 像素
+                    # 5-pixel tolerance
+                    is_inside = (
+                        c_box[0] >= p_box[0] - 5
+                        and c_box[1] >= p_box[1] - 5
+                        and c_box[2] <= p_box[2] + 5
+                        and c_box[3] <= p_box[3] + 5
+                    )
+                    if is_inside:
+                        parent["is_suppressed"] = True
+                        break
 
         # 3. 分配 Base32/Alphabet 编码
         visible_elements = [e for e in elements if not e["is_suppressed"]]

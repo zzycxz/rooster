@@ -64,7 +64,9 @@ class OmniVisionEngine:
             if HAS_MSS:
                 try:
                     with mss.mss() as sct:
-                        monitor = sct.monitors[1]
+                        # monitors[0] = 虚拟屏幕（所有显示器合并），monitors[1] = 主显示器
+                        # monitors[0] = virtual screen (all monitors), monitors[1] = primary
+                        monitor = sct.monitors[0]
                         self.res_x, self.res_y = monitor["width"], monitor["height"]
                 except Exception:
                     self._fallback_screen_res()
@@ -158,8 +160,22 @@ class EliteEngine:
         )
         return res == 0 and cloaked.value != 0
 
-    def dump(self) -> List[Dict[str, Any]]:
-        """执行全精英扫描逻辑（仅 Windows 可用）"""
+    def dump(self, scan_mode: str = "") -> List[Dict[str, Any]]:
+        """执行全精英扫描逻辑（仅 Windows 可用）
+
+        Args:
+            scan_mode: low=仅前台+任务栏 | medium=全屏+过滤 | high=全量
+                       空字符串=从 settings.VISION_SCAN_MODE 读取
+        """
+        if not scan_mode:
+            try:
+                from utils.config import settings
+                scan_mode = getattr(settings, "VISION_SCAN_MODE", "low")
+            except Exception:
+                scan_mode = "low"
+        scan_mode = scan_mode.lower()
+        scan_all_visible = scan_mode in ("medium", "high")
+
         if not _IS_WINDOWS or not HAS_WIN32:
             return []
         # 1. 抓取前台上下文与任务栏
@@ -177,33 +193,77 @@ class EliteEngine:
         if tray_hwnd:
             active_root_hwnds.add(tray_hwnd)
 
-        def enum_win(hwnd, _):
-            if win32gui.IsWindowVisible(hwnd) and not self.is_window_cloaked(hwnd):
-                _, pid = win32process.GetWindowThreadProcessId(hwnd)
-                cls = win32gui.GetClassName(hwnd)
-                if pid == fg_pid and cls not in ["Progman", "WorkerW"]:
-                    active_root_hwnds.add(hwnd)
-                if is_focus_on_desktop and cls in ["Progman", "WorkerW"]:
-                    active_root_hwnds.add(hwnd)
-                if cls.startswith("#32768"):
-                    active_root_hwnds.add(hwnd)
+        if scan_all_visible:
+            # 扫描所有可见窗口（不仅限前台+同PID），包括桌面图标
+            def enum_win(hwnd, _):
+                if win32gui.IsWindowVisible(hwnd) and not self.is_window_cloaked(hwnd):
+                    cls = win32gui.GetClassName(hwnd)
+                    if cls == "Progman":
+                        active_root_hwnds.add(hwnd)  # 桌面图标
+                    elif cls not in ["WorkerW"] and not cls.startswith("#32768"):
+                        active_root_hwnds.add(hwnd)
+                    if cls.startswith("#32768"):
+                        active_root_hwnds.add(hwnd)
+        else:
+            # 原始模式：仅前台+同PID+任务栏
+            def enum_win(hwnd, _):
+                if win32gui.IsWindowVisible(hwnd) and not self.is_window_cloaked(hwnd):
+                    _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                    cls = win32gui.GetClassName(hwnd)
+                    if pid == fg_pid and cls not in ["Progman", "WorkerW"]:
+                        active_root_hwnds.add(hwnd)
+                    if is_focus_on_desktop and cls in ["Progman", "WorkerW"]:
+                        active_root_hwnds.add(hwnd)
+                    if cls.startswith("#32768"):
+                        active_root_hwnds.add(hwnd)
 
         win32gui.EnumWindows(enum_win, None)
 
         # 2. 抓取遮挡层（所有在 fg_hwnd 之上的可见窗口，排除自身）
         # 2. Capture obstruction layer (all visible windows above fg_hwnd, excluding target roots)
-        obstruction_boxes = []
-        curr = fg_hwnd
-        while True:
-            curr = win32gui.GetWindow(curr, win32con.GW_HWNDPREV)
-            if not curr:
-                break
-            if win32gui.IsWindowVisible(curr) and not self.is_window_cloaked(curr):
-                if curr in active_root_hwnds:
-                    continue
-                rect = get_true_window_rect(curr)
-                if (rect[2] - rect[0]) > 10 and (rect[3] - rect[1]) > 10:
-                    obstruction_boxes.append(rect)
+        # 系统透明叠加层黑名单：这些窗口虽 visible 且未 cloaked，但实际透明不遮挡
+        # System transparent overlay blacklist: visible & uncloaked but actually transparent
+        _OVERLAY_BLACKLIST = {
+            "ShellHandwritingCanvas",
+            "Shell_InputSwitchTopLevelWindow",
+        }
+        # 构建遮挡层：按 Z-order 从上到下，每个窗口只被它上面的窗口遮挡
+        # per_window_obs: {hwnd: [该窗口上方的遮挡框列表]}
+        per_window_obs: Dict[int, list] = {}
+        if scan_all_visible:
+            # 全屏模式：按 Z-order 从上到下累积遮挡框
+            _seen_obs = []
+            def _build_obstruction(hwnd, _):
+                if win32gui.IsWindowVisible(hwnd) and not self.is_window_cloaked(hwnd):
+                    cls = win32gui.GetClassName(hwnd)
+                    if any(b in cls for b in _OVERLAY_BLACKLIST):
+                        return
+                    if hwnd in active_root_hwnds:
+                        per_window_obs[hwnd] = list(_seen_obs)
+                    rect = get_true_window_rect(hwnd)
+                    if (rect[2] - rect[0]) > 10 and (rect[3] - rect[1]) > 10:
+                        _seen_obs.append(rect)
+            win32gui.EnumWindows(_build_obstruction, None)
+        else:
+            # 原始模式：前台窗口之上才是遮挡
+            obstruction_boxes = []
+            curr = fg_hwnd
+            while True:
+                curr = win32gui.GetWindow(curr, win32con.GW_HWNDPREV)
+                if not curr:
+                    break
+                if win32gui.IsWindowVisible(curr) and not self.is_window_cloaked(curr):
+                    if curr in active_root_hwnds:
+                        continue
+                    curr_cls = win32gui.GetClassName(curr)
+                    if any(b in curr_cls for b in _OVERLAY_BLACKLIST):
+                        continue
+                    rect = get_true_window_rect(curr)
+                    if (rect[2] - rect[0]) > 10 and (rect[3] - rect[1]) > 10:
+                        obstruction_boxes.append(rect)
+            # 原始模式：所有扫描窗口共用同一份遮挡列表
+            for hwnd in active_root_hwnds:
+                per_window_obs[hwnd] = obstruction_boxes
 
         # 3. 深度探测并执行白名单过滤
         # 3. Deep probe and whitelist filtering
@@ -215,14 +275,18 @@ class EliteEngine:
             if not node_hwnd:
                 continue
 
-            root_win = win32gui.GetAncestor(node_hwnd, 2)
+            try:
+                root_win = win32gui.GetAncestor(node_hwnd, 2)
+            except Exception:
+                continue
             if root_win not in active_root_hwnds:
                 continue
 
             # 几何可见性判定
-            # Geometric visibility check
+            # Geometric visibility check — 只被该窗口上方的窗口遮挡
             box = node["box"]
-            visible_box = calculate_visible_part(box, obstruction_boxes)
+            obs = per_window_obs.get(root_win, [])
+            visible_box = calculate_visible_part(box, obs)
             if not visible_box:
                 continue
 

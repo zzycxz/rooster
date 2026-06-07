@@ -16,6 +16,70 @@
   --color-slate-950: #000000;
 }
 
+.theme-light {
+  --color-slate-950: #9ca3af;
+  --color-slate-900: #d1d5db; /* Main bg: darker gray (Gray 300) to reduce glare */
+  --color-slate-800: #e5e7eb; /* Panels: Gray 200 instead of Gray 100 */
+  --color-slate-700: #9ca3af; 
+  --color-slate-600: #6b7280;
+  --color-slate-500: #4b5563;
+  --color-slate-400: #374151;
+  --color-slate-300: #1f2937;
+  --color-slate-200: #111827;
+  --color-slate-100: #030712;
+  --color-slate-50: #000000;
+}
+
+.theme-light .prose {
+  --tw-prose-body: #374151 !important;
+  --tw-prose-headings: #111827 !important;
+  --tw-prose-bold: #111827 !important;
+  --tw-prose-code: #1f2937 !important;
+  --tw-prose-pre-bg: #f3f4f6 !important;
+  color: #374151 !important;
+}
+
+.theme-light .prose p,
+.theme-light .prose div,
+.theme-light .prose span,
+.theme-light .prose li,
+.theme-light .prose blockquote {
+  color: #374151 !important;
+}
+
+.theme-light .prose h1,
+.theme-light .prose h2,
+.theme-light .prose h3,
+.theme-light .prose h4,
+.theme-light .prose h5,
+.theme-light .prose h6,
+.theme-light .prose strong,
+.theme-light .prose b {
+  color: #111827 !important;
+}
+
+.theme-light .prose code {
+  color: #1f2937 !important;
+  background-color: #f1f5f9 !important;
+}
+
+/* ── Light Mode Structural Borders (Apple Style) ── */
+.theme-light .border-slate-700\/30,
+.theme-light .border-slate-700\/40,
+.theme-light .border-slate-700\/50,
+.theme-light .border-slate-700\/60,
+.theme-light .border-slate-700,
+.theme-light .border-slate-600\/60 {
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+/* ── Add subtle shadows to layout panels ── */
+.theme-light nav,
+.theme-light .main-sidebar,
+.theme-light .chat-sidebar {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+}
+
 [x-cloak] { display: none !important; }
 
 * { box-sizing: border-box; }
@@ -56,6 +120,7 @@ button:active:not(:disabled), .cursor-pointer:active {
 }
 
 /* ── Sidebar tabs ── */
+.tab-item { border-left: 3px solid transparent; }
 .tab-item:hover { background: rgba(255,255,255,0.08); }
 .tab-active {
   background: rgba(10, 132, 255, 0.15) !important;
@@ -87,6 +152,29 @@ button:active:not(:disabled), .cursor-pointer:active {
   border-radius: 18px; 
   box-shadow: 0 4px 12px rgba(255, 69, 58, 0.1);
   color: #FF453A;
+}
+
+/* ── Light Mode Bubble Adjustments ── */
+.theme-light .bubble-ai {
+  background: #e5e7eb; /* Slightly darker bubble background */
+  color: #1f2937;
+  border: 1px solid #d1d5db;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+}
+.theme-light .json-block {
+  background: #f8fafc;
+  color: #334155;
+  border-color: #e2e8f0;
+}
+.theme-light .prose thead {
+  background-color: #f1f5f9;
+  border-bottom-color: #cbd5e1;
+}
+.theme-light .prose tbody tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+.theme-light .prose td, .theme-light .prose th {
+  border-color: #e2e8f0;
 }
 
 /* ── Bubble content overflow fix ── */

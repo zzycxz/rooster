@@ -47,7 +47,7 @@ _add("PASSWORD", r'(?:password|passwd|pwd)\s*[=:]\s*["\'][^"\']{4,}["\']')
 # Generic secret assignments
 _add("SECRET_ASSIGN", r'(?:secret|token|access_token|auth_token)\s*[=:]\s*["\'][A-Za-z0-9\-_.+/]{10,}["\']')
 # Zhipu / Feishu / common Chinese API platforms
-_add("ZHIPU_KEY", r"[0-9a-f]{32}\.[A-Za-z0-9]{6,}")
+_add("ZHIPU_CODINGPLAN_KEY", r"[0-9a-f]{32}\.[A-Za-z0-9]{6,}")
 # Feishu app_secret / verification_token format
 _add("FEISHU_SECRET", r"[A-Za-z0-9]{16,}[A-Za-z0-9]{16,}")
 # Credit card numbers (4×4 digit groups, with spaces or dashes)
