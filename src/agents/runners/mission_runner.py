@@ -1237,7 +1237,7 @@ class MissionRunner:
                 self.memory_manager.batch_update_facts(_batch)
         if total_tasks > 1:
             await channel.send_message(to=msg.sender_id, text="✅ **[任务结案]** 所有步骤已通过审计。")
-            
+
         # Task succeeded — remove the checkpoint so it doesn't get replayed
         self._clear_checkpoint(msg.session_id, reframed_text)
 

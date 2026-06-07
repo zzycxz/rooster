@@ -80,7 +80,6 @@ class RoosterLauncher:
         logger.info(f"📡 网关正在监听: {self.base_url}:{port}")  # Gateway listening
 
         # FastAPI App config
-        from gateway.server import app
         app.state.registry = self.registry
 
         # Uvicorn config (prevent disabling existing loggers)
@@ -133,7 +132,7 @@ class RoosterLauncher:
                 logger.warning(f"⚠️ MCP 动态注册失败（可选功能，不影响主系统）: {e}")
 
         logger.info("✅ 核心网关服务就绪")
-        
+
         logger.info("正在建立飞书长连接...")
         logger.info("正在预热记忆引擎与向量模型 (首次加载可能需要 15-30 秒)...")
 

@@ -51,7 +51,7 @@ class PromptBleedFilter:
         if self.halted or not chunk:
             return ""
         self.buffer += chunk
-        
+
         for m in self.markers:
             if m in self.buffer:
                 self.halted = True
@@ -59,58 +59,13 @@ class PromptBleedFilter:
                 to_emit = self.buffer[:idx]
                 self.buffer = ""
                 return to_emit
-                
+
         hold_len = 0
         for m in self.markers:
             for i in range(1, len(m)):
                 if self.buffer.endswith(m[:i]):
                     hold_len = max(hold_len, i)
-                    
-        if hold_len == 0:
-            to_emit = self.buffer
-            self.buffer = ""
-            return to_emit
-        elif hold_len < len(self.buffer):
-            to_emit = self.buffer[:-hold_len]
-            self.buffer = self.buffer[-hold_len:]
-            return to_emit
-        else:
-            return ""
 
-    def flush(self) -> str:
-        if self.halted:
-            return ""
-        to_emit = self.buffer
-        self.buffer = ""
-        return to_emit
-
-
-class PromptBleedFilter:
-    """Intercepts LLM hallucination (prompt bleeding) before it reaches the UI."""
-    def __init__(self):
-        self.buffer = ""
-        self.halted = False
-        self.markers = ["【系统严格指令", "【系统提示】", "任务指令："]
-
-    def process(self, chunk: str) -> str:
-        if self.halted or not chunk:
-            return ""
-        self.buffer += chunk
-        
-        for m in self.markers:
-            if m in self.buffer:
-                self.halted = True
-                idx = self.buffer.find(m)
-                to_emit = self.buffer[:idx]
-                self.buffer = ""
-                return to_emit
-                
-        hold_len = 0
-        for m in self.markers:
-            for i in range(1, len(m)):
-                if self.buffer.endswith(m[:i]):
-                    hold_len = max(hold_len, i)
-                    
         if hold_len == 0:
             to_emit = self.buffer
             self.buffer = ""
@@ -641,7 +596,7 @@ class AgentExecutor:
                 # Strip thinking blocks
                 if "<think" in full_content:
                     full_content = re.sub(r"<think.*?>.*?</think>", "", full_content, flags=re.DOTALL).strip()
-                    
+
                 # Strip prompt bleed
                 bleed_markers = ["【系统严格指令", "【系统提示】", "任务指令："]
                 for marker in bleed_markers:
@@ -707,7 +662,7 @@ class AgentExecutor:
                         )
                     except Exception as confirm_exc:
                         executor_logger.error(f">>>>> [FATAL ERROR] Failed to emit require_user_input: {confirm_exc}", exc_info=True)
-                    
+
                     break  # 不执行任何工具，退出 ReAct 循环，等待下一轮用户回复
 
                 # --- Phase 3: Tool execution ---
@@ -814,12 +769,12 @@ class AgentExecutor:
                             executor_logger.warning("[COMMIT] Synthesis pass timed out (120s), using current content")
                         except Exception as e:
                             executor_logger.warning(f"[COMMIT] Synthesis pass failed: {e}")
-                            
+
                         # Strip prompt bleed
                         for marker in ["【系统严格指令", "【系统提示】", "任务指令："]:
                             if marker in synth_content:
                                 synth_content = synth_content[:synth_content.find(marker)].strip()
-                                
+
                         if synth_content:
                             session_history.append({"role": "assistant", "content": synth_content})
                             executor_logger.info(f"[COMMIT] Synthesis complete: {len(synth_content)} chars")
@@ -991,12 +946,12 @@ class AgentExecutor:
                 executor_logger.warning("[EMERGENCY] Max-steps summary timed out (120s), using what we have")
             except Exception as e:
                 executor_logger.warning(f"[EMERGENCY] Max-steps summary failed: {e}")
-                
+
             # Strip prompt bleed
             for marker in ["【系统严格指令", "【系统提示】", "任务指令："]:
                 if marker in final_content:
                     final_content = final_content[:final_content.find(marker)].strip()
-                    
+
             if final_content:
                 session_history.append({"role": "assistant", "content": final_content})
 
@@ -1388,7 +1343,7 @@ class AgentExecutor:
             # 优先使用配置中的 FAST_MODEL，如果未配置则降级
             fast_provider = getattr(settings, "FAST_MODEL_PROVIDER", None)
             fast_model = getattr(settings, "FAST_MODEL_NAME", None)
-            
+
             executor_logger.info("⏳ 触发 [B2] 渐进式中间层摘要 (Progressive History Compression)...")
             prompt = (
                 "请将以下大模型的历史执行记录压缩为一段 500 字以内的执行摘要。\n"
@@ -1397,7 +1352,7 @@ class AgentExecutor:
                 "【可以省略】: 啰嗦的思考过程、重复循环的重试、毫无意义的文本截断提示。\n\n"
                 f"原始记录：\n{rule_summary}"
             )
-            
+
             if fast_provider and fast_model:
                 from agents.llm_client import LLMClient
                 fast_client = LLMClient(provider=fast_provider, model=fast_model, lightweight=True)
@@ -1437,7 +1392,7 @@ class AgentExecutor:
         """
         if not content:
             return None
-            
+
         # 兜底解析：如果输出中包含 "回复 A 或 B" 这种明确的选项或包含 Markdown 表格或列表
         if "CONFIRM_REQUIRED" not in content:
             if "请确认" in content or "请选择" in content or "A 或 B" in content or "哪一部" in content:
@@ -1447,7 +1402,7 @@ class AgentExecutor:
                 for line in lines:
                     line_s = line.strip()
                     # 匹配表格
-                    if line_s.startswith("|") and not "---" in line_s and not "选项" in line_s:
+                    if line_s.startswith("|") and "---" not in line_s and "选项" not in line_s:
                         parts = [p.strip() for p in line_s.split("|") if p.strip()]
                         if len(parts) >= 2:
                             options.append(" ".join(parts[:3]))
@@ -1457,7 +1412,7 @@ class AgentExecutor:
                         opt_text = re.sub(r"^\d+\.\s*", "", line_s)
                         if len(opt_text) > 2 and len(opt_text) < 100:
                             options.append(opt_text)
-                            
+
                 if options:
                     return {
                         "type": "CONFIRM_REQUIRED",

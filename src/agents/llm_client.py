@@ -383,7 +383,7 @@ class LLMClient:
 
                 # Provider-specific thinking mode adaptations
                 provider_kwargs = dict(kwargs)
-                
+
                 if current_p == "mimo":
                     if getattr(settings, "MIMO_THINKING_ENABLED", False):
                         provider_kwargs.setdefault("enable_thinking", True)
@@ -493,7 +493,7 @@ class LLMClient:
 
                 # Provider-specific thinking mode adaptations
                 provider_kwargs = dict(kwargs)
-                
+
                 if current_p == "mimo":
                     if getattr(settings, "MIMO_THINKING_ENABLED", False):
                         provider_kwargs.setdefault("enable_thinking", True)

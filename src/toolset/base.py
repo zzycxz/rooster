@@ -82,7 +82,7 @@ class Tool:
                 args_obj = self.args_schema(**{k: v for k, v in kwargs.items() if k != "ctx"})
             except Exception as e:
                 return ToolResult.error(f"[ArgumentValidation] {e}")
-                
+
             import inspect
             sig = inspect.signature(self.execute)
             if "ctx" in sig.parameters:
