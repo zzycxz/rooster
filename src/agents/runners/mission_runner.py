@@ -744,20 +744,31 @@ class MissionRunner:
                     context_parts = []
                     if dep_results:
                         context_parts.append("前置任务结果：\n" + "\n".join(dep_results))
-                    if previous_audit_cmd:
-                        context_parts.append(f"审计官修正指令：\n{previous_audit_cmd}")
-                    # REMAND 重试：将上次执行的工具输出摘要注入 previous_observations，
-                    # 让 Executor 知道上次做了什么、哪里出错，才能定向修复。
-                    if current_retry > 0 and _retry_history:
-                        tool_outputs = [
-                            m.get("content", "") for m in _retry_history if m.get("role") == "tool" and m.get("content")
-                        ]
-                        if tool_outputs:
-                            combined_tool_output = "\n---\n".join(
-                                o[:500]
-                                for o in tool_outputs[-5:]  # 最多取最后 5 条，每条截断 500 字符
+                    # REMAND 重试：注入上次 Executor 的综合结论 + 审计修正指令 + 工具输出，
+                    # 形成从宏观到微观的完整纠错上下文。
+                    if current_retry > 0:
+                        if report is not None and report.observation:
+                            prev_obs = report.observation
+                            if len(prev_obs) > 3000:
+                                prev_obs = prev_obs[:3000] + f"\n...[截断，原文 {len(report.observation)} 字]"
+                            context_parts.append(
+                                f"【上次执行结论（已驳回）】\n{prev_obs}"
                             )
-                            context_parts.append(f"上次执行工具输出（供纠错参考）：\n{combined_tool_output}")
+                        if previous_audit_cmd:
+                            context_parts.append(f"【审计官修正指令】\n{previous_audit_cmd}")
+                        if _retry_history:
+                            tool_outputs = [
+                                m.get("content", "") for m in _retry_history if m.get("role") == "tool" and m.get("content")
+                            ]
+                            if tool_outputs:
+                                combined_tool_output = "\n---\n".join(
+                                    o[:500]
+                                    for o in tool_outputs[-5:]  # 最多取最后 5 条，每条截断 500 字符
+                                )
+                                context_parts.append(f"上次执行工具输出（供纠错参考）：\n{combined_tool_output}")
+                    else:
+                        if previous_audit_cmd:
+                            context_parts.append(f"审计官修正指令：\n{previous_audit_cmd}")
                     combined_context = "\n\n".join(context_parts) if context_parts else ""
 
                     # [V10.0] DAG 叶节点判定：无下游依赖 → 叶节点

@@ -290,7 +290,7 @@ class AgentExecutor:
                 )
 
             # --- Phase 1: Pre-processing ---
-            ltm_block = self.memory_manager.get_summary_for_prompt(query=config.prompt)
+            ltm_block = await self.memory_manager.get_summary_for_prompt_async(query=config.prompt)
 
             # [V12 B3.1] System Prompt Caching
             import hashlib
@@ -752,7 +752,8 @@ class AgentExecutor:
                         synth_messages = self.prompt_builder.compose_messages(
                             system_prompt=system_prompt, history=session_history, user_input=""
                         )
-                        try:
+                        async def _run_synthesis():
+                            nonlocal synth_content
                             synth_bleed_filter = PromptBleedFilter()
                             async for delta in self.llm_client.chat_stream(model=config.model, messages=synth_messages):
                                 if delta.content:
@@ -768,6 +769,9 @@ class AgentExecutor:
                                 await self.event_handler.emit_assistant_delta(
                                     session_key=config.session_key, client_run_id=run_id, text=final_flush
                                 )
+
+                        try:
+                            await asyncio.wait_for(_run_synthesis(), timeout=120)
                         except asyncio.TimeoutError:
                             executor_logger.warning("[COMMIT] Synthesis pass timed out (120s), using current content")
                         except Exception as e:
@@ -930,7 +934,9 @@ class AgentExecutor:
             final_messages = self.prompt_builder.compose_messages(system_prompt, session_history, "")
             final_content = ""
             final_bleed_filter = PromptBleedFilter()
-            try:
+
+            async def _run_emergency_summary():
+                nonlocal final_content
                 async for delta in self.llm_client.chat_stream(model=config.model, messages=final_messages):
                     if delta.content:
                         safe_text = final_bleed_filter.process(delta.content)
@@ -945,6 +951,9 @@ class AgentExecutor:
                     await self.event_handler.emit_assistant_delta(
                         session_key=config.session_key, client_run_id=run_id, text=final_flush
                     )
+
+            try:
+                await asyncio.wait_for(_run_emergency_summary(), timeout=120)
             except asyncio.TimeoutError:
                 executor_logger.warning("[EMERGENCY] Max-steps summary timed out (120s), using what we have")
             except Exception as e:
@@ -1053,7 +1062,7 @@ class AgentExecutor:
         prompt = "\n".join(phase_lines) + f"\n\n任务指令：{resolved_instruction}"
         if previous_observations:
             obs = previous_observations
-            _MAX_PREV_OBS = 2000
+            _MAX_PREV_OBS = 8000
             if len(obs) > _MAX_PREV_OBS:
                 obs = obs[:_MAX_PREV_OBS] + f"\n... [上游输出截断，原长 {len(obs)} 字符]"
             prompt = f"{prompt}\n\n{obs}"

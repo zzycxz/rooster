@@ -388,6 +388,54 @@ class MemoryManager:
             return full_text[:max_chars] + "\n... (记忆已截断) ..."
         return full_text
 
+    async def get_summary_for_prompt_async(
+        self,
+        query: Optional[str] = None,
+        max_chars: int = 2000,
+        top_k: int = 15,
+    ) -> str:
+        """异步：为 System Prompt 生成记忆浓缩背景，支持语义召回，无阻塞"""
+        all_facts = self.backend.get_all_facts()
+        if not all_facts:
+            return ""
+
+        lines = ["# 长期记忆 (LTM Context):"]
+
+        entity_budget = 500
+        entities = [f for f in all_facts if f.entity_key and f.entity_value][:10]
+        entity_text = ""
+        if entities:
+            entity_lines = ["## 关键实体:"]
+            for f in entities:
+                entity_lines.append(f"- {f.entity_key}: {f.entity_value}")
+            entity_text = "\n".join(entity_lines)
+            if len(entity_text) > entity_budget:
+                entity_text = entity_text[:entity_budget] + "\n..."
+
+        if query:
+            if hasattr(self.search, "retrieve_async"):
+                relevant = await self.search.retrieve_async(query, top_k=top_k)
+            else:
+                relevant = self.search.retrieve(query, top_k=top_k)
+        else:
+            relevant = self.backend.get_by_priority(limit=top_k)
+
+        fact_lines = []
+        if relevant:
+            fact_lines.append("## 关键事实:")
+            for f in relevant:
+                lock_tag = " [锁定]" if f.locked else ""
+                fact_lines.append(f"- [{f.fact_type.value}]{lock_tag} {f.content}")
+
+        full_text = "\n".join(lines)
+        if entity_text:
+            full_text += "\n" + entity_text
+        full_text += "\n" + "\n".join(fact_lines)
+
+        if len(full_text) > max_chars:
+            return full_text[:max_chars] + "\n... (记忆已截断) ..."
+        return full_text
+
     def get_entity(self, key: str) -> Optional[str]:
         """精确查询结构化实体，如 get_entity("project_path")"""
         for fact in self.backend.get_all_facts():

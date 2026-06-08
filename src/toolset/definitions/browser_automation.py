@@ -122,7 +122,15 @@ class BrowserClickTool(BrowserBaseTool):
         if await element.count() == 0:
             await page.evaluate(ID_INJECTION_JS, ["button", "a"])
         await element.scroll_into_view_if_needed()
-        await element.click(timeout=10000)
+        try:
+            await element.click(timeout=5000)
+        except Exception as e:
+            logger.warning(f"BrowserClickTool: Standard click failed, fallback to force=True. Error: {e}")
+            try:
+                await element.click(timeout=3000, force=True)
+            except Exception as e2:
+                logger.warning(f"BrowserClickTool: Force click failed, fallback to JS click. Error: {e2}")
+                await element.evaluate("el => el.click()")
         await asyncio.sleep(1.5)
         return await self._get_processed_content(page)
 
@@ -332,7 +340,15 @@ class BrowserActTool(BrowserBaseTool):
             if await element.count() == 0:
                 await page.evaluate(ID_INJECTION_JS, ["button", "a"])
             await element.scroll_into_view_if_needed()
-            await element.click(timeout=10000)
+            try:
+                await element.click(timeout=5000)
+            except Exception as e:
+                logger.warning(f"BrowserActTool (click): Standard click failed, fallback to force=True. Error: {e}")
+                try:
+                    await element.click(timeout=3000, force=True)
+                except Exception as e2:
+                    logger.warning(f"BrowserActTool (click): Force click failed, fallback to JS click. Error: {e2}")
+                    await element.evaluate("el => el.click()")
             await asyncio.sleep(1.5)
             return await self._get_processed_content(page)
 

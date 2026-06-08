@@ -13,6 +13,65 @@ from .executor import _stream_with_chunk_timeout
 logger = logging.getLogger(__name__)
 
 
+def _extract_json_objects(text: str) -> list:
+    """从可能格式不完美的文本中提取顶层 JSON 对象列表。
+    使用字符串感知的括号匹配，避免 JSON 字符串值内的 {} 干扰解析。
+    Extract top-level JSON objects from potentially imperfect text,
+    using string-aware brace matching to ignore {} inside JSON string values."""
+    objects = []
+    i = 0
+    n = len(text)
+
+    while i < n:
+        # 跳过非 { 字符，寻找对象起点
+        if text[i] != "{":
+            i += 1
+            continue
+
+        # 找到 { 开始，用字符串感知的方式找匹配的 }
+        depth = 0
+        start = i
+        j = i
+        in_string = False
+        escape_next = False
+
+        while j < n:
+            c = text[j]
+
+            if escape_next:
+                escape_next = False
+                j += 1
+                continue
+
+            if c == "\\" and in_string:
+                escape_next = True
+                j += 1
+                continue
+
+            if c == '"':
+                in_string = not in_string
+            elif not in_string:
+                if c == "{":
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        obj_str = text[start : j + 1]
+                        try:
+                            obj = json.loads(obj_str)
+                            objects.append(obj)
+                        except json.JSONDecodeError:
+                            pass
+                        i = j + 1
+                        break
+            j += 1
+        else:
+            # 没找到匹配的 }，跳过这个 {
+            i += 1
+
+    return objects
+
+
 def _fast_tier_model() -> str:
     return getattr(settings, "MODEL_TIER_FAST", "") or settings.FAST_MODEL_NAME
 
@@ -86,7 +145,7 @@ class Strategist:
         # 获取最相关的记忆召回 (语义搜索)
         # Get most relevant memory recall (semantic search)
         memory_manager = self.memory_manager or MemoryManager()
-        ltm_context = memory_manager.get_summary_for_prompt(query=user_request)
+        ltm_context = await memory_manager.get_summary_for_prompt_async(query=user_request)
 
         # 组装五层 Prompt
         # Assemble five-layer Prompt
@@ -275,7 +334,7 @@ class Strategist:
         soul_loader = SoulLoader(llm_client=self.llm_client, model=settings.STRATEGIST_MODEL_NAME)
         # 获取最相关的记忆召回 (语义搜索)
         manager = self.memory_manager or MemoryManager()
-        ltm_context = manager.get_summary_for_prompt(query=user_request)
+        ltm_context = await manager.get_summary_for_prompt_async(query=user_request)
 
         # 组装五层 Prompt
         # 使用 __file__ 构建绝对路径，避免因 CWD 不同导致 src/src/prompts 双层路径 bug
@@ -320,66 +379,41 @@ class Strategist:
                 if delta.content:
                     full_content += delta.content
 
-                    # 使用正则灵活匹配 "subtasks" 的键名及后面的冒号（兼容所有空格抖动）
-                    # Flexibly match "subtasks" key name and colon with regex (tolerant of whitespace jitter)
+                    # 字符串感知的 JSON 对象提取（替代旧版 depth counter）
+                    # String-aware JSON object extraction (replaces legacy depth counter)
                     match = re.search(r'"subtasks"\s*:\s*(.*)', full_content, re.DOTALL | re.IGNORECASE)
                     if match:
-                        try:
-                            # 提取 subtasks 数组之后的部分
-                            # Extract the part after subtasks array
-                            subtasks_part = match.group(1)
+                        subtasks_part = match.group(1)
+                        for task_data in _extract_json_objects(subtasks_part):
+                            t_id = task_data.get("id", f"ST{len(yielded_ids) + 1}")
+                            instr = task_data.get("instruction", "").strip()
 
-                            # 查找完整的 JSON 对象 { ... }
-                            # Find complete JSON object { ... }
-                            depth = 0
-                            start_idx = -1
-                            for i, char in enumerate(subtasks_part):
-                                if char == "{":
-                                    if depth == 0:
-                                        start_idx = i
-                                    depth += 1
-                                elif char == "}":
-                                    depth -= 1
-                                    if depth == 0 and start_idx != -1:
-                                        obj_str = subtasks_part[start_idx : i + 1].strip()
-                                        try:
-                                            task_data = json.loads(obj_str)
-                                            # --- Pydantic 宽容构造 [DAY 5 NEW] ---
-                                            # --- Pydantic tolerant construction [DAY 5 NEW] ---
-                                            t_id = task_data.get("id", f"ST{len(yielded_ids) + 1}")
-                                            instr = task_data.get("instruction", "").strip()
-
-                                            # 严格校验：ID 存在、未重复、且指令不是占位符
-                                            # Strict validation: ID exists, not duplicate, instruction not a placeholder
-                                            if t_id not in yielded_ids and instr and len(instr) > 5:
-                                                # [V10.0] phase 由 DAG 拓扑推导，忽略 LLM 输出
-                                                task_data.pop("phase", None)
-                                                task_data.update(
-                                                    {
-                                                        "id": t_id,
-                                                        "instruction": instr,
-                                                        "domain": "UI"
-                                                        if task_data.get("domain") == "COMBAT"
-                                                        else task_data.get("domain", "SYSTEM"),
-                                                        "tool": task_data.get("tool", "system_tool"),
-                                                        "depends_on": task_data.get("depends_on", []),
-                                                        "on_failure": task_data.get("on_failure", "RETRY"),
-                                                        "requires_confirm": task_data.get("requires_confirm", False),
-                                                        "timeout": task_data.get(
-                                                            "timeout", settings.SUBTASK_MIN_TIMEOUT
-                                                        ),
-                                                        "owner": task_data.get("owner", "AGENT"),
-                                                        "confidence": task_data.get("confidence", "HIGH"),
-                                                        "risk_note": task_data.get("risk_note", ""),
-                                                    }
-                                                )
-                                                yield SubTask(**task_data)
-                                                yielded_ids.add(t_id)
-                                        except Exception as te:
-                                            logger.debug(f"⚠️ [Strategist] 解析单个子任务失败: {te}")
-                                            continue
-                        except Exception:
-                            continue
+                            # 严格校验：ID 存在、未重复、且指令不是占位符
+                            # Strict validation: ID exists, not duplicate, instruction not a placeholder
+                            if t_id not in yielded_ids and instr and len(instr) > 5:
+                                # [V10.0] phase 由 DAG 拓扑推导，忽略 LLM 输出
+                                task_data.pop("phase", None)
+                                task_data.update(
+                                    {
+                                        "id": t_id,
+                                        "instruction": instr,
+                                        "domain": "UI"
+                                        if task_data.get("domain") == "COMBAT"
+                                        else task_data.get("domain", "SYSTEM"),
+                                        "tool": task_data.get("tool", "system_tool"),
+                                        "depends_on": task_data.get("depends_on", []),
+                                        "on_failure": task_data.get("on_failure", "RETRY"),
+                                        "requires_confirm": task_data.get("requires_confirm", False),
+                                        "timeout": task_data.get(
+                                            "timeout", settings.SUBTASK_MIN_TIMEOUT
+                                        ),
+                                        "owner": task_data.get("owner", "AGENT"),
+                                        "confidence": task_data.get("confidence", "HIGH"),
+                                        "risk_note": task_data.get("risk_note", ""),
+                                    }
+                                )
+                                yield SubTask(**task_data)
+                                yielded_ids.add(t_id)
         except asyncio.TimeoutError:
             logger.error(
                 f"❌ [Strategist] plan_stream() 流中断：超过 {getattr(settings, 'LLM_STREAM_CHUNK_TIMEOUT', 30):.0f}s 无新 chunk，降级 FAILSAFE"
@@ -395,45 +429,58 @@ class Strategist:
             else:
                 logger.warning("🔍 [Strategist 诊断] full_content 为空，LLM 可能未返回任何内容")
 
-        # [DAY 5 Robust] 终极抢救机制：如果流式拆分完全失败，在流结束后使用全量正则进行静态强解析
-        # [DAY 5 Robust] Ultimate rescue: if streaming split completely fails, use full regex static parse after stream ends
+        # [DAY 5 Robust] 终极抢救机制：如果流式拆分完全失败，在流结束后使用字符串感知提取
+        # [DAY 5 Robust] Ultimate rescue: if streaming split completely fails, use string-aware extraction
         if not yielded_ids and full_content:
             logger.info(f"🔍 [Strategist Fallback] 尝试解析全量文本 (长度: {len(full_content)})")
             try:
-                # 步骤 1: 尝试剥离 Markdown
-                # Step 1: Attempt to strip Markdown
+                # 步骤 1: 剥离 Markdown 代码块
                 raw_text = re.sub(r"```json\n?|\n?```", "", full_content).strip()
-                # 步骤 2: 暴力寻找第一个 { 和最后一个 }
-                # Step 2: Brute-force find first { and last }
-                match = re.search(r"(\{.*\})", raw_text, re.DOTALL)
-                if match:
-                    json_str = match.group(1)
-                    plan_data = json.loads(json_str)
+                # 步骤 2: 先尝试完整 JSON 解析（如果整个回复就是一个 JSON 对象）
+                # Step 2: Try full JSON parse first (if the entire response is a single JSON object)
+                subtasks = []
+                try:
+                    plan_data = json.loads(raw_text)
                     subtasks = plan_data.get("subtasks", [])
-                    for i, t_obj in enumerate(subtasks):
-                        t_id = t_obj.get("id", f"ST{i + 1}")
-                        if t_id not in yielded_ids:
-                            t_obj.pop("phase", None)  # v10.0: 忽略 LLM 输出的 phase
-                            t_obj.update(
-                                {
-                                    "id": t_id,
-                                    "instruction": t_obj.get("instruction", "").strip(),
-                                    "domain": "UI"
-                                    if t_obj.get("domain") == "COMBAT"
-                                    else t_obj.get("domain", "SYSTEM"),
-                                    "tool": t_obj.get("tool", "generic_tool"),
-                                    "on_failure": t_obj.get("on_failure", "RETRY"),
-                                    "requires_confirm": t_obj.get("requires_confirm", False),
-                                    "timeout": t_obj.get("timeout", settings.SUBTASK_MIN_TIMEOUT),
-                                    "owner": t_obj.get("owner", "AGENT"),
-                                    "confidence": t_obj.get("confidence", "HIGH"),
-                                    "risk_note": t_obj.get("risk_note", ""),
-                                }
-                            )
-                            yield SubTask(**t_obj)
-                            yielded_ids.add(t_id)
-                else:
-                    logger.error(f"🚨 无法在回复中找到任何 JSON 块。Raw: {full_content[:200]}")
+                except (json.JSONDecodeError, ValueError):
+                    # 步骤 3: 用字符串感知提取器从文本中找出所有子任务对象
+                    # Step 3: Use string-aware extractor to find subtask objects in text
+                    match = re.search(r'"subtasks"\s*:\s*(.*)', raw_text, re.DOTALL | re.IGNORECASE)
+                    if match:
+                        for obj in _extract_json_objects(match.group(1)):
+                            if "id" in obj or "instruction" in obj:
+                                subtasks.append(obj)
+                    else:
+                        # 最后手段：在整个文本中搜索所有 JSON 对象
+                        for obj in _extract_json_objects(raw_text):
+                            if "id" in obj or "instruction" in obj:
+                                subtasks.append(obj)
+
+                for i, t_obj in enumerate(subtasks):
+                    t_id = t_obj.get("id", f"ST{i + 1}")
+                    if t_id not in yielded_ids:
+                        t_obj.pop("phase", None)  # v10.0: 忽略 LLM 输出的 phase
+                        t_obj.update(
+                            {
+                                "id": t_id,
+                                "instruction": t_obj.get("instruction", "").strip(),
+                                "domain": "UI"
+                                if t_obj.get("domain") == "COMBAT"
+                                else t_obj.get("domain", "SYSTEM"),
+                                "tool": t_obj.get("tool", "generic_tool"),
+                                "on_failure": t_obj.get("on_failure", "RETRY"),
+                                "requires_confirm": t_obj.get("requires_confirm", False),
+                                "timeout": t_obj.get("timeout", settings.SUBTASK_MIN_TIMEOUT),
+                                "owner": t_obj.get("owner", "AGENT"),
+                                "confidence": t_obj.get("confidence", "HIGH"),
+                                "risk_note": t_obj.get("risk_note", ""),
+                            }
+                        )
+                        yield SubTask(**t_obj)
+                        yielded_ids.add(t_id)
+
+                if not yielded_ids:
+                    logger.error(f"🚨 无法在回复中找到任何有效的子任务对象。Raw: {full_content[:200]}")
             except Exception as fe:
                 logger.error(f"❌ [Strategist] 全量纠错失败: {fe}")
 
@@ -451,9 +498,17 @@ class Strategist:
         if full_content:
             try:
                 raw_text = re.sub(r"```json\n?|\n?```", "", full_content).strip()
-                match = re.search(r"(\{.*\})", raw_text, re.DOTALL)
-                if match:
-                    plan_data = json.loads(match.group(1))
+                # 优先尝试完整 JSON 解析
+                plan_data = None
+                try:
+                    plan_data = json.loads(raw_text)
+                except (json.JSONDecodeError, ValueError):
+                    # 回退到字符串感知提取，寻找包含 blockers/deliverables 的对象
+                    for obj in _extract_json_objects(raw_text):
+                        if "blockers" in obj or "deliverables" in obj:
+                            plan_data = obj
+                            break
+                if plan_data:
                     self._last_plan_meta = {
                         "blockers": plan_data.get("blockers", []),
                         "deliverables": plan_data.get("deliverables", []),

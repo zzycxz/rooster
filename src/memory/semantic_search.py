@@ -270,6 +270,28 @@ class SemanticMemorySearch:
                 fact.touch()
         return results
 
+    async def retrieve_async(self, query: str, top_k: int = 15, touch: bool = True) -> List[MemoryFact]:
+        """
+        异步混合检索：BM25 + 向量 + 衰减。无阻塞设计。
+        """
+        if not self.facts:
+            return []
+
+        if not query:
+            decay_scores = self._decay_scores()
+            paired = sorted(zip(self.facts, decay_scores), key=lambda x: x[1], reverse=True)
+            return [f for f, _ in paired[:top_k]]
+
+        if self._use_new_path:
+            results = await self._retrieve_new_async(query, top_k)
+        else:
+            results = self._retrieve_legacy(query, top_k)
+
+        if touch:
+            for fact in results:
+                fact.touch()
+        return results
+
     def _retrieve_new(self, query: str, top_k: int) -> List[MemoryFact]:
         """新路径：SQLite FTS5 + 向量 + 衰减。"""
         # 异步嵌入查询
@@ -317,6 +339,54 @@ class SemanticMemorySearch:
             fact_scores[fid] = max(fact_scores.get(fid, 0.0), score)
 
         # 排序取 top_k
+        sorted_fids = sorted(fact_scores.keys(), key=lambda f: fact_scores[f], reverse=True)
+        fact_map = {f.fact_id: f for f in self.facts}
+        results = [fact_map[fid] for fid in sorted_fids[:top_k] if fid in fact_map]
+
+        if not results:
+            return self._retrieve_legacy(query, top_k)
+        return results
+
+    async def _retrieve_new_async(self, query: str, top_k: int) -> List[MemoryFact]:
+        """异步新路径：无阻塞嵌入查询 + SQLite FTS5 + 向量 + 衰减。"""
+        query_vec = None
+        try:
+            query_vecs = await self._embedder.embed([query])
+            query_vec = query_vecs[0] if query_vecs else None
+        except Exception as e:
+            logger.warning(f"异步查询嵌入失败，降级到旧路径: {e}")
+            return self._retrieve_legacy(query, top_k)
+
+        bm25_results = self._index.search_bm25(query, top_k=top_k * 2)
+        bm25_scores = {cid: score for cid, score in bm25_results}
+
+        vec_scores = {}
+        if query_vec:
+            vec_results = self._index.search_vector(query_vec, top_k=top_k * 2)
+            vec_scores = {cid: score for cid, score in vec_results}
+
+        all_cids = set(bm25_scores.keys()) | set(vec_scores.keys())
+        if not all_cids:
+            return self._retrieve_legacy(query, top_k)
+
+        fact_decay = {}
+        for fact in self.facts:
+            base = TYPE_PRIORITY.get(fact.fact_type, 0.5)
+            decay = _decay_weight(fact, datetime.now())
+            fact_decay[fact.fact_id] = base * decay * fact.confidence
+
+        fact_scores: dict[str, float] = {}
+        for cid in all_cids:
+            chunk = self._index.get_chunk(cid)
+            if not chunk or not chunk.fact_id:
+                continue
+            fid = chunk.fact_id
+            bm25_s = bm25_scores.get(cid, 0.0)
+            vec_s = vec_scores.get(cid, 0.0)
+            decay_s = fact_decay.get(fid, 0.5)
+            score = self.w_bm25 * bm25_s + self.w_vector * vec_s + self.w_decay * decay_s
+            fact_scores[fid] = max(fact_scores.get(fid, 0.0), score)
+
         sorted_fids = sorted(fact_scores.keys(), key=lambda f: fact_scores[f], reverse=True)
         fact_map = {f.fact_id: f for f in self.facts}
         results = [fact_map[fid] for fid in sorted_fids[:top_k] if fid in fact_map]

@@ -67,11 +67,16 @@ class SubAgentSpawnTool(BaseTool):
     )
     args_schema: Type[BaseModel] = SubAgentSpawnArgs
 
-    async def execute(self, args: SubAgentSpawnArgs) -> ToolResult:
+    async def execute(self, args: SubAgentSpawnArgs, ctx=None) -> ToolResult:
         # --- Recursion depth guard ---
 
-        # Always use depth from execution context (trust system, not LLM-supplied value)
-        current_depth = self.context.get("spawn_depth", 0)
+        # 优先从注入的 ctx 获取 spawn_depth，回退到 self.context
+        # ctx.extras 是 dataclass 字段，永远存在，所以必须检查具体 key 是否有值
+        current_depth = 0
+        if ctx and ctx.extras.get("spawn_depth") is not None:
+            current_depth = ctx.extras["spawn_depth"]
+        else:
+            current_depth = self.context.get("spawn_depth", 0)
         args.spawn_depth = current_depth
 
         if args.spawn_depth >= settings.MAX_SUBAGENT_DEPTH:
@@ -104,9 +109,14 @@ class SubAgentSpawnTool(BaseTool):
 
         logger.info(f"[SubAgent] 启动 {agent_id}: {args.task[:80]}")
 
-        # Try actual execution (if LLM Client is injected into context)
-        # 尝试实际执行（如果 LLM Client 已注入到 context）
-        llm_client = self.context.get("llm_client")
+        # 优先从注入的 ctx 获取 llm_client，回退到 self.context
+        # Prefer injected ctx for llm_client, fallback to self.context
+        llm_client = None
+        if ctx and hasattr(ctx, "llm_client") and ctx.llm_client:
+            llm_client = ctx.llm_client
+        else:
+            llm_client = self.context.get("llm_client")
+
         if llm_client is None:
             # When LLM not injected: record as PENDING, return agent_id for later query
             # LLM 未注入时：记录为 PENDING，返回 agent_id 供后续查询
@@ -115,6 +125,13 @@ class SubAgentSpawnTool(BaseTool):
                 f"Task: {args.task[:200]}\n"
                 f"Use `subagent_result` to check status."
             )
+
+        # 优先从注入的 ctx 获取当前模型，回退到 self.context
+        current_model = ""
+        if ctx and ctx.extras.get("current_model"):
+            current_model = ctx.extras["current_model"]
+        else:
+            current_model = self.context.get("current_model", "")
 
         # Inline execution (using independent coroutine + timeout)
         # 内联执行（使用独立协程 + timeout）
@@ -129,7 +146,7 @@ class SubAgentSpawnTool(BaseTool):
                 },
                 {"role": "user", "content": args.task},
             ]
-            model = args.model_hint or self.context.get("current_model", "")
+            model = args.model_hint or current_model
             output_text = ""
             async for delta in _stream_with_chunk_timeout(
                 llm_client.chat_stream(model=model, messages=messages),

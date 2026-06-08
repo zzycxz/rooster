@@ -58,7 +58,7 @@ class OcrExtractTool(BaseTool):
     def _extract(self, image_path: str, language: str, output_format: str) -> str:
         from paddleocr import PaddleOCR
 
-        ocr = PaddleOCR(use_angle_cls=True, lang=language, show_log=False)
+        ocr = PaddleOCR(use_angle_cls=True, lang=language)
         result = ocr.ocr(image_path, cls=True)
 
         if not result or not result[0]:

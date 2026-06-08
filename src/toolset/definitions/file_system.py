@@ -36,6 +36,14 @@ class FileSystemOpTool(BaseTool):
     domain: str = "craft"
     args_schema: Type[BaseModel] = FileSystemOpArgs
 
+    def _resolve_path_guard(self, ctx):
+        """优先从注入的 ctx 获取 path_guard，回退到 self.context / self.path_guard"""
+        if ctx and hasattr(ctx, "security_policy") and ctx.security_policy:
+            guard = ctx.security_policy.get("path_guard")
+            if guard:
+                return guard
+        return self.path_guard
+
     async def run(self, **kwargs) -> Any:
         action = kwargs.get("action", "").lower()
         path = kwargs.get("path")
@@ -43,7 +51,11 @@ class FileSystemOpTool(BaseTool):
         if not action or not path:
             return "Error: 'action' and 'path' are required arguments."
 
-        safe_path = self.path_guard.get_safe_path(path) if self.path_guard else path
+        # 支持注入的 ctx 和旧式 path_guard 两种来源
+        # Support both injected ctx and legacy path_guard sources
+        ctx = kwargs.get("ctx")
+        path_guard = self._resolve_path_guard(ctx)
+        safe_path = path_guard.get_safe_path(path) if path_guard else path
 
         try:
             if action == "list":

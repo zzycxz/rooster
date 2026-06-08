@@ -196,10 +196,6 @@ class DesktopGroundingScanArgs(BaseModel):
     save_path: Optional[str] = Field(
         default=None, description="打标图片保存路径。不填则自动保存到 .rooster/evidence/temp_snapshots/"
     )
-    mode: Optional[str] = Field(
-        default=None,
-        description="扫描模式：low=仅前台窗口（默认）| medium=全屏+仅可交互元素 | high=全屏+全量标注。不填则使用 .env 中 VISION_SCAN_MODE 配置。",
-    )
 
 
 class DesktopGroundingScanTool(BaseTool):
@@ -212,9 +208,8 @@ class DesktopGroundingScanTool(BaseTool):
         "Capture the local desktop screen, scan interactive UI elements via UIA, "
         "draw labeled bounding boxes (ID like A, B, AA...) on the screenshot, and return "
         "the element list (id, name, type, center coordinates). "
-        "Supports 3 scan modes (set via VISION_SCAN_MODE in .env or mode param): "
-        "low=foreground only (fastest, default), medium=all windows+A/K only, high=all windows+all categories. "
-        "After calling this tool, use desktop_click to click any element by its ID."
+        "Use this tool to find the ID of the target element before clicking it with desktop_act. "
+        "The scan mode is automatically controlled by the system settings."
     )
     domain = "vision"
     platforms: list = ["Windows", "Darwin"]
@@ -223,7 +218,7 @@ class DesktopGroundingScanTool(BaseTool):
     async def run(self, **kwargs) -> str:
         wait_secs = float(kwargs.get("wait_seconds", 2.0))
         save_path = kwargs.get("save_path")
-        mode = kwargs.get("mode") or getattr(settings, "VISION_SCAN_MODE", "low")
+        mode = getattr(settings, "VISION_SCAN_MODE", "low")
 
         if wait_secs > 0:
             await asyncio.sleep(wait_secs)
