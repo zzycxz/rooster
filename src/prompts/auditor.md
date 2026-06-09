@@ -127,7 +127,7 @@ Structural fields present → PASS. Intent mismatch → PASS_WITH_WARNING. Do NO
 | Success without evidence           | CRITICAL | status=SUCCESS but observation is empty AND no tool output or file artifacts are present. |
 | VERIFY step skipped                | INFO     | No visual verification in tool_call_trace for UI domain leaf node  |
 | GATE bypassed                      | CRITICAL | `requires_confirm: true` subtask has no CONFIRM_REQUIRED record    |
-| Cross-domain tool call             | CRITICAL | Non-RESOURCE domain called `magnet_sniffer`                        |
+| Cross-domain tool call             | CRITICAL | Non-RESOURCE domain called `multimedia_download(action='search')`   |
 | failure_code null on failure       | CRITICAL | status=FAILED but failure_code is null with no explanation         |
 | weighted_confidence below threshold | CRITICAL | Weighted source confidence < 0.4; or all sources are Grade C/X     |
 | Convergence violation               | CRITICAL | Numeric assertions across sources exceed divergence threshold with no divergence_explanation |

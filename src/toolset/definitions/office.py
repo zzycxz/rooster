@@ -4,78 +4,7 @@ from pydantic import BaseModel, Field
 from toolset.base import BaseTool
 
 
-# --- 1. EXCEL 工具 ---
-class ExcelWriteArgs(BaseModel):
-    path: str = Field(description="保存 Excel 的绝对路径。禁止在文件名中添加随机数或时间戳，确保任务周期内路径唯一。")
-    data: List[Dict[str, Any]] = Field(description="列表形式的 JSON 数据，例如：[{'公司': 'OpenAI', '估值': '800亿'}]")
-    sheet_name: str = Field(description="工作表名称", default="Sheet1")
-
-
-class ExcelWriteTool(BaseTool):
-    """机械化 Excel 写入工具"""
-
-    name: str = "excel_write"
-    kit: str = "Office"
-    fc_hidden: bool = True  # [Round 10] Use excel_op(action="write") instead
-    description: str = "Save structured JSON data as an Excel (.xlsx) file. Input must be a JSON array of objects with consistent keys."
-    domain: str = "craft"
-    args_schema: Type[BaseModel] = ExcelWriteArgs
-
-    async def run(self, **kwargs) -> str:
-        try:
-            import pandas as pd
-        except ImportError:
-            return "Error: 'pandas' or 'openpyxl' not installed. Please run 'pip install pandas openpyxl'."
-
-        path = kwargs.get("path")
-        data = kwargs.get("data", [])
-        sheet_name = kwargs.get("sheet_name", "Sheet1")
-
-        try:
-            df = pd.DataFrame(data)
-            # Ensure parent directory exists (orchestrator handles path validity, but tool layer still creates physically)
-            # 确保父目录存在 (编排器会负责路径合法性，但工具层依然做物理创建)
-            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-            df.to_excel(path, index=False, sheet_name=sheet_name)
-            return f"Successfully saved {len(data)} rows to Excel. [RESULT_PATH: {os.path.abspath(path)}]"
-        except Exception as e:
-            return f"Excel Write Error: {str(e)}"
-
-
-class ExcelReadArgs(BaseModel):
-    path: str = Field(description="Excel 文件路径")
-
-
-class ExcelReadTool(BaseTool):
-    """机械化 Excel 读取工具"""
-
-    name: str = "excel_read"
-    kit: str = "Office"
-    fc_hidden: bool = True  # [Round 10] Use excel_op(action="read") instead
-    description: str = (
-        "Read an Excel file and return its content as CSV-style text. Use this to inspect spreadsheet data."
-    )
-    domain: str = "craft"
-    args_schema: Type[BaseModel] = ExcelReadArgs
-
-    async def run(self, **kwargs) -> str:
-        try:
-            import pandas as pd
-        except ImportError:
-            return "Error: 'pandas' or 'openpyxl' not installed. Please run 'pip install pandas openpyxl'."
-
-        path = kwargs.get("path")
-        try:
-            df = pd.read_excel(path)
-            # Return first 20 rows to prevent context overflow (orchestrator applies secondary truncation)
-            # 返回前 20 条，防止上下文溢出（编排器会有二次截断，此处做初步控制）
-            csv_preview = df.to_csv(index=False)
-            return f"Excel Content Preview (Total {len(df)} rows):\n{csv_preview}"
-        except Exception as e:
-            return f"Excel Read Error: {str(e)}"
-
-
-# --- 2. WORD (DOCX) 工具 ---
+# --- 1. WORD (DOCX) 工具 ---
 class DocxWriteArgs(BaseModel):
     path: str = Field(description="保存 Word (.docx) 的路径")
     markdown_content: str = Field(description="包含 Markdown 语法的内容，支持标题、列表、表格、图片")
@@ -439,109 +368,6 @@ class DocxWriteTool(BaseTool):
         return dict(self.STYLE_PRESETS["default"])
 
 
-# --- 3. PDF 工具 ---
-class PdfWriteArgs(BaseModel):
-    path: str = Field(description="保存 PDF (.pdf) 的路径")
-    content: str = Field(description="PDF 的文本内容")
-    title: str = Field(description="文档标题", default="Rooster Investigation Report")
-
-
-class PdfWriteTool(BaseTool):
-    """职业化 PDF 生成工具 (基于 fpdf2)"""
-
-    name: str = "office_pdf_write"
-    kit: str = "Office"
-    fc_hidden: bool = True  # [Round 10] Use pdf_op(action="write") instead
-    description: str = "Export text content as a formatted PDF report. Use this to generate deliverable documents."
-    domain: str = "craft"
-    args_schema: Type[BaseModel] = PdfWriteArgs
-
-    async def run(self, **kwargs) -> str:
-        try:
-            from fpdf import FPDF
-        except ImportError:
-            return "Error: 'fpdf2' not installed. Please run 'pip install fpdf2'."
-
-        path = kwargs.get("path")
-        content = kwargs.get("content", "")
-        title = kwargs.get("title", "Rooster Report")
-
-        try:
-            pdf = FPDF()
-            pdf.add_page()
-            # Try to load a Chinese-compatible font (common Windows paths)
-            # 尝试加载能显示中文的字体（Windows 常用路径）
-            font_added = False
-            for font_p in [
-                "C:\\Windows\\Fonts\\simhei.ttf",
-                "C:\\Windows\\Fonts\\msyh.ttc",
-                "C:\\Windows\\Fonts\\simsun.ttc",
-                "/System/Library/Fonts/PingFang.ttc",
-                "/System/Library/Fonts/STHeiti Light.ttc",
-                "/Library/Fonts/Arial Unicode.ttf",
-            ]:
-                if os.path.exists(font_p):
-                    pdf.add_font("Sans", "", font_p)
-                    pdf.add_font("Sans", "B", font_p)  # Reuse for Bold
-                    pdf.set_font("Sans", size=12)
-                    font_added = True
-                    break
-
-            if not font_added:
-                pdf.set_font("Helvetica", size=12)
-
-            # Title
-            if font_added:
-                pdf.set_font("Sans", "B", 16)
-            else:
-                pdf.set_font("Helvetica", "B", 16)
-            pdf.cell(0, 10, title, ln=True, align="C")
-            pdf.ln(10)
-
-            # Content
-            if font_added:
-                pdf.set_font("Sans", "", 12)
-            else:
-                pdf.set_font("Helvetica", "", 12)
-            pdf.multi_cell(0, 10, content)
-
-            pdf.output(path)
-            return f"Successfully generated Professional PDF report. [RESULT_PATH: {os.path.abspath(path)}]"
-        except Exception as e:
-            return f"PDF Write Error: {str(e)}"
-
-
-class PdfReadArgs(BaseModel):
-    path: str = Field(description="PDF 文件路径")
-
-
-class PdfReadTool(BaseTool):
-    """机械化 PDF 读取工具"""
-
-    name: str = "office_pdf_read"
-    kit: str = "Office"
-    fc_hidden: bool = True  # [Round 10] Use pdf_op(action="read") instead
-    description: str = "Extract plain text content from a PDF file. Returns all readable text from the document."
-    domain: str = "craft"
-    args_schema: Type[BaseModel] = PdfReadArgs
-
-    async def run(self, **kwargs) -> str:
-        try:
-            from pypdf import PdfReader
-        except ImportError:
-            return "Error: 'pypdf' not installed. Please run 'pip install pypdf'."
-
-        path = kwargs.get("path")
-        try:
-            reader = PdfReader(path)
-            text = ""
-            for page in reader.pages:
-                text += page.extract_text() + "\n"
-            return text if text.strip() else "Empty PDF or text not extractable."
-        except Exception as e:
-            return f"PDF Read Error: {str(e)}"
-
-
 # ---------------------------------------------------------------------------
 # [Round 10] excel_op — unified Excel macro
 # Replaces: excel_read, excel_write
@@ -563,8 +389,10 @@ class ExcelOpTool(BaseTool):
     name: str = "excel_op"
     kit: str = "Office"
     description: str = (
-        "Unified Excel tool. Use action='read' to read an existing Excel file and return CSV-style content. "
-        "Use action='write' to save structured JSON data as an Excel (.xlsx) file."
+        "Excel (.xlsx) read/write tool. Actions:\n"
+        "- 'read': Read an existing Excel file and return CSV-style text. Requires: path.\n"
+        "- 'write': Save structured JSON data as an Excel file. Requires: path, data (JSON array of objects). Optional: sheet_name.\n"
+        "NOT for: CSV files (use file_system_op), HTML tables (use python_interpreter)."
     )
     domain: str = "craft"
     args_schema: Type[BaseModel] = ExcelOpArgs
@@ -623,8 +451,10 @@ class PdfOpTool(BaseTool):
     name: str = "pdf_op"
     kit: str = "Office"
     description: str = (
-        "Unified PDF tool. Use action='read' to extract all readable text from a PDF file. "
-        "Use action='write' to generate a formatted PDF report from text content."
+        "PDF read/write tool. Actions:\n"
+        "- 'read': Extract all readable text from a PDF file. Requires: path.\n"
+        "- 'write': Generate a formatted PDF report from text content. Requires: path, content, title (optional).\n"
+        "NOT for: Word documents (use office_docx_write), images (use ocr_extract)."
     )
     domain: str = "craft"
     args_schema: Type[BaseModel] = PdfOpArgs

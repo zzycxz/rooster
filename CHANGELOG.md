@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.5.8] - 2026-06-09
+
+> **涵盖**: 模型配置范式统一 | 多模态链路修复 | HITL 引擎级拦截 | Strategist 流式解析加固 | 工具 DI 上下文接通 | REMAND 纠错上下文增强
+> **核心范式**: 智能体只选厂商（`MODEL_MODE`），具体模型由 `LLMClient` 按 provider 自动解析，杜绝跨厂商模型名冲突；多模态是 provider 级别的能力声明，有图片时自动路由到 `VISION_CAPABLE_PROVIDERS`。
+
+---
+
+### Added
+
+- **Exa.ai 深度检索扩展**：`WebSearchTool` 新增 `max_results` (上限提升至 20)、`offset` 深度翻页支持，以及 `exa_category` (news, research paper, financial report 等垂类切分)，大幅提升科研级信息获取能力。
+- **引擎级安全网拦截 (Engine-Level HITL)**：在 `tool_dispatch.py` 中下沉实现高危操作拦截。当 `PermissionPolicy` 阻断工具执行时，不再只返回错误，而是主动向前端发射 `require_user_input` 生命周期事件，无缝触发 Dashboard 的 `confirmCard`。
+- **上下文 Bypass 机制**：调度层动态检查 `session_history`，若检测到用户回复了确认意图词（如 “confirm”, “同意” 等），将自动放行被拦截的工具调用，全程无需大模型参与判断。
+- **大模型免责条款提示词**：更新了 `base.md` (`SAFETY_NET_BYPASS`) 和 `executor.md`，显式告知大模型”底层已有安全网兜底”，遇到高危指令时必须果断执行，不得先在对话中唯唯诺诺地索要权限。
+- **字符串感知 JSON 提取器 (`_extract_json_objects`)**：在 `strategist.py` 中新增字符串感知的括号匹配提取器，正确处理 JSON 字符串值内的 `{}`，替代旧版 depth counter 在流式解析中遇到 LLM 输出抖动时误匹配的问题。
+- **异步记忆检索管道**：`MemoryManager.get_summary_for_prompt_async()` 和 `SemanticMemorySearch.retrieve_async()` 新增异步路径， Strategist 的 `decide()` / `plan_stream()` 调用不再阻塞事件循环。(`memory/manager.py`, `memory/semantic_search.py`)
+- **Browser Click 三级降级策略**：`BrowserClickTool` / `BrowserActTool` 的点击操作新增 `标准点击 → force=True 强制点击 → JS el.click()` 三级降级链，显著提升复杂 DOM 场景下的操作成功率。(`toolset/definitions/browser_automation.py`)
+- **多模态 Vision 能力声明 (`VISION_CAPABLE_PROVIDERS`)**：新增 provider 级别的 vision 能力配置，声明哪些 provider 支持多模态（默认：mimo, zhipu_codingplan, openai, anthropic, cloud）。用户发图片时，若当前 provider 不支持 vision（如 local），自动路由到第一个可用的 vision-capable provider。(`providers.py`, `mission_runner.py`)
+- **`decide()` 多模态支持**：`Strategist.decide()` 新增 `images` 参数，DIRECT_REPLY 路径正确构造多模态 content（`image_url` 格式），不再丢失用户附带的图片。(`strategist.py`)
+
+### Changed
+
+- **模型配置范式统一 — 智能体只选厂商**：删除 6 个跨厂商模型名字段（`STRATEGIST_MODEL_NAME` / `EXECUTOR_MODEL_NAME` / `AUDITOR_MODEL_NAME` / `AUDITOR_TEXT_MODEL` / `AUDITOR_VISION_MODEL` / `REFRAMER_MODEL_NAME`），所有智能体统一只配置 `MODEL_MODE`（厂商），具体模型由 `LLMClient._get_default_model(provider)` 按 provider 自动解析。修复了 `AUDITOR_TEXT_MODEL=openai/gpt-oss-120b` 被发给 `zhipu_codingplan` 导致 “模型不存在” 400 错误的根因。(`providers.py`, `.env`, `mission_runner.py`, `strategist.py`, `auditor.py`, `executor.py`, `reframer.py`, `router.py`, `security.py`)
+- **多模态链路贯通**：`run_with_decision()` 从 session history 提取 images 并传递给 `decide()`；`AgentRunConfig` 构造时注入 `images=images`；`_resolve_subtask_target()` 有图片时自动调用 `_resolve_vision_fallback()` 路由到支持 vision 的 provider；DIRECT_REPLY fallback 路径也支持 images。(`mission_runner.py`)
+- **Strategist 流式解析全面重写**：`plan_stream()` 的流式子任务拆包和终极抢救（Fallback）两个路径统一切换到 `_extract_json_objects`，消除旧版 depth counter 在 JSON 字符串值包含 `{}` 时的误匹配。同时终极抢救路径新增完整 JSON → subtasks 键提取 → 全文扫描三级逐降级策略。(`strategist.py`)
+- **Strategist 元数据提取加固**：`_extract_plan_meta()` 中的 blockers/deliverables 提取从正则贪婪匹配改为优先 `json.loads` → `_extract_json_objects` 降级链，修复 Markdown 包裹的规划输出无法提取元数据的问题。(`strategist.py`)
+- **REMAND 重试上下文增强**：`MissionRunner` REMAND 重试时注入「上次执行结论（已驳回）」+「审计官修正指令」+「工具输出」三层纠错上下文（从宏观到微观），替代原来只注入工具输出的单薄信息。(`mission_runner.py`)
+- **上游观测截断上限提升**：Executor 的 `_MAX_PREV_OBS` 从 2000 字符提升至 8000，减少复杂多步任务中上游结论被过度截断导致下游子任务丢失关键信息的问题。(`executor.py`)
+- **Executor 综合/紧急摘要超时保护**：将 `chat_stream` 的综合摘要和紧急摘要调用包裹在 `asyncio.wait_for(timeout=120)` 中，防止 LLM 无限流式输出导致 Executor 卡死。(`executor.py`)
+- **工具 DI 上下文接通（v14.1 管道用水）**：
+  - `FileSystemOpTool`：优先从注入的 `ctx.security_policy` 获取 `path_guard`，回退到旧式 `self.path_guard`。(`file_system.py`)
+  - `MemoryAddFactTool`：优先从注入的 `ctx.memory_manager` 获取已初始化的 MemoryManager（复用连接池和缓存），回退到重新构造。移除顶层 `MemoryManager` 导入，改为延迟导入。(`memory.py`)
+  - `SubAgentSpawnTool`：优先从注入的 `ctx` 获取 `llm_client`、`spawn_depth`、`current_model`，回退到 `self.context` dict。(`subagent.py`)
+- **DesktopGroundingScan 简化**：移除 `mode` 参数暴露（由系统配置 `VISION_SCAN_MODE` 统一管控），简化工具描述，减少 LLM 误用。(`visual_control.py`)
+- **OpenAI Adapter 日志降噪**：reasoning 字段兜底提取 content 的日志级别从 `WARNING` 降为 `INFO`，减少正常推理模型输出时的告警噪音。(`openai_adapter.py`)
+
+### Removed
+
+- **跨厂商模型名字段**：删除 `STRATEGIST_MODEL_NAME`、`EXECUTOR_MODEL_NAME`、`AUDITOR_MODEL_NAME`、`AUDITOR_TEXT_MODEL`、`AUDITOR_VISION_MODEL`、`REFRAMER_MODEL_NAME`。智能体不再直接指定具体模型名，统一由 provider 默认模型机制接管。
+- **Plan Mode 彻底移除**：删除了高并发风险反模式的遗留代码 `src/toolset/definitions/plan_mode.py`。智能体的意图确认不再通过实体工具完成，彻底解决单例状态死锁和并发串台问题。
 ## [0.5.5] - 2026-06-03
 
 > **涵盖**: V15 路由架构重写 — L1 硬路由 + Strategist 语义主权

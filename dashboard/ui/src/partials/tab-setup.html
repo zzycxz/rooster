@@ -197,6 +197,30 @@
               </div>
             </div>
 
+            <!-- Volcengine Ark Coding Plan Card -->
+            <div class="bg-slate-850/80 border border-slate-700/60 rounded-xl p-4 space-y-3 shadow-lg hover:border-green-500/30 transition-all">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-green-300 flex items-center gap-1.5">🌋 <span x-text="t('setup_provider_volcengine_codingplan')"></span></span>
+                <div class="flex items-center gap-2">
+                  <span x-show="providerTestStatus?.volcengine_codingplan?.ok === true" class="text-[10px] text-green-400 font-bold px-1.5 py-0.5">✓ OK</span>
+                  <span x-show="providerTestStatus?.volcengine_codingplan?.ok === false" class="text-[10px] text-red-400 font-bold px-1.5 py-0.5" :title="providerTestStatus.volcengine_codingplan?.error">✗ FAIL</span>
+                  <span class="text-[10px] text-slate-500 uppercase font-mono">VOLCENGINE CODING</span>
+                </div>
+              </div>
+              <div class="space-y-2">
+                <label class="block space-y-1">
+                  <span class="text-[10px] text-slate-400">VOLCENGINE_CODINGPLAN_KEY (API Key)</span>
+                  <input type="password" x-model="setupForm.VOLCENGINE_CODINGPLAN_KEY" placeholder="your-volcengine-api-key"
+                         class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-green-500 font-mono" />
+                </label>
+                <label class="block space-y-1">
+                  <span class="text-[10px] text-slate-400">VOLCENGINE_CODINGPLAN_MODEL (模型名称，默认 deepseek-v4-pro)</span>
+                  <input type="text" x-model="setupForm.VOLCENGINE_CODINGPLAN_MODEL" placeholder="deepseek-v4-pro"
+                         class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-green-500 font-mono" />
+                </label>
+              </div>
+            </div>
+
             <!-- Kimi (Moonshot) Card -->
             <div class="bg-slate-850/80 border border-slate-700/60 rounded-xl p-4 space-y-3 shadow-lg hover:border-cyan-500/30 transition-all">
               <div class="flex items-center justify-between">
@@ -553,6 +577,7 @@
                         class="w-full bg-slate-900 border border-slate-600 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-green-500">
                   <option value="" x-text="t('auto_broker')"></option>
                   <option value="zhipu_codingplan" x-text="t('setup_option_zhipu_codingplan')"></option>
+                  <option value="volcengine_codingplan" x-text="t('setup_option_volcengine_codingplan')"></option>
                   <option value="openai">OpenAI</option>
                   <option value="anthropic">Anthropic Claude</option>
                   <option value="kimi" x-text="t('setup_option_kimi')"></option>
@@ -572,6 +597,7 @@
                         class="w-full bg-slate-900 border border-slate-600 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-green-500">
                   <option value="" x-text="t('auto_broker')"></option>
                   <option value="zhipu_codingplan" x-text="t('setup_option_zhipu_codingplan')"></option>
+                  <option value="volcengine_codingplan" x-text="t('setup_option_volcengine_codingplan')"></option>
                   <option value="openai">OpenAI</option>
                   <option value="anthropic">Anthropic Claude</option>
                   <option value="kimi" x-text="t('setup_option_kimi')"></option>
@@ -591,6 +617,7 @@
                         class="w-full bg-slate-900 border border-slate-600 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-green-500">
                   <option value="" x-text="t('auto_broker')"></option>
                   <option value="zhipu_codingplan" x-text="t('setup_option_zhipu_codingplan')"></option>
+                  <option value="volcengine_codingplan" x-text="t('setup_option_volcengine_codingplan')"></option>
                   <option value="openai">OpenAI</option>
                   <option value="anthropic">Anthropic Claude</option>
                   <option value="kimi" x-text="t('setup_option_kimi')"></option>

@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import time
 from typing import Any, Dict, List, Optional
@@ -240,6 +241,39 @@ class MCPRunner:
 
     # ── 安装方法 ───────────────────────────────────────────────────
 
+    # 包名安全白名单：仅允许字母、数字、连字符、下划线、点、@scope、中划线
+    _SAFE_PKG_RE = re.compile(r"^[a-zA-Z0-9@/_.\-]+$")
+
+    def _validate_pkg_name(self, pkg: str):
+        """校验包名安全性，拒绝注入 pip 参数或 shell 命令的包名。"""
+        if not self._SAFE_PKG_RE.match(pkg):
+            raise ValueError(
+                f"Invalid package name '{pkg}': only alphanumeric, hyphens, underscores, "
+                f"dots, and @scope prefixes are allowed."
+            )
+
+    def _validate_command(self, command: str):
+        """校验启动命令安全性。"""
+        if not command or not command.strip():
+            raise ValueError("MCP server command must not be empty.")
+        # 禁止 shell 元字符
+        for ch in (";", "|", "&", "$", "`", "(", ")", "<", ">", "\n", "\r"):
+            if ch in command:
+                raise ValueError(
+                    f"Invalid command '{command[:50]}': shell metacharacter '{ch}' is not allowed."
+                )
+
+    def _validate_args(self, args: List[str]):
+        """校验启动参数安全性。"""
+        for arg in args:
+            if not isinstance(arg, str):
+                raise ValueError(f"Invalid arg: must be string, got {type(arg).__name__}.")
+            for ch in (";", "|", "&", "$", "`", "\n", "\r"):
+                if ch in arg:
+                    raise ValueError(
+                        f"Invalid argument '{arg[:50]}': shell metacharacter '{ch}' is not allowed."
+                    )
+
     async def _install_python(self, inst: MCPServerInstance):
         """使用 UV 创建隔离 venv 并安装 Python MCP Server 依赖。"""
         server_dir = inst.base_dir
@@ -251,15 +285,17 @@ class MCPRunner:
         if not uv_cmd:
             # 降级：使用系统 Python venv + pip
             logger.warning("[MCP Runner] UV not found, falling back to python -m venv + pip")
-            await self._run_cmd(f'python -m venv "{venv_dir}"')
+            await self._run_cmd(["python", "-m", "venv", venv_dir])
             pip_path = os.path.join(venv_dir, "Scripts" if os.name == "nt" else "bin", "pip")
             for pkg in inst.defn.packages:
-                await self._run_cmd(f'"{pip_path}" install {pkg}')
+                self._validate_pkg_name(pkg)
+                await self._run_cmd([pip_path, "install", pkg])
         else:
             # UV 快速路径
-            await self._run_cmd(f'{uv_cmd} venv "{venv_dir}" --python 3.12')
+            await self._run_cmd([uv_cmd, "venv", venv_dir, "--python", "3.12"])
             for pkg in inst.defn.packages:
-                await self._run_cmd(f'{uv_cmd} pip install --python "{venv_dir}" {pkg}')
+                self._validate_pkg_name(pkg)
+                await self._run_cmd([uv_cmd, "pip", "install", "--python", venv_dir, pkg])
 
         logger.info(f"[MCP Runner] Python venv created at {venv_dir}")
 
@@ -280,6 +316,10 @@ class MCPRunner:
         inst.status = "starting"
         inst.error_message = ""
 
+        # 安全校验启动命令和参数
+        self._validate_command(inst.defn.command)
+        self._validate_args(inst.defn.args)
+
         try:
             if inst.defn.runtime == "python":
                 cmd, env = self._build_python_cmd(inst)
@@ -291,8 +331,8 @@ class MCPRunner:
             # 合并环境变量
             full_env = {**os.environ, **inst.defn.env_vars, **env}
 
-            process = await asyncio.create_subprocess_shell(
-                cmd,
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=full_env,
@@ -358,7 +398,7 @@ class MCPRunner:
 
         # 如果 UV 可用，用 uv run 以确保环境隔离
         # 否则直接用 venv 中的 python
-        cmd_parts = [f'"{python_path}"', "-m", inst.defn.command]
+        cmd_parts = [python_path, "-m", inst.defn.command]
         if inst.defn.args:
             cmd_parts.extend(inst.defn.args)
 
@@ -367,7 +407,7 @@ class MCPRunner:
         if inst.defn.port > 0:
             env["MCP_PORT"] = str(inst.defn.port)
 
-        return " ".join(cmd_parts), env
+        return cmd_parts, env
 
     def _build_node_cmd(self, inst: MCPServerInstance) -> tuple:
         """构建 Node MCP Server 启动命令。"""
@@ -379,7 +419,7 @@ class MCPRunner:
         if inst.defn.port > 0:
             env["PORT"] = str(inst.defn.port)
 
-        return " ".join(cmd_parts), env
+        return cmd_parts, env
 
     async def _detect_url(self, inst: MCPServerInstance, timeout: float = 8.0) -> str:
         """
@@ -552,11 +592,13 @@ class MCPRunner:
             return {}
 
     @staticmethod
-    async def _run_cmd(cmd: str, timeout: float = 120.0):
-        """执行系统命令。"""
+    async def _run_cmd(cmd: List[str], timeout: float = 120.0):
+        """执行系统命令，cmd 必须是 list 形式（避免 shell 注入）。"""
+        if not isinstance(cmd, list) or not cmd:
+            raise ValueError(f"_run_cmd requires a non-empty list, got: {type(cmd)}")
         logger.debug(f"[MCP Runner] Running: {cmd}")
-        proc = await asyncio.create_subprocess_shell(
-            cmd,
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -564,7 +606,8 @@ class MCPRunner:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
             proc.kill()
-            raise RuntimeError(f"Command timed out: {cmd[:100]}")
+            cmd_str = cmd[0] if isinstance(cmd, list) else str(cmd)
+            raise RuntimeError(f"Command timed out: {cmd_str[:100]}")
 
         if proc.returncode != 0:
             err = stderr.decode("utf-8", errors="replace")[:500]
@@ -577,8 +620,8 @@ class MCPRunner:
         """检测 UV 是否可用。"""
         for cmd in ("uv", "uv.exe"):
             try:
-                proc = await asyncio.create_subprocess_shell(
-                    f"{cmd} --version",
+                proc = await asyncio.create_subprocess_exec(
+                    cmd, "--version",
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
@@ -594,8 +637,8 @@ class MCPRunner:
         """检测 npx 是否可用。"""
         for cmd in ("npx", "npx.cmd", "npx.exe"):
             try:
-                proc = await asyncio.create_subprocess_shell(
-                    f"{cmd} --version",
+                proc = await asyncio.create_subprocess_exec(
+                    cmd, "--version",
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )

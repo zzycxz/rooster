@@ -41,10 +41,7 @@ _ALLOWED_CONFIG_KEYS = frozenset(
         "MIMO_KEY",
         "MIMO_MODEL",
         "SEARXNG_URL",
-        "ENABLE_SEARCH_DDG",
         "ENABLE_SEARCH_SEARXNG",
-        "ENABLE_SEARCH_BAIDU",
-        "ENABLE_SEARCH_TAVILY",
         "TAVILY_API_KEY",
         "GATEWAY_API_KEY",
         "WEBHOOK_HMAC_SECRET",
@@ -67,7 +64,6 @@ _ALLOWED_CONFIG_KEYS = frozenset(
         # --- Multi-LLM Role Assignments (V15: ROUTER/SOLO removed) ---
         "STRATEGIST_MODEL_MODE",
         "EXECUTOR_MODEL_MODE",
-        "EXECUTOR_MODEL_NAME",
         "AUDITOR_MODEL_MODE",
         # --- Failover & Retry ---
         "LLM_FAILOVER_ENABLED",

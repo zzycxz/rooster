@@ -56,9 +56,9 @@ class MissionRunner:
 
         # 各角色 LLM 客户端
         # LLM clients per role
-        self.strat_llm = LLMClient(provider=settings.STRATEGIST_MODEL_MODE, model=settings.STRATEGIST_MODEL_NAME)
-        self.audit_llm = LLMClient(provider=settings.AUDITOR_MODEL_MODE, model=settings.AUDITOR_MODEL_NAME)
-        self.exec_llm = LLMClient(provider=settings.EXECUTOR_MODEL_MODE, model=settings.EXECUTOR_MODEL_NAME)
+        self.strat_llm = LLMClient(provider=settings.STRATEGIST_MODEL_MODE)
+        self.audit_llm = LLMClient(provider=settings.AUDITOR_MODEL_MODE)
+        self.exec_llm = LLMClient(provider=settings.EXECUTOR_MODEL_MODE)
 
         self.strategist = Strategist(
             self.strat_llm, memory_manager=self.memory_manager, tool_registry=self.tool_registry
@@ -209,25 +209,49 @@ class MissionRunner:
         tier = self._normalize_model_tier(model_tier)
         if tier == "fast":
             provider = getattr(settings, "FAST_MODEL_PROVIDER", "") or settings.EXECUTOR_MODEL_MODE
-            model = getattr(settings, "MODEL_TIER_FAST", "") or settings.FAST_MODEL_NAME or settings.EXECUTOR_MODEL_NAME
+            model = getattr(settings, "MODEL_TIER_FAST", "") or settings.FAST_MODEL_NAME or self.exec_llm.model_name
             return provider, model
         if tier == "reasoning":
             return (
                 settings.EXECUTOR_MODEL_MODE,
-                getattr(settings, "MODEL_TIER_REASONING", "") or settings.EXECUTOR_MODEL_NAME,
+                getattr(settings, "MODEL_TIER_REASONING", "") or self.exec_llm.model_name,
             )
         return (
             settings.EXECUTOR_MODEL_MODE,
-            getattr(settings, "MODEL_TIER_STANDARD", "") or settings.EXECUTOR_MODEL_NAME,
+            getattr(settings, "MODEL_TIER_STANDARD", "") or self.exec_llm.model_name,
         )
 
-    def _resolve_subtask_target(self, st: SubTask, model_tier: Optional[str]) -> tuple[str, str, bool]:
+    def _resolve_vision_fallback(self, provider: str) -> str:
+        """若当前 provider 不支持多模态，返回第一个可用的 vision-capable provider。"""
+        vision_providers = getattr(settings, "VISION_CAPABLE_PROVIDERS", [])
+        if provider in vision_providers:
+            return provider
+        # 降级到第一个有 key 的 vision provider
+        for vp in vision_providers:
+            if vp == provider:
+                continue
+            try:
+                from models.factory import ModelFactory
+                if ModelFactory.get_client(vp):
+                    return vp
+            except Exception:
+                continue
+        return provider  # 实在没有就原样返回，让 API 报错自然暴露问题
+
+    def _resolve_subtask_target(self, st: SubTask, model_tier: Optional[str], *, has_images: bool = False) -> tuple[str, str, bool]:
         is_local_domain = False
         if st.domain and settings.LOCAL_MODEL:
             is_local_domain = any(d.lower() == st.domain.lower() for d in getattr(settings, "OLLAMA_DOMAINS", []))
-        if is_local_domain:
+        if is_local_domain and not has_images:
             return "local", settings.LOCAL_MODEL, True
         provider, model = self._resolve_executor_target(model_tier)
+        # 多模态路由：有图片时确保 provider 支持 vision
+        if has_images:
+            vision_provider = self._resolve_vision_fallback(provider)
+            if vision_provider != provider:
+                logger.info(f"🖼️ [Vision Router] {provider} 不支持多模态，自动路由至 {vision_provider}")
+                provider = vision_provider
+                model = ""  # 空 model 让 LLMClient 用 provider 的默认模型
         return provider, model, False
 
     # ------------------------------------------------------------------
@@ -691,7 +715,7 @@ class MissionRunner:
                         f"🏁 [{st.id}] RACE 模式：竞速分组 '{getattr(st, 'race_group', '')}'，首完成者取消兄弟任务"
                     )
 
-                subtask_provider, subtask_model, is_local_domain = self._resolve_subtask_target(st, decision_model_tier)
+                subtask_provider, subtask_model, is_local_domain = self._resolve_subtask_target(st, decision_model_tier, has_images=bool(images))
 
                 # Broadcast subtask start to blackboard so peers know this slot is active
                 await blackboard.update_progress(st.id, "running", step=0)
@@ -709,6 +733,7 @@ class MissionRunner:
                     history=history,
                     policy_override=subtask_policy,
                     blackboard=blackboard,
+                    images=images,
                 )
 
                 # Each subtask gets its own LLMClient instance.
@@ -1274,11 +1299,18 @@ class MissionRunner:
         """
         logger.info(f"[V15] run_with_decision 启动: {original_text[:80]}")
 
+        # 从 session history 提取用户附带的图片
+        session = global_session_store.get_or_create(msg.session_id)
+        images = []
+        if session.history and getattr(session.history[-1], "images", None):
+            images = session.history[-1].images
+
         # 1. 调用 Strategist.decide()（含异常保护，降级为 SINGLE_STEP）
         try:
             plan_decision = await self.strategist.decide(
                 user_request=original_text,
                 skill_hint=skill_hint,
+                images=images,
             )
         except Exception as e:
             logger.error(f"[V15] Strategist.decide() 异常，降级为 SINGLE_STEP: {e}")
@@ -1318,9 +1350,17 @@ class MissionRunner:
                 logger.warning(f"[V15 DIRECT_REPLY] 流式失败，降级一次性发送: {e}")
                 if not _buffer:
                     try:
+                        # fallback 时复用 images（如有）
+                        if images:
+                            user_content = [{"type": "text", "text": original_text}]
+                            for b64 in images:
+                                data_url = b64 if b64.startswith("data:") else f"data:image/png;base64,{b64}"
+                                user_content.append({"type": "image_url", "image_url": {"url": data_url}})
+                        else:
+                            user_content = original_text
+
                         fallback = await self.strat_llm.chat_non_stream(
-                            messages=[{"role": "user", "content": original_text}],
-                            model=settings.FAST_MODEL_NAME,
+                            messages=[{"role": "user", "content": user_content}],
                         )
                         _buffer = [fallback.content or ""]
                     except Exception as fallback_err:

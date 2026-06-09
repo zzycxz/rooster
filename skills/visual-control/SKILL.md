@@ -40,7 +40,7 @@ metadata:
   → 返回带字母标签的截图（A=按钮1, B=输入框2 ...）
 
 步骤 2：执行交互（通过宏工具 desktop_act）
-  desktop_act(action="click", element_id="A", scan_cache="<上一步返回的 cache_key>")
+  desktop_act(action="click", element_id="A", scan_cache="<上一步返回的 scan_cache JSON 字符串>")
   desktop_act(action="type", text="要输入的内容")
 
 步骤 3：验证结果
@@ -56,4 +56,4 @@ metadata:
 ## 注意事项
 
 - 屏幕分辨率变化会影响坐标精度，高 DPI 屏幕需配置缩放补偿。
-- `scan_cache` 参数可复用上一次扫描结果，避免重复打标（同一帧界面内有效）。
+- `scan_cache` 参数必须传入上一步 `desktop_grounding_scan` 返回的完整 JSON 字符串（包含元素 id、center 坐标等信息）。不要手动构造，直接复制粘贴即可。

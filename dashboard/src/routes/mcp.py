@@ -1,9 +1,10 @@
 """MCP Market API routes — marketplace, install, start, stop, uninstall, status."""
 
 import logging
+import re
 from typing import Dict, Any, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -13,6 +14,46 @@ router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 # Shared state — set by app.py during wiring
 _rooster_dir: str = ""
 _mcp_runner = None  # MCPRunner instance
+
+# ── 认证中间件 ──────────────────────────────────────────────────────────
+_DANGER_TOKEN_WARNING_LOGGED = False
+
+
+def _verify_token(request: Request) -> None:
+    """
+    验证 Dashboard API Token。
+    如果环境变量 GATEWAY_API_KEY 已设置，则要求所有写操作携带匹配的 token。
+    读操作（GET）不需要认证。
+    """
+    global _DANGER_TOKEN_WARNING_LOGGED
+    expected = _get_gateway_api_key()
+    if not expected:
+        if not _DANGER_TOKEN_WARNING_LOGGED:
+            logger.warning(
+                "[MCP API] GATEWAY_API_KEY not set — MCP write endpoints are unauthenticated. "
+                "Set GATEWAY_API_KEY in .env to enable authentication."
+            )
+            _DANGER_TOKEN_WARNING_LOGGED = True
+        return  # 未配置 token 时放行（向后兼容）
+
+    # 从 Header 或 Query 读取 token
+    token = request.headers.get("X-Rooster-Token", "")
+    if not token:
+        token = request.query_params.get("token", "")
+    if not token:
+        # 兼容前端注入的 __ROOSTER_TOKEN__
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+
+    if token != expected:
+        raise HTTPException(status_code=401, detail="Invalid or missing API token")
+
+
+def _get_gateway_api_key() -> str:
+    """从环境变量读取 API Key（延迟读取，避免 import 时环境变量未就绪）。"""
+    import os
+    return os.getenv("GATEWAY_API_KEY", "").strip()
 
 
 class MCPInstallRequest(BaseModel):
@@ -27,6 +68,54 @@ class MCPInstallRequest(BaseModel):
     emoji: str = "🔌"
     author: str = "community"
     port: int = 0
+
+    def validate_for_install(self):
+        """校验安装请求的参数安全性。"""
+        # name 只允许安全字符
+        if not re.match(r"^[a-zA-Z0-9_-]{1,64}$", self.name):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid server name '{self.name}': only alphanumeric, hyphens, underscores allowed (max 64 chars).",
+            )
+        # runtime 白名单
+        if self.runtime not in ("python", "node"):
+            raise HTTPException(
+                status_code=400, detail=f"Invalid runtime '{self.runtime}': must be 'python' or 'node'."
+            )
+        # command 安全校验（非市场安装时需要）
+        if self.command:
+            for ch in (";", "|", "&", "$", "`", "(", ")", "<", ">", "\n", "\r"):
+                if ch in self.command:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid command: shell metacharacter '{ch}' is not allowed.",
+                    )
+        # packages 安全校验
+        _SAFE_PKG = re.compile(r"^[a-zA-Z0-9@/_.\-]+$")
+        for pkg in self.packages:
+            if not isinstance(pkg, str) or not _SAFE_PKG.match(pkg):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid package name '{pkg}': only alphanumeric, hyphens, dots, @scope allowed.",
+                )
+        # args 安全校验
+        for arg in self.args:
+            if not isinstance(arg, str):
+                raise HTTPException(status_code=400, detail=f"Invalid arg: must be string, got {type(arg).__name__}.")
+            for ch in (";", "|", "&", "$", "`", "\n", "\r"):
+                if ch in arg:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid argument: shell metacharacter '{ch}' is not allowed.",
+                    )
+        # env_vars key 校验
+        _SAFE_ENV_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+        for key in self.env_vars:
+            if not _SAFE_ENV_KEY.match(key):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid env var name '{key}': must be a valid environment variable name.",
+                )
 
 
 class MCPActionRequest(BaseModel):
@@ -268,8 +357,10 @@ async def api_mcp_server_status(name: str):
 
 
 @router.post("/install")
-async def api_mcp_install(req: MCPInstallRequest):
+async def api_mcp_install(req: MCPInstallRequest, request: Request):
     """安装 MCP Server（创建隔离环境 + 安装依赖）。"""
+    _verify_token(request)
+
     runner = _get_runner()
 
     # 如果从市场安装，使用市场定义覆盖
@@ -288,6 +379,9 @@ async def api_mcp_install(req: MCPInstallRequest):
             author=meta.get("author", "community"),
             port=meta.get("port", 0),
         )
+    else:
+        # 非市场安装：校验用户提供的参数
+        req.validate_for_install()
 
     if not req.command:
         raise HTTPException(status_code=400, detail="Missing 'command' field for MCP server")
@@ -315,8 +409,9 @@ async def api_mcp_install(req: MCPInstallRequest):
 
 
 @router.post("/start")
-async def api_mcp_start(req: MCPActionRequest):
+async def api_mcp_start(req: MCPActionRequest, request: Request):
     """启动 MCP Server。"""
+    _verify_token(request)
     runner = _get_runner()
     result = await runner.start(req.name)
     if not result.get("ok"):
@@ -337,8 +432,9 @@ async def api_mcp_start(req: MCPActionRequest):
 
 
 @router.post("/stop")
-async def api_mcp_stop(req: MCPActionRequest):
+async def api_mcp_stop(req: MCPActionRequest, request: Request):
     """停止 MCP Server。"""
+    _verify_token(request)
     runner = _get_runner()
     result = await runner.stop(req.name)
     if not result.get("ok"):
@@ -347,8 +443,9 @@ async def api_mcp_stop(req: MCPActionRequest):
 
 
 @router.post("/restart")
-async def api_mcp_restart(req: MCPActionRequest):
+async def api_mcp_restart(req: MCPActionRequest, request: Request):
     """重启 MCP Server。"""
+    _verify_token(request)
     runner = _get_runner()
     result = await runner.restart(req.name)
     if not result.get("ok"):
@@ -357,8 +454,9 @@ async def api_mcp_restart(req: MCPActionRequest):
 
 
 @router.post("/uninstall")
-async def api_mcp_uninstall(req: MCPActionRequest):
+async def api_mcp_uninstall(req: MCPActionRequest, request: Request):
     """卸载 MCP Server（停止进程 + 删除安装目录）。"""
+    _verify_token(request)
     runner = _get_runner()
     result = await runner.uninstall(req.name)
     if not result.get("ok"):

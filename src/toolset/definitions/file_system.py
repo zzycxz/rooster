@@ -4,6 +4,7 @@ import logging
 from typing import Optional, Type, Any
 from pydantic import BaseModel, Field
 from toolset.base import BaseTool
+from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +28,15 @@ class FileSystemOpTool(BaseTool):
     name: str = "file_system_op"
     kit: str = "FileSystem"
     description: str = (
-        "Omni-Tool for File System operations. Use the `action` parameter to choose the operation: "
-        "'read' (read text file), 'write' (write/append text), 'list' (list directory contents), "
-        "'search' (search files by name), 'mkdir' (create directory), 'download' (download binary file from url to path), "
-        "'hash' (calculate md5/sha256). "
-        "This tool replaces all individual file tools."
+        "File System operations. Actions:\n"
+        "- 'read': Read a text file's content. Requires: path.\n"
+        "- 'write': Write or append text to a file. Requires: path, content. Optional: append (bool).\n"
+        "- 'list': List directory contents. Requires: path.\n"
+        "- 'search': Search files by name pattern. Requires: path, pattern. Optional: recursive.\n"
+        "- 'mkdir': Create a directory (recursive). Requires: path.\n"
+        "- 'download': Download a file from URL to local path. Requires: url, path.\n"
+        "- 'hash': Calculate file hash (md5/sha256). Requires: path. Optional: algorithm.\n"
+        "NOT for: Excel/PDF/Word files (use excel_op/pdf_op/office_docx_write), web browsing (use browser_nav)."
     )
     domain: str = "craft"
     args_schema: Type[BaseModel] = FileSystemOpArgs
@@ -111,7 +116,7 @@ class FileSystemOpTool(BaseTool):
                     downloaded = os.path.getsize(safe_path)
                     headers["Range"] = f"bytes={downloaded}-"
                     mode = "ab"
-                async with httpx.AsyncClient(timeout=3600.0, follow_redirects=True, verify=False) as client:
+                async with httpx.AsyncClient(timeout=3600.0, follow_redirects=True, verify=not getattr(settings, 'INSECURE_SKIP_TLS', False)) as client:
                     async with client.stream("GET", url, headers=headers) as response:
                         if response.status_code == 416:
                             return f"✅ File at `{safe_path}` already fully downloaded."

@@ -25,6 +25,12 @@ class WebSearchArgs(BaseModel):
     domain_filter: Optional[str] = Field(None, description="Optional domain constraint (e.g. 'github.com').")
     time_range: Optional[str] = Field("any", description="Time range: 'day', 'week', 'month', 'year', 'any'.")
     deep_research: bool = Field(False, description="Set True for deep iteration research (actively triggers Linkup).")
+    max_results: int = Field(5, description="Max number of results to return (1 to 20).")
+    offset: int = Field(0, description="Number of results to skip for pagination.")
+    exa_category: Optional[str] = Field(
+        None, 
+        description="Exa Search vertical: 'news', 'research paper', 'financial report'. Skips Linkup and forces Exa engine."
+    )
 
 
 def get_exa_active() -> bool:
@@ -116,7 +122,12 @@ class WebSearchTool(BaseTool):
     kit: str = "System"
     fc_hidden: bool = False
     description: str = (
-        "Primary search tool with 5-tier dynamic fallback. Use domain_filter only if strictly requested by the user."
+        "Primary web search engine with pagination and vertical search capabilities.\n"
+        "- GENERAL: For standard broad queries, use default parameters.\n"
+        "- DEEP RESEARCH: For comprehensive synthesis on complex topics, set `deep_research=True`.\n"
+        "- VERTICALS (News/Academic): For real-time news, academic papers, or financial data, set `exa_category` to 'news', 'research paper', or 'financial report'.\n"
+        "- PAGINATION: To see more results, increase `max_results` (up to 20). To view the next page of results, use `offset` (e.g. offset=5 to skip the first 5).\n"
+        "- FILTERING: Use `domain_filter` only if strictly requested by the user."
     )
     domain: str = "recon"
     args_schema: Type[BaseModel] = WebSearchArgs
@@ -155,12 +166,13 @@ class WebSearchTool(BaseTool):
         query = kwargs.get("query")
         en_keywords = kwargs.get("en_keywords", "")
         deep_research = kwargs.get("deep_research", False)
+        exa_category = kwargs.get("exa_category")
 
         if not query:
             return "Error: No search query provided."
 
-        # Tier 1: Linkup
-        if deep_research and os.getenv("LINKUP_KEY"):
+        # Tier 1: Linkup (Skip if exa_category is explicitly requested)
+        if deep_research and not exa_category and os.getenv("LINKUP_KEY"):
             try:
                 res = await self._run_linkup(kwargs)
                 if self._is_valid_result(res):
@@ -193,8 +205,10 @@ class WebSearchTool(BaseTool):
                 logger.warning(f"[WebSearch] GLM search failed: {e}")
 
         # Tier 4 & 5: 7路并发兜底
+        max_results = min(max(kwargs.get("max_results", 5), 1), 20)
+        offset = max(kwargs.get("offset", 0), 0)
         try:
-            return await self._seven_lane_search(query, en_keywords)
+            return await self._seven_lane_search(query, en_keywords, max_results, offset)
         except Exception as e:
             logger.error(f"[WebSearch] 7-lane fallback crashed: {e}")
             return f"搜索系统异常: {e}"
@@ -210,7 +224,8 @@ class WebSearchTool(BaseTool):
 
         depth = kwargs.get("depth", "standard")
         output_type = kwargs.get("output_type", "searchResults")
-        max_results = min(max(kwargs.get("max_results", 5), 1), 10)
+        max_results = min(max(kwargs.get("max_results", 5), 1), 20)
+        offset = max(kwargs.get("offset", 0), 0)
         include_domains = kwargs.get("include_domains")
         exclude_domains = kwargs.get("exclude_domains")
         from_date = kwargs.get("from_date")
@@ -225,7 +240,7 @@ class WebSearchTool(BaseTool):
             "q": query,
             "depth": depth,
             "outputType": output_type,
-            "maxResults": max_results,
+            "maxResults": min(max_results + offset, 20),
         }
 
         if include_domains:
@@ -286,6 +301,10 @@ class WebSearchTool(BaseTool):
                 results = data.get("results", [])
                 if not results:
                     return await self._fallback(query)
+                    
+                results = results[offset : offset + max_results]
+                if not results:
+                    return "Search results retrieved but all were skipped by offset."
 
                 logger.info(f"[LinkupSearch] Success ({len(results)} results, depth={depth})")
 
@@ -324,10 +343,11 @@ class WebSearchTool(BaseTool):
             logger.warning("[ExaSearch] Monthly quota exhausted, falling back to GLM/web search.")
             return "Error: Quota exhausted or fallback requested."
 
-        num_results = min(max(int(kwargs.get("num_results", 5)), 1), 10)
+        max_results = min(max(int(kwargs.get("max_results", 5)), 1), 20)
+        offset = max(int(kwargs.get("offset", 0)), 0)
         use_autoprompt = kwargs.get("use_autoprompt", True)
         search_type = kwargs.get("type", "auto")
-        category = kwargs.get("category")
+        category = kwargs.get("exa_category")
         start_published_date = kwargs.get("start_published_date")
         include_domains = kwargs.get("include_domains")
         exclude_domains = kwargs.get("exclude_domains")
@@ -339,7 +359,7 @@ class WebSearchTool(BaseTool):
 
         payload = {
             "query": query,
-            "numResults": num_results,
+            "numResults": min(max_results + offset, 100),
             "type": search_type,
             "useAutoprompt": use_autoprompt,
             "contents": {
@@ -381,6 +401,10 @@ class WebSearchTool(BaseTool):
                 if not results:
                     logger.info("[ExaSearch] No results from Exa, trying fallback.")
                     return "Error: Quota exhausted or fallback requested."
+                    
+                results = results[offset : offset + max_results]
+                if not results:
+                    return "Search results retrieved but all were skipped by offset."
 
                 _increment_exa_usage()
                 usage = _get_exa_usage()
@@ -644,6 +668,10 @@ class WebSearchTool(BaseTool):
 
                         markdown_items.append(f"- {title}\n  {link}\n  {content}")
 
+                    max_results = min(max(kwargs.get("max_results", 5), 1), 20)
+                    offset = max(kwargs.get("offset", 0), 0)
+                    
+                    markdown_items = markdown_items[offset : offset + max_results]
                     if markdown_items:
                         return "\n\n".join(markdown_items)
 
@@ -663,6 +691,7 @@ class WebSearchTool(BaseTool):
                             except Exception:
                                 pass
 
+                    output_texts = output_texts[offset : offset + max_results]
                     if output_texts:
                         return "\n\n".join(output_texts)
 
@@ -716,7 +745,7 @@ class WebSearchTool(BaseTool):
                     f"当前会话已停用该通道，自动降级至 0-Key 免密 HTML 赛道。"
                 )
 
-    async def _seven_lane_search(self, query: str, en_keywords: str) -> str:
+    async def _seven_lane_search(self, query: str, en_keywords: str, max_results: int = 5, offset: int = 0) -> str:
         """7 路并发搜索逻辑"""
         try:
             cache_key = query.strip().lower()
@@ -744,9 +773,13 @@ class WebSearchTool(BaseTool):
 
             # 4. [Plan A: local 1ms fast word-frequency rerank] — first-screen response in 0.3s!
             # 4. 【方案一：本地 1ms 快速词频打分重排】—— 首屏响应 0.3 秒极致速度！
-            local_streamlined = self._rerank_local_algebraic(all_raw, query, en_keywords)
+            # 请求更多结果以满足 offset，但 _rerank_local_algebraic 内部默认受 settings.SEARCH_MAX_RESULTS 限制
+            # 我们稍后在外部处理这个截断
+            local_streamlined = self._rerank_local_algebraic(all_raw, query, en_keywords, max_results + offset)
+            
+            local_streamlined = local_streamlined[offset : offset + max_results]
             if not local_streamlined:
-                return "未能找到高相关性的搜索结果，建议更换关键词。"
+                return "未能找到高相关性的搜索结果，或结果被 offset 完全跳过。"
 
             final_res = [f"Search results for: {query}"]
             final_res.extend(local_streamlined)
@@ -760,7 +793,7 @@ class WebSearchTool(BaseTool):
             # 6. [Plan A async rerank sentinel] — silently launch LLM semantic rerank in background, refresh cache after 1s!
             # 6. 【方案一异步重排哨兵】—— 后台默默拉起大模型语义 Rerank，1秒后刷新缓存矫正记忆！
             _rerank_task = asyncio.create_task(
-                self._async_llm_rerank_and_update_cache(query, all_raw, cache_key, now, en_keywords)
+                self._async_llm_rerank_and_update_cache(query, all_raw, cache_key, now, en_keywords, max_results + offset)
             )
             _rerank_task.add_done_callback(
                 lambda t: (
@@ -779,15 +812,15 @@ class WebSearchTool(BaseTool):
             return f"搜索系统异常: {str(e)}"
 
     async def _async_llm_rerank_and_update_cache(
-        self, query: str, raw_results: list, cache_key: str, cache_time: float, en_keywords: str
+        self, query: str, raw_results: list, cache_key: str, cache_time: float, en_keywords: str, target_count: int = 5
     ):
         """后台异步语义重排序矫正器，温热写入本地缓存"""
         if not raw_results:
             return
         try:
-            # Only take top 10 high-quality raw entries from concurrent results to send to LLM
-            # 仅取并发回来的前 10 条高质量原始条目送交大模型
-            candidates = raw_results[:10]
+            # 取出足够的原始条目送交大模型
+            llm_target = max(target_count, 10)
+            candidates = raw_results[:llm_target]
 
             from agents.llm_client import LLMClient
 
@@ -803,9 +836,9 @@ class WebSearchTool(BaseTool):
             for idx, r in enumerate(candidates, 1):
                 prompt_content += f"{idx}. Title: {r.get('title', '')}, Snippet: {r.get('content', '')[:120]}\n"
 
-            prompt_content += """
-请从上面列表中挑选出前 5 个最能帮助解答用户提问、且内容质量最高、最无广告干扰的网页序号。
-请严格仅返回这 5 个结果在上面列表中的序号，以合法的 JSON 数组格式输出，不要任何其他的解释。
+            prompt_content += f"""
+请从上面列表中挑选出前 {target_count} 个最能帮助解答用户提问、且内容质量最高、最无广告干扰的网页序号。
+请严格仅返回这 {target_count} 个结果在上面列表中的序号，以合法的 JSON 数组格式输出，不要任何其他的解释。
 例如：[3, 1, 5, 2, 4]"""
 
             messages = [
@@ -846,7 +879,7 @@ class WebSearchTool(BaseTool):
                 # 重新拼装高保真语义大模型重排序卡片结果
                 streamlined_cards = []
                 seen_domains = set()
-                for r in final_items[: settings.SEARCH_MAX_RESULTS]:
+                for r in final_items[:target_count]:
                     title = r.get("title", "").strip()
                     url = r.get("url", "")
                     domain = url.split("/")[2] if "//" in url else url.split("/")[0]
@@ -874,7 +907,7 @@ class WebSearchTool(BaseTool):
         except Exception as e:
             logging.debug(f"🔍 [Rerank] 后台异步大模型打分失败: {e}，保留首屏本地打分缓存。")
 
-    def _rerank_local_algebraic(self, results: list, query: str, en_keywords: str = "") -> list:
+    def _rerank_local_algebraic(self, results: list, query: str, en_keywords: str = "", target_count: int = 5) -> list:
         """本地 1ms 词频正则打分算法 (防断网、防限流防线)"""
         final = []
         seen_urls = set()
@@ -949,7 +982,7 @@ class WebSearchTool(BaseTool):
                 final.append(f"- {title}\n  {url}")
 
             seen_domains.add(domain)
-            if len(final) >= settings.SEARCH_MAX_RESULTS:
+            if len(final) >= target_count:
                 break
 
         return final

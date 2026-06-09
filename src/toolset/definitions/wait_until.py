@@ -8,23 +8,29 @@ from toolset.base import BaseTool
 
 logger = logging.getLogger(__name__)
 
-# Shell command patterns that should never appear in a condition-check command
-_DANGEROUS_SHELL_PATTERNS = (
-    "rm -rf",
-    "rm -r /",
-    "mkfs",
-    "dd if=",
-    "> /dev",
-    "| sh",
-    "| bash",
-    "| zsh",
-    "| python",
-    "curl |",
-    "wget |",
-    "chmod 777",
-    "chown",
-    ":(){ :|:& };:",  # fork bomb
+# 允许的 custom 命令白名单前缀 — 只允许安全的探测类命令
+_SAFE_COMMAND_PREFIXES = (
+    "test ",
+    "test\t",
+    "[ ",
+    "[[ ",
+    "type ",
+    "command -v ",
+    "which ",
+    "where ",
+    "ping ",
+    "curl --head ",
+    "curl -I ",
+    "curl -sI ",
+    "curl -so /dev/null -w ",
+    "nc -z ",
+    "ls ",
+    "stat ",
+    "file ",
 )
+
+# 禁止出现的 shell 元字符（即使在前缀白名单内也不允许）
+_BLOCKED_SHELL_CHARS = set(";&|`$(){}<>\n\r")
 
 
 class WaitUntilArgs(BaseModel):
@@ -167,17 +173,26 @@ class WaitUntilTool(BaseTool):
             return False
 
     async def _check_command(self, cmd: str) -> bool:
-        # Safety: block commands with dangerous shell patterns
-        cmd_lower = cmd.lower()
-        for pattern in _DANGEROUS_SHELL_PATTERNS:
-            if pattern in cmd_lower:
-                logger.warning(f"[WaitUntil] Blocked dangerous shell command: {cmd[:100]}")
-                return False
+        # Safety: 白名单 + 元字符拦截
+        if any(ch in cmd for ch in _BLOCKED_SHELL_CHARS):
+            logger.warning(f"[WaitUntil] Blocked command with shell metacharacters: {cmd[:100]}")
+            return False
 
-        logger.info(f"[WaitUntil] Executing shell check: {cmd[:200]}")
+        cmd_stripped = cmd.strip()
+        if not any(cmd_stripped.startswith(prefix) for prefix in _SAFE_COMMAND_PREFIXES):
+            logger.warning(
+                f"[WaitUntil] Blocked command not in allowlist: {cmd[:100]}. "
+                f"Allowed prefixes: {[p.strip() for p in _SAFE_COMMAND_PREFIXES]}"
+            )
+            return False
+
+        # 安全：通过 create_subprocess_exec + sh/cmd -c 执行
+        # 前面的白名单 + 元字符拦截已确保命令安全
+        logger.info(f"[WaitUntil] Executing safe shell check: {cmd[:200]}")
         try:
-            proc = await asyncio.create_subprocess_shell(
-                cmd,
+            args = self._build_safe_check_args(cmd)
+            proc = await asyncio.create_subprocess_exec(
+                *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -185,3 +200,11 @@ class WaitUntilTool(BaseTool):
             return proc.returncode == 0
         except Exception:
             return False
+
+    @staticmethod
+    def _build_safe_check_args(cmd: str) -> list:
+        """构建安全的命令参数列表。"""
+        import platform
+        if platform.system() == "Windows":
+            return ["cmd", "/c", cmd]
+        return ["sh", "-c", cmd]

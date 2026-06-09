@@ -205,11 +205,12 @@ class DesktopGroundingScanTool(BaseTool):
     name: str = "desktop_grounding_scan"
     kit: str = "Vision"
     description: str = (
-        "Capture the local desktop screen, scan interactive UI elements via UIA, "
-        "draw labeled bounding boxes (ID like A, B, AA...) on the screenshot, and return "
-        "the element list (id, name, type, center coordinates). "
-        "Use this tool to find the ID of the target element before clicking it with desktop_act. "
-        "The scan mode is automatically controlled by the system settings."
+        "MANDATORY first step for desktop UI automation. "
+        "Use this tool when the task requires interacting with desktop applications "
+        "(open app, click button, read dialog, etc.). "
+        "Captures the desktop screen, scans UI elements via UIA, draws labeled bounding boxes "
+        "(IDs: A, B, AA...), and returns the element list (id, name, type, center coordinates). "
+        "After scanning, use desktop_act to click/type. Scan mode is auto-controlled."
     )
     domain = "vision"
     platforms: list = ["Windows", "Darwin"]
@@ -300,10 +301,18 @@ class DesktopGroundingScanTool(BaseTool):
         summary_lines = [f"  [{el['id']}] {el['name']} ({el['type']}) @ {el['center']}" for el in labeled_elements[:40]]
         summary = "\n".join(summary_lines)
 
+        # 生成 scan_cache JSON，供 desktop_act 直接使用
+        scan_cache_elements = [
+            {"id": el["id"], "name": el["name"], "type": el["type"], "center": el["center"]}
+            for el in labeled_elements[:40]
+        ]
+        scan_cache_json = json.dumps(scan_cache_elements, ensure_ascii=False)
+
         return (
             f"✅ 桌面扫描完成，共识别 {len(labeled_elements)} 个可交互元素\n"
             f"打标图已保存：{save_path}\n\n"
-            f"**元素列表（用 desktop_click 按 ID 点击）：**\n{summary}\n\n"
+            f"**元素列表（用 desktop_act 按 ID 点击）：**\n{summary}\n\n"
+            f"**scan_cache（直接传给 desktop_act 的 scan_cache 参数）：**\n{scan_cache_json}\n\n"
             f"[IMAGE_BASE64_PNG]{img_b64}[/IMAGE_BASE64_PNG]"
         )
 
@@ -415,10 +424,11 @@ class DesktopReadScreenTool(BaseTool):
     name: str = "desktop_read_screen"
     kit: str = "Vision"
     description: str = (
-        "Take a screenshot of the local desktop and immediately extract all visible text via OCR. "
-        "This is a single-step macro replacing 'desktop_snap → ocr_extract'. "
-        "Use this when you need to READ text from the screen (UI labels, dialog content, error messages). "
-        "For UI automation (finding buttons to click), use desktop_grounding_scan instead."
+        "Use this tool to READ visible text on the desktop screen (UI labels, dialog content, "
+        "error messages, app state). "
+        "Takes a screenshot and extracts all text via OCR in one step. "
+        "For clicking/typing on desktop UI, use desktop_grounding_scan + desktop_act instead. "
+        "This tool does NOT interact with UI elements — it only reads text."
     )
     domain = "vision"
     platforms: list = ["Windows", "Darwin"]
@@ -499,9 +509,11 @@ class DesktopActTool(BaseTool):
     name: str = "desktop_act"
     kit: str = "Vision"
     description: str = (
-        "Unified desktop interaction tool. Use action='click' or 'double_click' to click a UI element "
-        "by element_id (from desktop_grounding_scan) or by x/y coordinates. "
-        "Use action='type' to type text into the currently focused input field. "
+        "MANDATORY for all desktop UI interaction tasks. "
+        "Use this tool when the task involves opening apps, clicking buttons, typing text, "
+        "or any operation on the local desktop (NOT web browser). "
+        "Actions: 'click'/'double_click' by element_id (from desktop_grounding_scan) or x/y coords, "
+        "'type' to type text into the focused input. "
         "Typical flow: desktop_grounding_scan → desktop_act(click) → desktop_act(type)."
     )
     domain = "vision"

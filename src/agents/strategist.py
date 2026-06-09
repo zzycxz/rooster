@@ -98,36 +98,25 @@ class Strategist:
             try:
                 from skills._loader import SkillLoader
 
-                Strategist._skill_loader = SkillLoader()
+                # 用项目根路径解析，避免 CWD 依赖
+                _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                _project_root = os.path.dirname(_src_dir)
+                Strategist._skill_loader = SkillLoader(skills_dir=os.path.join(_project_root, "skills"))
             except Exception as e:
                 logger.warning(f"⚠️ [Strategist] SkillLoader 初始化失败: {e}")
 
     def _get_skills_digest(self) -> str:
-        digest_parts = []
-
-        # 1. 注入系统原生工具（Native Tools）
-        if self._tool_registry:
-            try:
-                native_tools = "## ⚙️ 原生系统工具 (Native Tools)\n"
-                for t in self._tool_registry.get_all_tool_schemas():
-                    name = t.get("function", {}).get("name", "")
-                    desc = t.get("function", {}).get("description", "")
-                    if name:
-                        native_tools += f"- `{name}`: {desc}\n"
-                digest_parts.append(native_tools)
-            except Exception:
-                pass
-
-        # 2. 注入外部扩展技能（Custom Skills）
-        if Strategist._skill_loader:
-            try:
-                custom_skills = Strategist._skill_loader.get_skills_digest()
-                if custom_skills:
-                    digest_parts.append(custom_skills)
-            except Exception:
-                pass
-
-        return "\n\n".join(digest_parts)
+        """
+        Strategist 不走 FC，需要 System Prompt 告知可用 skill。
+        不再重复注入 FC 工具列表（Strategist 不执行工具），
+        只保留外部扩展技能摘要，用于在 instruction 里提示 Executor 使用。
+        """
+        if not Strategist._skill_loader:
+            return ""
+        try:
+            return Strategist._skill_loader.get_skills_digest()
+        except Exception:
+            return ""
 
     async def plan(self, user_request: str, max_tokens: int = 32768) -> MissionPlan:
         """
@@ -141,7 +130,7 @@ class Strategist:
 
         # 实例化加载器
         # Instantiate loader
-        soul_loader = SoulLoader(llm_client=self.llm_client, model=settings.STRATEGIST_MODEL_NAME)
+        soul_loader = SoulLoader(llm_client=self.llm_client, model=self.llm_client.model_name)
         # 获取最相关的记忆召回 (语义搜索)
         # Get most relevant memory recall (semantic search)
         memory_manager = self.memory_manager or MemoryManager()
@@ -176,7 +165,7 @@ class Strategist:
                 # Timeout guards against LLM hangs that would block MissionRunner indefinitely.
                 response = await asyncio.wait_for(
                     self.llm_client.chat_non_stream(
-                        messages=messages, model=settings.STRATEGIST_MODEL_NAME, temperature=0.1, max_tokens=max_tokens
+                        messages=messages, model=self.llm_client.model_name, temperature=0.1, max_tokens=max_tokens
                     ),
                     timeout=settings.STRATEGIST_LLM_TIMEOUT,
                 )
@@ -227,6 +216,7 @@ class Strategist:
                         task.setdefault("owner", "AGENT")
                         task.setdefault("confidence", "HIGH")
                         task.setdefault("risk_note", "")
+                        task.setdefault("tool_hint", "")
                         if task.get("domain") == "COMBAT":
                             task["domain"] = "UI"  # 自动迁移旧 Domain / Auto-migrate old Domain
                         task.pop(
@@ -331,7 +321,7 @@ class Strategist:
         from memory.manager import MemoryManager
 
         # 实例化加载器
-        soul_loader = SoulLoader(llm_client=self.llm_client, model=settings.STRATEGIST_MODEL_NAME)
+        soul_loader = SoulLoader(llm_client=self.llm_client, model=self.llm_client.model_name)
         # 获取最相关的记忆召回 (语义搜索)
         manager = self.memory_manager or MemoryManager()
         ltm_context = await manager.get_summary_for_prompt_async(query=user_request)
@@ -372,7 +362,7 @@ class Strategist:
         try:
             async for delta in _stream_with_chunk_timeout(
                 self.llm_client.chat_stream(
-                    messages=messages, model=settings.STRATEGIST_MODEL_NAME, temperature=0.1, max_tokens=32768
+                    messages=messages, model=self.llm_client.model_name, temperature=0.1, max_tokens=32768
                 ),
                 chunk_timeout=getattr(settings, "LLM_STREAM_CHUNK_TIMEOUT", 30.0),
             ):
@@ -410,6 +400,7 @@ class Strategist:
                                         "owner": task_data.get("owner", "AGENT"),
                                         "confidence": task_data.get("confidence", "HIGH"),
                                         "risk_note": task_data.get("risk_note", ""),
+                                        "tool_hint": task_data.get("tool_hint", ""),
                                     }
                                 )
                                 yield SubTask(**task_data)
@@ -474,6 +465,7 @@ class Strategist:
                                 "owner": t_obj.get("owner", "AGENT"),
                                 "confidence": t_obj.get("confidence", "HIGH"),
                                 "risk_note": t_obj.get("risk_note", ""),
+                                "tool_hint": t_obj.get("tool_hint", ""),
                             }
                         )
                         yield SubTask(**t_obj)
@@ -590,7 +582,7 @@ class Strategist:
             for attempt in range(MAX_RETRIES + 1):
                 response = await asyncio.wait_for(
                     self.llm_client.chat_non_stream(
-                        messages=messages, model=settings.STRATEGIST_MODEL_NAME, temperature=0.3, max_tokens=32768
+                        messages=messages, model=self.llm_client.model_name, temperature=0.3, max_tokens=32768
                     ),
                     timeout=settings.STRATEGIST_LLM_TIMEOUT,
                 )
@@ -643,6 +635,7 @@ class Strategist:
                             owner=t.get("owner", "AGENT"),
                             confidence=t.get("confidence", "HIGH"),
                             risk_note=t.get("risk_note", ""),
+                            tool_hint=t.get("tool_hint", ""),
                         )
                     )
 
@@ -717,6 +710,7 @@ class Strategist:
         self,
         user_request: str,
         skill_hint: Optional[dict] = None,
+        images: Optional[List[str]] = None,
     ) -> PlanDecision:
         """
         V15 语义判断入口。
@@ -726,6 +720,7 @@ class Strategist:
         Args:
             user_request: 用户原始请求
             skill_hint: SkillIndex 输出的 hint（可选）
+            images: 用户附带的图片 base64 列表（可选）
         """
         logger.info(f"🎯 [Strategist.decide] 判断任务深度: {user_request[:80]}...")
 
@@ -737,11 +732,20 @@ class Strategist:
 
             async def _reply_stream():
                 try:
+                    # 构造用户消息：有图片时转为多模态格式
+                    if images:
+                        user_content = [{"type": "text", "text": user_request}]
+                        for b64 in images:
+                            data_url = b64 if b64.startswith("data:") else f"data:image/png;base64,{b64}"
+                            user_content.append({"type": "image_url", "image_url": {"url": data_url}})
+                    else:
+                        user_content = user_request
+
                     async for delta in _stream_with_chunk_timeout(
                         self.llm_client.chat_stream(
                             messages=[
                                 {"role": "system", "content": "你是一个有帮助的助手。简洁、准确地回答用户问题。"},
-                                {"role": "user", "content": user_request},
+                                {"role": "user", "content": user_content},
                             ],
                             model=_fast_tier_model(),
                             temperature=0.3,

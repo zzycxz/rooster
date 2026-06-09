@@ -53,6 +53,11 @@ class ModelFactory:
                 "key": settings.ZHIPU_CODINGPLAN_KEY,
                 "default_model": settings.ZHIPU_CODINGPLAN_MODEL,
             },
+            "volcengine_codingplan": {
+                "url": settings.VOLCENGINE_CODINGPLAN_URL,
+                "key": settings.VOLCENGINE_CODINGPLAN_KEY,
+                "default_model": settings.VOLCENGINE_CODINGPLAN_MODEL,
+            },
             "openai": {
                 "url": settings.OPENAI_URL,
                 "key": settings.OPENAI_KEY,

@@ -144,8 +144,7 @@ class Router:
             from agents.reframer import Reframer
 
             reframe_mode = getattr(settings, "REFRAMER_MODEL_MODE", "local")
-            reframe_name = getattr(settings, "REFRAMER_MODEL_NAME", "")
-            reframe_llm = LLMClient(provider=reframe_mode, model=reframe_name)
+            reframe_llm = LLMClient(provider=reframe_mode)
             reframer = Reframer(reframe_llm)
             original_text = await reframer.reframe(msg.text, session_id=msg.session_id)
             logger.info(f"[Reframer] 重构后: {original_text[:80]}")

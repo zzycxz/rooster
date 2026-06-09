@@ -44,10 +44,7 @@ class RuntimeConfig:
 
     # --- Search ---
     SEARXNG_URL: str = _env("SEARXNG_URL", "http://127.0.0.1:18088")
-    ENABLE_SEARCH_DDG: bool = _env_bool("ENABLE_SEARCH_DDG", True)
     ENABLE_SEARCH_SEARXNG: bool = _env_bool("ENABLE_SEARCH_SEARXNG", True)
-    ENABLE_SEARCH_BAIDU: bool = _env_bool("ENABLE_SEARCH_BAIDU", True)
-    ENABLE_SEARCH_TAVILY: bool = _env_bool("ENABLE_SEARCH_TAVILY", True)
     SEARCH_MAX_RESULTS: int = _env_int("SEARCH_MAX_RESULTS", 20)
     TAVILY_API_KEY: str = _env("TAVILY_API_KEY", "")
     EXA_KEY: str = _env("EXA_KEY", "")
@@ -58,7 +55,6 @@ class RuntimeConfig:
 
     # --- Audit policy ---
     AUDIT_STRICTNESS: str = _env("AUDIT_STRICTNESS", "Medium")
-    AUDIT_REQUIRE_SCREENSHOT: bool = _env_bool("AUDIT_REQUIRE_SCREENSHOT", True)
     AUDIT_MAX_REMAND_RETRY: int = _env_int("AUDIT_MAX_REMAND_RETRY", 2)
     AUDIT_CONFIDENCE_THRESHOLD: float = _env_float("AUDIT_CONFIDENCE_THRESHOLD", 0.6)
 
@@ -139,6 +135,11 @@ class RuntimeConfig:
     #   block  → 返回错误，要求用户确认后重试
     #   block  → return error, require user confirmation before retry
     CONFIRMATION_BEHAVIOR: str = _env("CONFIRMATION_BEHAVIOR", "block")
+
+    # --- TLS verification ---
+    # 默认 verify=True（安全）。设为 true 仅用于绕过自签名证书问题（不推荐用于生产环境）。
+    # Default verify=True (secure). Set to true only to bypass self-signed cert issues (not recommended for production).
+    INSECURE_SKIP_TLS: bool = _env_bool("INSECURE_SKIP_TLS", False)
     # 工具限速 JSON，格式: {"tool_name": [capacity, refill_rate_per_sec], ...}
     # Tool rate-limit JSON, format: {"tool_name": [capacity, refill_rate_per_sec], ...}
     # 例: {"email_send": [1, 0.016], "web_fetch": [5, 0.5]}

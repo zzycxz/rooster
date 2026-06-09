@@ -171,7 +171,19 @@ async def execute_orchestrated_tool(
         risk_level = getattr(tool, "risk_level", "low")
         decision = policy.check(name, risk_level)
         if not decision.allowed:
-            if getattr(decision, "requires_confirmation", False) and settings.CONFIRMATION_BEHAVIOR == "log":
+            user_confirmed = False
+            if getattr(decision, "requires_confirmation", False) and session_history:
+                # 检查最近一条用户回复是否是确认指令
+                for msg in reversed(session_history):
+                    if msg.get("role") == "user":
+                        content_clean = "".join(c for c in msg.get("content", "").lower() if c.isalnum())
+                        if content_clean in ["confirm", "yes", "proceed", "y", "ok", "确认", "同意", "执行", "继续", "是", "好的"]:
+                            user_confirmed = True
+                        break
+
+            if user_confirmed:
+                _logger.info(f"[PermissionPolicy] User confirmed execution of '{name}'. Bypassing block.")
+            elif getattr(decision, "requires_confirmation", False) and settings.CONFIRMATION_BEHAVIOR == "log":
                 # "log" 模式：高风险工具发出警告但不阻断（不禁止用户行为）
                 # "log" mode: high-risk tools emit warning but don't block (don't prohibit user behavior)
                 _logger.warning(
@@ -185,6 +197,18 @@ async def execute_orchestrated_tool(
                 )
             else:
                 _logger.warning(f"[PermissionPolicy] Tool '{name}' blocked: {decision.reason}")
+                if getattr(decision, "requires_confirmation", False) and event_handler:
+                    try:
+                        await event_handler.emit_lifecycle(
+                            session_key=config.session_key,
+                            client_run_id=run_id,
+                            status="require_user_input",
+                            title="高危操作确认 (High Risk Operation)",
+                            message=f"工具 '{name}' 试图执行敏感操作，已被底层引擎安全拦截。\n拦截原因：{decision.reason}\n\n请点击“Confirm”放行本次操作，或点击“Cancel”阻止并通知大模型重新规划。",
+                            options=["Confirm", "Cancel"]
+                        )
+                    except Exception as e:
+                        _logger.error(f"[PermissionPolicy] Failed to emit require_user_input: {e}")
                 return f'<tool_response name="{name}">{decision.to_error_message()}</tool_response>'
     except Exception as _perm_err:
         _logger.debug(f"[PermissionPolicy] Permission check skipped (degraded): {_perm_err}")

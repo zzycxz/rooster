@@ -75,8 +75,15 @@ class BrowserBaseTool(BaseTool):
 class BrowserNavTool(BrowserBaseTool):
     name: str = "browser_nav"
     kit: str = "Browser"
-    description: str = "导航到 URL。"
-    domain: str = "recon"
+    description: str = (
+        "Open a real browser and navigate to a URL. Returns the page content with clickable element IDs.\n"
+        "Requires: url.\n"
+        "Use when: you need to INTERACT with a web page — click, type, submit, login, download via browser.\n"
+        "After navigating, use browser_act to interact with elements by their data-rooster-id.\n"
+        "NOT for: just reading article text without interaction (use web_fetch instead, it's faster).\n"
+        "Key difference from web_fetch: this launches a real browser, enables full interaction, but is slower."
+    )
+    domain: str = "UI"
     args_schema: Type[BaseModel] = BrowserNavArgs
 
     async def run(self, **kwargs) -> str:
@@ -111,7 +118,7 @@ class BrowserClickTool(BrowserBaseTool):
     kit: str = "Browser"
     fc_hidden: bool = True  # [Round 10] Use browser_act(action="click", index=...) instead
     description: str = "点击。输入 ID。"
-    domain: str = "recon"
+    domain: str = "UI"
     args_schema: Type[BaseModel] = BrowserActionArgs
 
     async def run(self, **kwargs) -> str:
@@ -143,7 +150,7 @@ class BrowserTypeTool(BrowserBaseTool):
         "在浏览器输入框中输入文字。通过 data-rooster-id 定位输入框，"
         "支持先清空再输入。适用于表单填写、搜索框输入等场景。"
     )
-    domain: str = "recon"
+    domain: str = "UI"
     args_schema: Type[BaseModel] = BrowserTypeArgs
 
     async def run(self, **kwargs) -> str:
@@ -322,11 +329,14 @@ class BrowserActTool(BrowserBaseTool):
     name: str = "browser_act"
     kit: str = "Browser"
     description: str = (
-        "Unified browser interaction tool. Use action='click' to click an element by its data-rooster-id, "
-        "action='scroll' to scroll the page up/down, or action='type' to type text into an input field. "
-        "All actions return the updated page content after the interaction."
+        "MANDATORY for all web page interaction tasks. "
+        "Use this tool when the task requires clicking buttons, filling forms, logging in, "
+        "navigating UI elements, or performing any action INSIDE a web browser. "
+        "Actions: 'click' (click by data-rooster-id), 'scroll' (scroll page), 'type' (type text into input). "
+        "All actions return the updated page content. "
+        "Do NOT use web_search for tasks that require browser interaction."
     )
-    domain: str = "recon"
+    domain: str = "UI"
     args_schema: Type[BaseModel] = BrowserActArgs
 
     async def run(self, **kwargs) -> str:

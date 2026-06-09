@@ -49,6 +49,7 @@ class SubTask(BaseModel):
     owner: str = Field("AGENT", description="AGENT | USER")
     confidence: str = Field("HIGH", description="HIGH | MEDIUM | LOW")
     risk_note: str = Field("", description="风险提示，如'结果不可保证'")
+    tool_hint: str = Field("", description="逗号分隔的工具名列表，指导 executor 优先选择这些工具（如 'desktop_grounding_scan,desktop_act,desktop_read_screen'）")
 
     @model_validator(mode="after")
     def validate_subtask_logic(self) -> "SubTask":

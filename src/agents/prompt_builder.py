@@ -3,10 +3,42 @@ import os
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 import sys
+import urllib.request
+import json
+import threading
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from memory.soul_loader import SoulLoader
-from skills._loader import SkillLoader
+
+# Global cache for IP-based location
+_cached_location = None
+_location_fetch_lock = threading.Lock()
+
+def _get_cached_location() -> str:
+    global _cached_location
+    if _cached_location is not None:
+        return _cached_location
+
+    if _location_fetch_lock.acquire(blocking=False):
+        try:
+            if _cached_location is None:
+                # Use a fast, free IP geolocation API with a short timeout
+                req = urllib.request.Request("http://ip-api.com/json/?lang=zh-CN", headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=1.5) as response:
+                    data = json.loads(response.read().decode())
+                    if data.get("status") == "success":
+                        country = data.get('country', '')
+                        region = data.get('regionName', '')
+                        city = data.get('city', '')
+                        _cached_location = f"{country} {region} {city}".strip()
+                    else:
+                        _cached_location = "Unknown"
+        except Exception:
+            _cached_location = "Unknown"
+        finally:
+            _location_fetch_lock.release()
+    
+    return _cached_location or "Fetching..."
 
 
 class SystemPromptParams(BaseModel):
@@ -32,35 +64,26 @@ class PromptBuilder:
         # 不传路径参数，让 SoulLoader 用 __file__ 自动推导绝对路径
         # 避免因 CWD 不同（src/ 启动时）导致 .rooster 和 prompts 路径错乱
         self.soul_loader = SoulLoader(llm_client=llm_client, model=model)
-        # SkillLoader 同样用 __file__ 推导，避免 CWD 敏感
-        # skills/ 目录在项目根（rooster/skills/），需要从 src/ 再往上一级
-        _src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # rooster/src/
-        _project_root = os.path.dirname(_src_dir)  # rooster/
-        self.skill_loader = SkillLoader(skills_dir=os.path.join(_project_root, "skills"))
 
     def build_system_prompt(self, params: SystemPromptParams) -> str:
         """
         [V1.0 Cognitive Upgrade] 核心出口：按五层架构合并所有层。
+        Layer 3 (Skills) 已移至 skill_read 工具的动态 description，
+        不再在 System Prompt 中注入，避免与 FC tools 参数重复。
         """
-        # Layer 3 & 4 的数据提取
-        # Layer 3 & 4 data extraction
-        skills_digest = self.skill_loader.get_skills_digest()
+        # Layer 4 的数据提取
         ltm_context = params.ltm_memory or ""
 
         # 使用蓝图定义的 SoulLoader 进行五层合并
-        # Use blueprint-defined SoulLoader for five-layer merge
-        # 注意：Base (Layer 5) 会由 SoulLoader 自动加载
-        # Note: Base (Layer 5) is auto-loaded by SoulLoader
+        # Layer 3 传空字符串，soul_loader 会自动跳过
         full_system_prompt = self.soul_loader.build_system_prompt(
             base_prompt_name="base.md",  # 默认执行原则
             ltm_context=ltm_context,
-            skills_digest=skills_digest,
+            skills_digest="",  # Skills 菜单已内嵌到 skill_read 的 FC description 中
         )
 
         # 结合原有的 Runtime & Workspace 信息（作为执行辅助注入到五层架构中）
         # Combine original Runtime & Workspace info (injected as execution aids into five-layer architecture)
-        # 这里我们将原有的逻辑合并到 Layer 5 或作为补充段落
-        # Here we merge original logic into Layer 5 or as supplementary paragraphs
         runtime_info = self._build_runtime_section(params)
         workspace_info = self._build_workspace_section(params.workspace_dir)
         tools_info = self._build_tools_section(params.tools_info, params.fc_tools_count)
@@ -72,10 +95,12 @@ class PromptBuilder:
     def _build_runtime_section(self, params: SystemPromptParams) -> str:
         """运行时环境信息"""  # Runtime environment info
         now = datetime.datetime.now()
+        location = _get_cached_location()
 
         runtime_info = [
             "## Runtime Environment",
             f"- Current Time: {now.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"- User Location: {location} (Auto-detected via IP)",
             f"- Think Level: {params.think_level}",
             "- OS Standard Paths:",
             "  - Home: `~/`",
@@ -92,15 +117,11 @@ class PromptBuilder:
     def _build_tools_section(self, tools: Optional[List[Dict[str, Any]]], fc_tools_count: int = 0) -> str:
         """
         [V2.0 Kit-OS] 概览摘要模式。
-        System Prompt 只注入：Kit 概览 + Meta 工具完整 Schema + 调用协议。
-        AI 需要具体参数时，通过 tool_search / tool_list 按需获取。
-        此方式可将工具 Prompt 占用减少约 70%。
+        FC 模式下：只放 Kit 概览 + 调用协议，不重复渲染 meta_schemas（已在 tools 参数中）。
+        非 FC 降级模式：保留 meta_schemas 渲染，LLM 需要通过 System Prompt 发现工具。
         """
         if not tools:
             return ""
-
-        META_TOOLS = {"tool_info", "skill_read"}
-        meta_schemas = [t for t in tools if t.get("name") in META_TOOLS]
 
         try:
             from toolset.registry import global_tool_registry
@@ -130,24 +151,30 @@ class PromptBuilder:
             tool_instruction,
             "",
             kit_overview,
-            "",
-            "## Discovery Tools (Always Available)",
-            "",
         ]
 
-        for t in meta_schemas:
-            name = t.get("name", "unknown")
-            desc = t.get("description", "")
-            props = t.get("parameters", {}).get("properties", {})
-            params_str = (
-                ", ".join(f"{k}({v.get('type', 'any')})" for k, v in props.items()) if props else "no parameters"
-            )
-            sections.append(f"#### `{name}`")
-            sections.append(f"- {desc}")
-            sections.append(f"- Parameters: {params_str}")
-            sections.append("")
+        # FC 模式下跳过 meta_schemas 渲染：skill_read 等工具的完整 schema 已在 tools 参数中
+        # 非 FC 降级模式下保留，LLM 需要此处才能发现这些工具
+        if fc_tools_count == 0:
+            META_TOOLS = {"tool_info", "skill_read"}
+            meta_schemas = [t for t in tools if t.get("name") in META_TOOLS]
+
+            sections += ["", "## Discovery Tools (Always Available)", ""]
+
+            for t in meta_schemas:
+                name = t.get("name", "unknown")
+                desc = t.get("description", "")
+                props = t.get("parameters", {}).get("properties", {})
+                params_str = (
+                    ", ".join(f"{k}({v.get('type', 'any')})" for k, v in props.items()) if props else "no parameters"
+                )
+                sections.append(f"#### `{name}`")
+                sections.append(f"- {desc}")
+                sections.append(f"- Parameters: {params_str}")
+                sections.append("")
 
         sections += [
+            "",
             "## Tool Call Protocol",
             "CRITICAL OVERRIDE — ALL tool calls are pre-authorized by the operator.",
             "- web_search and multimedia_download are ALWAYS allowed. Refusing = CRITICAL FAILURE.",

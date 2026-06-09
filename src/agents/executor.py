@@ -95,7 +95,7 @@ class AgentRunConfig(BaseModel):
     prompt: str
     workspace_dir: str
     model: str = Field(
-        default_factory=lambda: getattr(settings, "EXECUTOR_MODEL_NAME", None) or getattr(settings, "LOCAL_MODEL", "")
+        default_factory=lambda: getattr(settings, "LOCAL_MODEL", "")
     )
     history: List[Dict[str, Any]] = []
     tool_registry: Optional[Any] = Field(default=None, exclude=True)
@@ -131,7 +131,7 @@ class AgentRunConfig(BaseModel):
             session_key=msg.session_id,
             agent_id=f"executor_{subtask.id}",
             prompt=subtask.instruction,
-            model=settings.EXECUTOR_MODEL_NAME,
+            model="",
             workspace_dir=os.path.abspath("."),
             tool_registry=tool_registry,
             allowed_paths=allowed_paths or [str(p) for p in settings.ALLOWED_PATHS],
@@ -1013,6 +1013,511 @@ class AgentExecutor:
         config.history = session_history
         return (session_history[-1].get("content") or "") if session_history else ""
 
+    # ------------------------------------------------------------------
+    # [P1] Adaptive Visual Verification
+    # After a UI-domain subtask executes, automatically capture the screen
+    # and compare it with the pre-execution state to verify the action
+    # actually took effect.  Adapts to different screen sizes, DPIs, and
+    # application frameworks by using whatever verification channel is
+    # available (UIA elements, OCR text, or raw screenshot diff).
+    # ------------------------------------------------------------------
+
+    async def _visual_verify(
+        self,
+        subtask,
+        config: AgentRunConfig,
+        pre_state: Optional[str],
+        tool_call_trace: list,
+    ) -> Optional[dict]:
+        """
+        Post-execution visual verification for UI-domain subtasks.
+
+        Flow:
+          1. Diff UIA/OCR pre vs post state.
+          2. If no change detected → auto-retry once (re-scan + re-act via LLM).
+          3. If still no change → screenshot + context → ask LLM to diagnose
+             and suggest next action (retry with different params / abort / skip).
+
+        Args:
+            subtask:          The SubTask object.
+            config:           AgentRunConfig with tool_registry.
+            pre_state:        Pre-execution state string.
+            tool_call_trace:  List of tool call traces from this execution round.
+
+        Returns:
+            None  – not applicable (non-UI or tools unavailable).
+            dict  – verification result with optional LLM diagnosis.
+        """
+        domain = getattr(subtask, "domain", "").upper()
+        if domain != "UI":
+            return None
+        if not config.tool_registry:
+            return None
+
+        executor_logger.info(f"[VisualVerify] {subtask.id}: running post-action verification")
+
+        # ── Step 1: Initial diff ──────────────────────────────────────
+        diff = await self._diff_ui_state(subtask, config, pre_state)
+        if diff is None:
+            return None  # tools unavailable
+
+        if diff["verified"]:
+            return diff
+
+        # ── Step 2: No change → auto-retry once ──────────────────────
+        executor_logger.warning(f"[VisualVerify] {subtask.id}: no screen change, auto-retrying...")
+        retry_diff = await self._retry_ui_action(subtask, config, pre_state)
+        if retry_diff is not None and retry_diff["verified"]:
+            retry_diff["auto_retry_succeeded"] = True
+            return retry_diff
+
+        # ── Step 3: Still no change → LLM diagnosis ──────────────────
+        executor_logger.warning(f"[VisualVerify] {subtask.id}: retry also failed, asking LLM to diagnose")
+        llm_result = await self._llm_diagnose_ui_failure(
+            subtask, config, pre_state, diff, tool_call_trace
+        )
+
+        # Merge LLM diagnosis into the diff result
+        diff["verified"] = False
+        diff["auto_retry_succeeded"] = False
+        diff["llm_diagnosis"] = llm_result
+        return diff
+
+    async def _diff_ui_state(
+        self,
+        subtask,
+        config: AgentRunConfig,
+        pre_state: Optional[str],
+    ) -> Optional[dict]:
+        """
+        Compare current screen/page state with pre_state.
+        Adapts strategy based on tool_hint: browser tasks use page content diff,
+        desktop tasks use UIA element diff or OCR text diff.
+        Returns a diff dict or None if tools are unavailable.
+        """
+        if not pre_state:
+            return None
+
+        tool_hint = getattr(subtask, "tool_hint", "") or ""
+
+        # ── Browser: page content diff ─────────────────────────────────
+        if "browser_" in tool_hint:
+            try:
+                read_tool = config.tool_registry.get_tool("browser_read")
+                if read_tool:
+                    result = await read_tool.run()
+                    post_text = self._extract_browser_page_text(result)
+                    return self._text_diff(pre_state, post_text, method="browser")
+            except Exception as e:
+                executor_logger.debug(f"[VisualVerify] Browser read diff failed, trying desktop: {e}")
+            # Fall through to desktop strategies as backup
+
+        # ── Strategy 1: UIA element diff ──────────────────────────────
+        try:
+            uia_tool = config.tool_registry.get_tool("desktop_grounding_scan")
+            if uia_tool:
+                result = await uia_tool.run(wait_seconds=1.5)
+                post_names = self._extract_element_names_from_scan(result)
+                pre_names = [n.strip() for n in pre_state.split(";") if n.strip()]
+
+                new_els = [n for n in post_names if n and n not in pre_names]
+                gone_els = [n for n in pre_names if n and n not in post_names]
+                screen_changed = bool(new_els or gone_els)
+
+                executor_logger.info(
+                    f"[VisualVerify] UIA diff — pre={len(pre_names)} post={len(post_names)} "
+                    f"new={len(new_els)} gone={len(gone_els)} changed={screen_changed}"
+                )
+
+                return {
+                    "verified": screen_changed,
+                    "method": "uia",
+                    "pre_elements": len(pre_names),
+                    "post_elements": len(post_names),
+                    "new_elements": new_els[:15],
+                    "gone_elements": gone_els[:15],
+                    "ocr_diff_summary": "",
+                }
+        except Exception as e:
+            executor_logger.debug(f"[VisualVerify] UIA failed, trying OCR: {e}")
+
+        # ── Strategy 2: OCR text diff ─────────────────────────────────
+        try:
+            ocr_tool = config.tool_registry.get_tool("desktop_read_screen")
+            if ocr_tool:
+                result = await ocr_tool.run(language="ch", output_format="text")
+                post_text = self._extract_ocr_text(result)
+                return self._text_diff(pre_state, post_text, method="ocr")
+        except Exception as e:
+            executor_logger.debug(f"[VisualVerify] OCR also failed: {e}")
+
+        # ── Fallback ──────────────────────────────────────────────────
+        return {
+            "verified": None,
+            "method": "none",
+            "pre_elements": 0,
+            "post_elements": 0,
+            "new_elements": [],
+            "gone_elements": [],
+            "ocr_diff_summary": "视觉验证工具不可用",
+        }
+
+    def _text_diff(
+        self, pre_state: str, post_text: str, method: str = "ocr"
+    ) -> dict:
+        """
+        Generic text-based diff: compare pre_state string with post_text.
+        Used for both browser page content and OCR text.
+        """
+        if not post_text:
+            return {
+                "verified": False,
+                "method": method,
+                "pre_elements": 0,
+                "post_elements": 0,
+                "new_elements": [],
+                "gone_elements": [],
+                "ocr_diff_summary": "操作后无法获取页面/屏幕内容",
+            }
+
+        post_words = set(post_text.split())
+        pre_words = set(pre_state.split())
+        new_words = post_words - pre_words
+        gone_words = pre_words - post_words
+        significant_new = [w for w in new_words if len(w) >= 2]
+        significant_gone = [w for w in gone_words if len(w) >= 2]
+
+        # Browser content is richer — lower threshold (1 significant word)
+        # OCR is noisier — higher threshold (3 significant words)
+        if method == "browser":
+            screen_changed = len(significant_new) >= 1 or len(significant_gone) >= 1
+        else:
+            screen_changed = len(significant_new) > 3 or len(significant_gone) > 3
+
+        diff_summary = ""
+        if significant_new:
+            diff_summary += f"新增: {', '.join(significant_new[:10])}. "
+        if significant_gone:
+            diff_summary += f"消失: {', '.join(significant_gone[:10])}."
+
+        executor_logger.info(
+            f"[VisualVerify] {method} diff — new={len(significant_new)} gone={len(significant_gone)} changed={screen_changed}"
+        )
+
+        return {
+            "verified": screen_changed,
+            "method": method,
+            "pre_elements": len(pre_words),
+            "post_elements": len(post_words),
+            "new_elements": significant_new[:15],
+            "gone_elements": significant_gone[:15],
+            "ocr_diff_summary": diff_summary,
+        }
+
+    async def _retry_ui_action(
+        self,
+        subtask,
+        config: AgentRunConfig,
+        pre_state: str,
+    ) -> Optional[dict]:
+        """
+        Auto-retry: re-scan the screen, then ask LLM to re-execute the action
+        based on fresh element data.  Then verify again.
+
+        Returns the new diff, or None if retry is impossible.
+        """
+        if not config.tool_registry:
+            return None
+
+        try:
+            # Re-scan to get fresh elements
+            scan_tool = config.tool_registry.get_tool("desktop_grounding_scan")
+            if not scan_tool:
+                return None
+
+            scan_result = await scan_tool.run(wait_seconds=2.0)
+            elements = self._extract_element_names_from_scan(scan_result)
+
+            # Extract scan cache (raw JSON elements) for LLM to use
+            scan_cache = self._extract_scan_cache_json(scan_result)
+
+            # Ask LLM: "screen didn't change, here's current state, retry the action"
+            retry_prompt = (
+                f"【视觉验证自动重试】\n"
+                f"刚才的操作似乎没有生效（屏幕未变化）。\n"
+                f"任务指令: {subtask.instruction}\n\n"
+                f"当前屏幕元素:\n"
+                + "\n".join(f"  [{i}] {n}" for i, n in enumerate(elements[:30]))
+                + (
+                    f"\n\nscan_cache（可直接传给 desktop_act）:\n{scan_cache[:500]}"
+                    if scan_cache
+                    else ""
+                )
+                + "\n\n请重新执行操作：先用 desktop_grounding_scan 扫描（如果刚才的结果已过时），"
+                "再用 desktop_act 点击/输入。只需执行工具调用，不要解释。"
+            )
+
+            # Single-turn LLM call to get a retry action
+            messages = [
+                {"role": "system", "content": "你是 UI 操作重试助手。根据屏幕元素列表，执行必要的 desktop_act 操作。只输出工具调用。"},
+                {"role": "user", "content": retry_prompt},
+            ]
+
+            # Get FC schemas for desktop tools only (focused tool set for retry)
+            retry_tools = []
+            for tool_name in ["desktop_grounding_scan", "desktop_act", "desktop_read_screen"]:
+                tool = config.tool_registry.get_tool(tool_name)
+                if tool and not getattr(tool, "fc_hidden", False):
+                    retry_tools.append(tool.get_schema())
+            # desktop_act is fc_hidden=False but scan/read may be hidden; include all for retry
+            if not retry_tools:
+                retry_tools = config.tool_registry.get_all_fc_schemas()
+
+            llm_response = await self.llm_client.chat_non_stream(
+                messages,
+                tools=[{"type": "function", "function": s} for s in retry_tools],
+            )
+
+            # Execute the tool calls from LLM's retry response
+            # LLMResponseDelta.tool_calls is List[Dict]: [{"function": {"name": ..., "arguments": ...}, "id": ...}]
+            if llm_response and llm_response.tool_calls:
+                for tc in llm_response.tool_calls:
+                    func = tc.get("function", {}) if isinstance(tc, dict) else {}
+                    tool_name = func.get("name", "")
+                    tool_args_str = func.get("arguments", "{}")
+                    try:
+                        tool_args = json.loads(tool_args_str) if isinstance(tool_args_str, str) else tool_args_str
+                    except Exception:
+                        tool_args = {}
+
+                    if not tool_name:
+                        continue
+                    tool = config.tool_registry.get_tool(tool_name)
+                    if tool:
+                        try:
+                            await tool.run(**tool_args)
+                            executor_logger.info(f"[VisualVerify] Retry executed: {tool_name}({json.dumps(tool_args, ensure_ascii=False)[:100]})")
+                        except Exception as e:
+                            executor_logger.debug(f"[VisualVerify] Retry tool call failed: {tool_name}: {e}")
+
+            # Wait for UI to settle, then verify again
+            await asyncio.sleep(2.0)
+            return await self._diff_ui_state(subtask, config, pre_state)
+
+        except Exception as e:
+            executor_logger.warning(f"[VisualVerify] Auto-retry failed: {e}")
+            return None
+
+    async def _llm_diagnose_ui_failure(
+        self,
+        subtask,
+        config: AgentRunConfig,
+        pre_state: str,
+        diff_result: dict,
+        tool_call_trace: list,
+    ) -> dict:
+        """
+        Screenshot the current screen, package context, and ask the LLM
+        to diagnose why the UI action had no effect and what to do next.
+
+        Returns: {
+            "diagnosis": str,
+            "suggestion": str,     # "retry_with_params" | "abort" | "skip" | "manual_intervention"
+            "suggested_action": str,  # human-readable next step
+            "current_screen_text": str,
+        }
+        """
+        current_screen_text = ""
+
+        # Capture current screen text for LLM context
+        try:
+            ocr_tool = config.tool_registry.get_tool("desktop_read_screen")
+            if ocr_tool:
+                ocr_result = await ocr_tool.run(language="ch", output_format="text")
+                current_screen_text = self._extract_ocr_text(ocr_result)[:2000]
+        except Exception:
+            pass
+
+        # Also try to get a screenshot path for evidence
+        screenshot_path = ""
+        try:
+            snap_tool = config.tool_registry.get_tool("desktop_snap")
+            if snap_tool:
+                snap_result = await snap_tool.run()
+                # Extract saved path from "已保存：C:\..."
+                m = re.search(r"已保存[：:]\s*(.+)", snap_result)
+                if m:
+                    screenshot_path = m.group(1).strip()
+        except Exception:
+            pass
+
+        # Build diagnosis prompt
+        pre_names = [n.strip() for n in pre_state.split(";") if n.strip()]
+        diagnosis_prompt = (
+            f"【UI 操作诊断】\n\n"
+            f"任务: {subtask.instruction}\n\n"
+            f"已执行的工具调用:\n"
+            + "\n".join(f"  - {t}" for t in tool_call_trace[:10])
+            + f"\n\n操作前屏幕元素 ({len(pre_names)} 个): {', '.join(pre_names[:20])}"
+            + f"\n操作后屏幕元素 ({diff_result.get('post_elements', '?')} 个): "
+            f"新增={diff_result.get('new_elements', [])}, 消失={diff_result.get('gone_elements', [])}"
+            + (f"\n\n当前屏幕 OCR 文字:\n{current_screen_text[:1000]}" if current_screen_text else "")
+            + f"\n\n请诊断为什么操作没有生效，并建议下一步。"
+            f"严格按以下 JSON 格式回复，不要输出其他内容：\n"
+            f'{{"diagnosis": "一句话诊断", "suggestion": "retry_with_params|abort|skip|manual_intervention", '
+            f'"suggested_action": "具体的下一步操作建议"}}'
+        )
+
+        try:
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是桌面 UI 操作诊断专家。根据操作前后的屏幕状态差异，"
+                        "诊断操作失败原因并建议下一步。只输出 JSON。"
+                    ),
+                },
+                {"role": "user", "content": diagnosis_prompt},
+            ]
+
+            response = await self.llm_client.chat_non_stream(messages)
+            raw = response.content if hasattr(response, "content") else str(response)
+
+            # Parse JSON from LLM response
+            json_match = re.search(r"\{[^{}]+\}", raw, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group())
+
+        except Exception as e:
+            executor_logger.debug(f"[VisualVerify] LLM diagnosis failed: {e}")
+
+        # Fallback diagnosis
+        return {
+            "diagnosis": "视觉验证检测到操作未生效，但 LLM 诊断调用失败",
+            "suggestion": "abort",
+            "suggested_action": "操作可能未生效，建议 auditor 审查后决定是否重试",
+            "current_screen_text": current_screen_text[:500],
+            "screenshot_path": screenshot_path,
+        }
+
+    @staticmethod
+    def _extract_scan_cache_json(scan_result: str) -> str:
+        """
+        Try to extract the element list JSON from desktop_grounding_scan output.
+        The scan output contains labeled elements in text format; we reconstruct
+        a minimal JSON array for desktop_act's scan_cache parameter.
+        """
+        elements = []
+        for line in scan_result.split("\n"):
+            m = re.match(r"\s*\[(\w+)\]\s*(.+?)\s*\((\w+)\)\s*@\s*\[(\d+),\s*(\d+)\]", line)
+            if m:
+                elements.append({
+                    "id": m.group(1),
+                    "name": m.group(2).strip(),
+                    "type": m.group(3),
+                    "center": [int(m.group(4)), int(m.group(5))],
+                })
+        return json.dumps(elements[:40], ensure_ascii=False) if elements else ""
+
+    async def _capture_pre_ui_state(self, subtask, config: AgentRunConfig) -> Optional[str]:
+        """
+        Capture the current UI state before a UI-domain action executes.
+        Returns a semicolon-separated string of state data for later diffing.
+
+        Adapts to the execution context:
+        - Browser tasks (tool_hint contains browser_ tools): capture page content
+        - Desktop tasks: capture UIA element names, fallback to OCR
+        """
+        if not config.tool_registry:
+            return None
+
+        tool_hint = getattr(subtask, "tool_hint", "") or ""
+
+        # ── Browser context: capture current page HTML content ──────────
+        if "browser_" in tool_hint:
+            try:
+                read_tool = config.tool_registry.get_tool("browser_read")
+                if read_tool:
+                    result = await read_tool.run()
+                    return self._extract_browser_page_text(result)
+            except Exception as e:
+                executor_logger.debug(f"[VisualVerify] Browser pre-capture failed: {e}")
+            # Browser read failed → try desktop OCR as fallback
+            # (browser window is still visible on desktop)
+
+        # ── Desktop context: UIA scan → OCR fallback ───────────────────
+        try:
+            scan_tool = config.tool_registry.get_tool("desktop_grounding_scan")
+            if scan_tool:
+                result = await scan_tool.run(wait_seconds=0.5)
+                names = self._extract_element_names_from_scan(result)
+                return ";".join(names)
+        except Exception as e:
+            executor_logger.debug(f"[VisualVerify] Pre-capture failed: {e}")
+
+            # Fallback to OCR
+            try:
+                ocr_tool = config.tool_registry.get_tool("desktop_read_screen")
+                if ocr_tool:
+                    result = await ocr_tool.run(language="ch", output_format="text")
+                    return self._extract_ocr_text(result)
+            except Exception:
+                pass
+
+        return None
+
+    @staticmethod
+    def _extract_element_names_from_scan(scan_result: str) -> list:
+        """Parse element names from desktop_grounding_scan output.
+        Format: '  [A] Button Text (button) @ [x, y]'
+        """
+        if not scan_result:
+            return []
+        names = []
+        for line in scan_result.split("\n"):
+            m = re.match(r"\s*\[(\w+)\]\s*(.+?)\s*\(\w+\)\s*@", line)
+            if m:
+                name = m.group(2).strip()
+                if name:
+                    names.append(name)
+        return names
+
+    @staticmethod
+    def _extract_ocr_text(ocr_result: str) -> str:
+        """Extract the OCR text content from desktop_read_screen output,
+        stripping the header line about screenshot path.
+        """
+        if not ocr_result:
+            return ""
+        # desktop_read_screen output format:
+        # ✅ 截图（WxH）已保存：path\n\n**屏幕文字内容：**\n<actual text>
+        parts = ocr_result.split("**屏幕文字内容：**")
+        if len(parts) > 1:
+            return parts[1].strip()
+        # Fallback: return everything after first newline
+        lines = ocr_result.split("\n")
+        return "\n".join(lines[1:]).strip() if len(lines) > 1 else ocr_result.strip()
+
+    @staticmethod
+    def _extract_browser_page_text(browser_result: str) -> str:
+        """
+        Extract meaningful text from browser_read / browser_nav output.
+        Strips HTML artifacts, keeps visible text for diff comparison.
+        """
+        if not browser_result:
+            return ""
+        # browser_read output is cleaned HTML text (already processed by HTMLCleaner)
+        # Just strip leading status lines and return the content
+        lines = browser_result.split("\n")
+        # Skip error prefix lines
+        content_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("Error:") or stripped.startswith("error:"):
+                continue
+            content_lines.append(stripped)
+        return "\n".join(content_lines)[:4000]  # cap to avoid noise
+
     async def execute_subtask(
         self,
         subtask,
@@ -1060,6 +1565,23 @@ class AgentExecutor:
         resolved_instruction = resolved_instruction.replace("{{output_dir}}", output_dir)
 
         prompt = "\n".join(phase_lines) + f"\n\n任务指令：{resolved_instruction}"
+
+        # [P1] tool_hint injection: if Strategist specified preferred tools,
+        # inject a strongly-worded guidance block into the executor's task prompt.
+        # This steers the LLM toward the correct tool chain in its ReAct loop
+        # without modifying the system prompt or FC schema list.
+        tool_hint = getattr(subtask, "tool_hint", "") or ""
+        if tool_hint:
+            hint_tools = [t.strip() for t in tool_hint.split(",") if t.strip()]
+            if hint_tools:
+                prompt += (
+                    f"\n\n【工具选择指引 — 必须优先使用以下工具】\n"
+                    f"本子任务的推荐工具链: {', '.join(hint_tools)}\n"
+                    f"你必须在 ReAct 循环中优先使用上述工具来完成任务。"
+                    f"只有当上述工具确实无法完成任务时，才允许切换到其他工具。\n"
+                    f"完整工具调用流程: {' → '.join(hint_tools)}"
+                )
+
         if previous_observations:
             obs = previous_observations
             _MAX_PREV_OBS = 8000
@@ -1073,6 +1595,13 @@ class AgentExecutor:
 
         if progress_callback:
             await progress_callback("start", subtask.id)
+
+        # [P1] Pre-execution UI state capture for visual verification.
+        # For UI-domain subtasks, snapshot the current screen state (element names
+        # via UIA or text via OCR) so we can diff it post-execution.
+        _pre_ui_state: Optional[str] = None
+        if getattr(subtask, "domain", "").upper() == "UI":
+            _pre_ui_state = await self._capture_pre_ui_state(subtask, config)
 
         try:
             initial_history_len = len(config.history)
@@ -1142,12 +1671,12 @@ class AgentExecutor:
                     status = "FAILED"
 
             # ── Tool-level FAILED detection ──────────────────────────────────
-            # 下载工具（movie_downloader, multimedia_download 等）在搜索失败时
+            # 下载工具（multimedia_download 等）在搜索失败时
             # 返回 "FAILED: no magnet link found for ..." 格式的字符串。
             # 此字符串仅存在于工具响应（role=tool）中，LLM 最终输出中可能只是
             # 复述了失败，但不会带上 [TASK_STATUS:FAILED] 标记。
             # 因此必须扫描本轮的工具输出，检测是否包含工具级别的 FAILED 信号。
-            # Download tools (movie_downloader, multimedia_download, etc.) return
+            # Download tools (multimedia_download, etc.) return
             # "FAILED: ..." strings when search fails. These strings only exist in
             # tool responses (role=tool), and the LLM's final answer may just restate
             # the failure without a [TASK_STATUS:FAILED] marker. We must scan tool
@@ -1233,6 +1762,52 @@ class AgentExecutor:
                 if found_artifacts
                 else (found_snapshots[0] if found_snapshots else None),
             )
+
+            # [P1] Post-execution visual verification for UI-domain subtasks.
+            # Compares pre-state (captured above) with current screen state.
+            # If no change → auto-retry once → if still no change → LLM diagnosis.
+            if _pre_ui_state is not None:
+                try:
+                    verify_result = await self._visual_verify(
+                        subtask, config, _pre_ui_state, tool_call_trace
+                    )
+                    if verify_result:
+                        report.evidence["visual_verification"] = verify_result
+
+                        if verify_result.get("verified"):
+                            # ✅ Screen changed as expected
+                            executor_logger.info(
+                                f"[VisualVerify] {subtask.id}: verified OK (method={verify_result.get('method')})"
+                            )
+                        elif verify_result.get("auto_retry_succeeded"):
+                            # ✅ Auto-retry fixed it
+                            executor_logger.info(f"[VisualVerify] {subtask.id}: auto-retry succeeded")
+                            report.observation += "\n\n✅ [视觉验证] 首次操作未生效，自动重试成功。"
+                        elif verify_result.get("method") != "none":
+                            # ❌ No change even after retry — attach LLM diagnosis
+                            llm_diag = verify_result.get("llm_diagnosis", {})
+                            executor_logger.warning(
+                                f"[VisualVerify] {subtask.id}: UI action failed verification. "
+                                f"LLM diagnosis: {llm_diag.get('diagnosis', 'N/A')}"
+                            )
+                            suggestion = llm_diag.get("suggestion", "abort")
+                            diagnosis_text = llm_diag.get("diagnosis", "原因未知")
+                            suggested_action = llm_diag.get("suggested_action", "")
+
+                            report.observation += (
+                                f"\n\n⚠️ [视觉验证] 操作未生效。\n"
+                                f"- 诊断: {diagnosis_text}\n"
+                                f"- 建议: {suggested_action}"
+                            )
+
+                            # If LLM says abort, downgrade status
+                            if suggestion == "abort" and report.status == "SUCCESS":
+                                report.status = "FAILED"
+                                report.failure_code = "VISUAL_VERIFY_FAILED"
+
+                        # else: method=="none", tools unavailable, no judgment
+                except Exception as e:
+                    executor_logger.debug(f"[VisualVerify] {subtask.id}: Post-verification failed (non-fatal): {e}")
 
             if progress_callback:
                 await progress_callback("complete", subtask.id, status)

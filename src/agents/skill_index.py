@@ -16,6 +16,9 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# 项目根目录（CWD 无关，基于 __file__ 推导）
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 @dataclass
 class SkillHint:
@@ -77,7 +80,13 @@ class SkillIndex:
     def __init__(self, skills_dirs: Optional[List[str]] = None, threshold: float = 0.3):
         self._index: List[Dict] = list(self._BUILTIN_SKILLS)
         self._threshold = threshold
-        self._load_from_dirs(skills_dirs or ["skills", ".agents/skills"])
+        if skills_dirs is None:
+            # CWD 安全的绝对路径
+            skills_dirs = [
+                os.path.join(_PROJECT_ROOT, "skills"),
+                os.path.join(_PROJECT_ROOT, ".agents", "skills"),
+            ]
+        self._load_from_dirs(skills_dirs)
         logger.info(f"[SkillIndex] 索引构建完成，共 {len(self._index)} 个技能，阈值={self._threshold}")
 
     def _load_from_dirs(self, dirs: List[str]):

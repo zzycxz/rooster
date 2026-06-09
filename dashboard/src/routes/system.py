@@ -32,6 +32,8 @@ async def api_health():
         "MIMO_KEY",
         "ZHIPU_KEY",
         "ZHIPU_GLM_KEY",
+        "ZHIPU_CODINGPLAN_KEY",
+        "VOLCENGINE_CODINGPLAN_KEY",
         "JIUTIAN_KEY",
         "OPENAI_KEY",
         "ANTHROPIC_KEY",

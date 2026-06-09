@@ -30,6 +30,12 @@ class ProvidersConfig:
     ZHIPU_CODINGPLAN_KEY: str = _env("ZHIPU_CODINGPLAN_KEY", "")
     ZHIPU_CODINGPLAN_MODEL: str = _env("ZHIPU_CODINGPLAN_MODEL", "GLM-4.7")
 
+    # --- Volcengine Ark (火山方舟 Coding Plan) ---
+    # --- Volcengine Ark (Volcengine Ark Coding Plan) ---
+    VOLCENGINE_CODINGPLAN_URL: str = _env("VOLCENGINE_CODINGPLAN_URL", "https://ark.cn-beijing.volces.com/api/coding/v3")
+    VOLCENGINE_CODINGPLAN_KEY: str = _env("VOLCENGINE_CODINGPLAN_KEY", "")
+    VOLCENGINE_CODINGPLAN_MODEL: str = _env("VOLCENGINE_CODINGPLAN_MODEL", "deepseek-v4-pro")
+
     # --- OpenAI ---
     OPENAI_URL: str = _env("OPENAI_URL", "https://api.openai.com/v1")
     OPENAI_KEY: str = _env("OPENAI_KEY", "")
@@ -71,20 +77,16 @@ class ProvidersConfig:
     REASONING_EFFORT: str = _env("REASONING_EFFORT", "medium")
 
     # --- Role-specific model overrides ---
+    # 设计原则：智能体只选厂商 (MODEL_MODE)，具体模型由 LLMClient._get_default_model() 按 provider 自动解析。
+    # 不再单独指定 MODEL_NAME，避免跨厂商模型名冲突（如 AUDITOR_TEXT_MODEL=openai/gpt-oss-120b 发给 zhipu）。
     STRATEGIST_MODEL_MODE: str = _env("STRATEGIST_MODEL_MODE", "zhipu_codingplan")
-    STRATEGIST_MODEL_NAME: str = _env("STRATEGIST_MODEL_NAME", "")
 
     EXECUTOR_MODEL_MODE: str = _env("EXECUTOR_MODEL_MODE", "jiutian")
-    EXECUTOR_MODEL_NAME: str = _env("EXECUTOR_MODEL_NAME", "")
 
     AUDITOR_MODEL_MODE: str = _env("AUDITOR_MODEL_MODE", "jiutian")
-    AUDITOR_MODEL_NAME: str = _env("AUDITOR_MODEL_NAME", "")
-    AUDITOR_VISION_MODEL: str = _env("AUDITOR_VISION_MODEL", "openai/gpt-oss-120b")
-    AUDITOR_TEXT_MODEL: str = _env("AUDITOR_TEXT_MODEL", "qwen/qwen3.6-35b")
 
     ENABLE_REFRAMER: bool = _env_bool("ENABLE_REFRAMER", False)
     REFRAMER_MODEL_MODE: str = _env("REFRAMER_MODEL_MODE", "local")
-    REFRAMER_MODEL_NAME: str = _env("REFRAMER_MODEL_NAME", _env("LOCAL_MODEL", ""))
 
     # --- Fast model (lightweight for summarization / Strategist triage) ---
     # 默认使用 mimo：当前部署未启用 Jiutian 引擎，fast tier 请求通过 mimo 端点发出，
@@ -95,14 +97,22 @@ class ProvidersConfig:
 
     # --- V15: L1 硬路由 + Strategist 语义主权 ---
     MODEL_TIER_FAST: str = _env("MODEL_TIER_FAST", "")  # 空则回退 FAST_MODEL_NAME
-    MODEL_TIER_STANDARD: str = _env("MODEL_TIER_STANDARD", "")  # 空则回退 EXECUTOR_MODEL_NAME
-    MODEL_TIER_REASONING: str = _env("MODEL_TIER_REASONING", "")  # 空则回退 EXECUTOR_MODEL_NAME
+    MODEL_TIER_STANDARD: str = _env("MODEL_TIER_STANDARD", "")  # 空则回退 LLMClient 默认模型
+    MODEL_TIER_REASONING: str = _env("MODEL_TIER_REASONING", "")  # 空则回退 LLMClient 默认模型
     EXECUTOR_AUTO_UPGRADE: bool = _env_bool("EXECUTOR_AUTO_UPGRADE", True)
     EXECUTOR_UPGRADE_THRESHOLD: int = _env_int("EXECUTOR_UPGRADE_THRESHOLD", 2)
     SKILL_INDEX_THRESHOLD: float = _env_float("SKILL_INDEX_THRESHOLD", 0.3)
 
     # --- Ollama local routing ---
     OLLAMA_DOMAINS: list = _env_list("OLLAMA_DOMAINS", "recon,craft")
+
+    # --- Vision (多模态) 路由 ---
+    # 当用户附带图片时，若当前 provider 不在此列表中，自动降级到第一个有 key 的 vision-capable provider。
+    # 设计原则：多模态是 provider 级别的能力声明，不需要在每个智能体里单独处理。
+    VISION_CAPABLE_PROVIDERS: list = _env_list(
+        "VISION_CAPABLE_PROVIDERS",
+        "mimo,zhipu_codingplan,openai,anthropic,cloud",
+    )
 
     # --- Local lightweight domains ---
     # Comma-separated keywords; when a message matches any keyword AND no explicit
@@ -111,7 +121,7 @@ class ProvidersConfig:
 
     # --- Failover ---
     LLM_FAILOVER_ENABLED: bool = _env_bool("LLM_FAILOVER_ENABLED", True)
-    LLM_FAILOVER_ORDER: list = _env_list("LLM_FAILOVER_ORDER", "mimo,zhipu_codingplan,jiutian,local")
+    LLM_FAILOVER_ORDER: list = _env_list("LLM_FAILOVER_ORDER", "mimo,zhipu_codingplan,volcengine_codingplan,jiutian,local")
     LLM_FAILOVER_RETRY_MAX: int = _env_int("LLM_FAILOVER_RETRY_MAX", 2)
     # Keep fallback exception-driven by default.  When disabled, providers are not
     # skipped merely because the prompt looks large; they are tried in order and
@@ -131,7 +141,7 @@ class ProvidersConfig:
 
         raw = os.environ.get(
             "LLM_PROVIDER_MAX_CONCURRENT",
-            "zhipu_codingplan:1,jiutian:2,mimo:2,openai:2,anthropic:2,kimi:2,qwen:2,cloud:2,local:1",
+            "zhipu_codingplan:1,volcengine_codingplan:2,jiutian:2,mimo:2,openai:2,anthropic:2,kimi:2,qwen:2,cloud:2,local:1",
         )
         result: Dict[str, int] = {}
         for item in raw.split(","):

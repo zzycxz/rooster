@@ -47,7 +47,8 @@ The current domain is determined solely by the current input — never by histor
       "race_group": "",
       "owner": "AGENT | USER",
       "confidence": "HIGH | MEDIUM | LOW",
-      "risk_note": "string (optional risk hint)"
+      "risk_note": "string (optional risk hint)",
+      "tool_hint": "string (optional, comma-separated tool names to guide executor tool selection)"
     }
   ]
 }
@@ -96,6 +97,30 @@ Domain is determined by the action's physical nature — not its label or histor
 
 ---
 
+## Tool Hint
+
+Each subtask may include a `tool_hint` field — a comma-separated list of tool names that tells the executor which tools to prefer for this step.
+
+**When to set `tool_hint`:**
+- **UI domain tasks** (desktop automation, browser interaction): always set it to guide the executor toward the correct tool chain.
+- **Other domains**: optional. Only set when the correct tool choice is non-obvious or the default `tool` field is ambiguous.
+
+**Tool hint values by domain pattern:**
+
+| Domain Pattern | `tool_hint` value |
+|---|---|
+| UI: Desktop Automation | `"desktop_grounding_scan,desktop_act,desktop_read_screen"` |
+| UI: Browser Interaction | `"browser_nav,browser_act"` |
+| RESOURCE: Search & Retrieve | `"web_search"` (default, can omit) |
+| RESOURCE: Download | `"multimedia_download"` |
+| SYSTEM: File Operations | `"fs_read,fs_write"` |
+| SYSTEM: Code Execution | `"python_interpreter"` |
+| COMMS: Email | `"email_send"` |
+
+If a subtask requires tools from multiple kits, list all of them. The executor will prioritize these tools in its ReAct loop.
+
+---
+
 ## Domain Patterns
 
 Each domain has a canonical execution pattern. **Follow these templates — do not invent extra steps.**
@@ -140,6 +165,36 @@ ST4 [SYSTEM] — Report: record operation result;
 - ST2 failure → `on_failure: RETRY` (UI element may not have loaded yet).
 - Multi-field forms may be merged into a single ST2, fields executed in order.
 - ST3 verification fails → `REPLAN`, re-plan the operation path.
+
+### UI: Browser Interaction
+**Trigger**: user wants to interact with a web page (login, fill form, click button, download via browser, navigate and operate).
+**Pattern** (2–3 subtasks):
+```
+ST1 [UI]     — Navigate: open target URL via browser_nav;
+                       tool_hint: "browser_nav,browser_act"
+ST2 [UI]     — Act: interact with page elements (click, type, submit) via browser_act;
+                       depends_on: [ST1]
+                       tool_hint: "browser_nav,browser_act"
+ST3 [UI]     — Verify: read page content to confirm action result;
+                       depends_on: [ST2]   ← leaf node, triggers audit
+```
+**Rules**:
+- ST1 must use `browser_nav`, NOT `web_search`. Opening a URL is navigation, not search.
+- ST2 must use `browser_act` for any click/type/submit operation on the page.
+- Multi-step form interactions (login → fill → submit) should be merged into ST2 with multiple browser_act calls.
+- ST2 failure → `on_failure: RETRY` (page may not have loaded).
+- If the task is "download from URL", ST2 may be followed by a SYSTEM subtask to verify the downloaded file.
+
+### RESOURCE: Web Information Only
+**Trigger**: user wants to FIND information, not interact with a page.
+**Pattern** (1–2 subtasks):
+```
+ST1 [RESOURCE] — Search: web_search for information
+ST2 [SYSTEM]   — Output: synthesize and report;
+                         depends_on: [ST1]   ← leaf node
+```
+**Rules**:
+- This is for READ-ONLY tasks. If the user wants to DO something on a page, use UI: Browser Interaction instead.
 
 ### SYSTEM: File Operations
 **Trigger**: user wants to read, write, move, or manage local files.

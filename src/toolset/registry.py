@@ -146,9 +146,10 @@ class ToolRegistry:
         return "\n".join(lines)
 
 
-# Global tool registry instance
-# 全局工具注册表实例
+# Global tool registry instance (empty shell — populated lazily on first access)
+# 全局工具注册表实例（空壳 — 首次访问时懒加载填充）
 global_tool_registry = ToolRegistry()
+_registry_initialized = False
 
 
 def _validate_tool_contract(tool_class: Type[BaseTool]):
@@ -181,6 +182,12 @@ import inspect
 
 
 def _init_registry():
+    """扫描 toolset/definitions/ 并注册所有工具。仅在首次需要时调用一次。"""
+    global _registry_initialized
+    if _registry_initialized:
+        return
+    _registry_initialized = True
+
     import toolset.definitions
 
     skipped = []
@@ -214,4 +221,69 @@ def _init_registry():
     logger.info(f"🔧 工具注册完毕，共 {len(global_tool_registry._tools)} 个工具就绪")
 
 
-_init_registry()
+def _ensure_initialized():
+    """确保 registry 已初始化（幂等，多次调用安全）。"""
+    if not _registry_initialized:
+        _init_registry()
+
+
+# ToolRegistry 方法补丁：在每次需要访问工具列表时自动初始化
+# 这样外部代码 `from toolset.registry import global_tool_registry` 不需要显式调 init
+_original_get_all_fc_schemas = ToolRegistry.get_all_fc_schemas
+_original_get_all_tool_schemas = ToolRegistry.get_all_tool_schemas
+_original_list_tool_names = ToolRegistry.list_tool_names
+_original_get_tool = ToolRegistry.get_tool
+_original_clone = ToolRegistry.clone
+_original_get_tools_by_domain = ToolRegistry.get_tools_by_domain
+_original_get_fc_schemas_for_prompt = ToolRegistry.get_fc_schemas_for_prompt
+_original_get_kit_names = ToolRegistry.get_kit_names
+
+
+def _auto_init_get_all_fc_schemas(self):
+    _ensure_initialized()
+    return _original_get_all_fc_schemas(self)
+
+
+def _auto_init_get_all_tool_schemas(self):
+    _ensure_initialized()
+    return _original_get_all_tool_schemas(self)
+
+
+def _auto_init_list_tool_names(self):
+    _ensure_initialized()
+    return _original_list_tool_names(self)
+
+
+def _auto_init_get_tool(self, name: str):
+    _ensure_initialized()
+    return _original_get_tool(self, name)
+
+
+def _auto_init_clone(self):
+    _ensure_initialized()
+    return _original_clone(self)
+
+
+def _auto_init_get_tools_by_domain(self, domain: str):
+    _ensure_initialized()
+    return _original_get_tools_by_domain(self, domain)
+
+
+def _auto_init_get_fc_schemas_for_prompt(self, prompt, step=1, recently_used=None):
+    _ensure_initialized()
+    return _original_get_fc_schemas_for_prompt(self, prompt, step, recently_used)
+
+
+def _auto_init_get_kit_names(self):
+    _ensure_initialized()
+    return _original_get_kit_names(self)
+
+
+ToolRegistry.get_all_fc_schemas = _auto_init_get_all_fc_schemas
+ToolRegistry.get_all_tool_schemas = _auto_init_get_all_tool_schemas
+ToolRegistry.list_tool_names = _auto_init_list_tool_names
+ToolRegistry.get_tool = _auto_init_get_tool
+ToolRegistry.clone = _auto_init_clone
+ToolRegistry.get_tools_by_domain = _auto_init_get_tools_by_domain
+ToolRegistry.get_fc_schemas_for_prompt = _auto_init_get_fc_schemas_for_prompt
+ToolRegistry.get_kit_names = _auto_init_get_kit_names

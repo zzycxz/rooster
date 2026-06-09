@@ -25,9 +25,11 @@ class GenericTool(BaseTool):
     name: str = "generic_tool"
     kit: str = "Core"
     description: str = (
-        "Fallback tool for tasks that cannot be mapped to a specific tool. "
-        "Passes the original instruction directly to the execution engine, "
-        "which will determine the appropriate action in subsequent steps."
+        "Fallback tool when no specific tool matches the task. "
+        "Passes the instruction to the execution engine, which will choose the right tool in subsequent steps.\n"
+        "Requires: instruction (the original task description).\n"
+        "Only use when: you are unsure which tool to call. The system will auto-route.\n"
+        "NOT for: tasks where you CAN identify the right tool (always prefer the specific tool)."
     )
     domain: str = "craft"
     args_schema: Type[BaseModel] = GenericToolArgs

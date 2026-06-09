@@ -8,8 +8,8 @@
 | Office | excel,word,表格,文档,sheet,单元格 | excel_read, excel_write, office_docx_write, office_pdf_write, office_pdf_read | 处理 Excel 数据、生成 Word 报告 |
 | Interpreter | 执行,python,代码,计算,脚本 | python_interpreter | 运行 Python 代码、数学计算、数据处理 |
 | Memory | 记忆,历史,总结,ltm,知识 | memory_add_fact | 记录长期事实、持久化配置 |
-| Multimedia | 视频,音频,下载,媒体 | multimedia_download | 下载视频和音频 |
-| Network | mcp,协议,外部服务,协同,推送,飞书 | feishu_push_file, magnet_sniffer, collaboration_init | 接入外部服务、推送文件、搜索资源 |
+| Multimedia | 视频,音频,下载,媒体,搜索资源,磁力 | multimedia_download | 下载视频音频、搜索资源链接（action=download/search/auto） |
+| Network | mcp,协议,外部服务,协同,推送,飞书 | feishu_push_file | 接入外部服务、推送文件 |
 | System | 技能,skill,调度,搜索,定时,计划任务,schtasks,cron | skill_read, tool_list, tool_search, task_scheduler_create, task_scheduler_delete | 管理工具发现、读取技能文档、创建/删除 Windows 定时任务 |
 | Task | 任务,状态,追踪,子任务,进度,todo | task_create, task_get, task_update, task_list | 创建和追踪结构化任务，适用于多步骤复杂任务管理 |
 | Orchestration | 子agent,隔离,并行,规划,计划确认 | subagent_spawn, subagent_result, enter_plan_mode, exit_plan_mode | 启动隔离 SubAgent、Plan Mode 规划确认后再执行 |

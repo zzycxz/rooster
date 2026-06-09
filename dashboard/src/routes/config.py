@@ -84,6 +84,7 @@ def _parse_env_file(path: str) -> Dict[str, str]:
 # Provider → API Key mapping for safety checks
 _PROVIDER_KEY_MAP = {
     "zhipu_codingplan": "ZHIPU_CODINGPLAN_KEY",
+    "volcengine_codingplan": "VOLCENGINE_CODINGPLAN_KEY",
 
     "openai": "OPENAI_KEY",
     "anthropic": "ANTHROPIC_KEY",
@@ -181,11 +182,13 @@ async def handle_config_save(data: Dict[str, Any]) -> Dict[str, Any]:
                 "kimi",
                 "jiutian",
                 "zhipu_codingplan",
+                "volcengine_codingplan",
                 "mimo",
                 "local",
             ]
             fast_priority = [
                 "zhipu_codingplan",
+                "volcengine_codingplan",
                 "local",
                 "mimo",
                 "qwen",
@@ -194,7 +197,6 @@ async def handle_config_save(data: Dict[str, Any]) -> Dict[str, Any]:
                 "openai",
                 "cloud",
                 "anthropic",
-
             ]
 
             if not is_explicit_any:
@@ -430,6 +432,7 @@ async def api_config_models():
     _providers = [
         ("mimo", "MIMO_KEY", "MiMo"),
         ("zhipu_codingplan", "ZHIPU_CODINGPLAN_KEY", "智谱 CodingPlan"),
+        ("volcengine_codingplan", "VOLCENGINE_CODINGPLAN_KEY", "火山方舟 Coding Plan"),
 
         ("openai", "OPENAI_KEY", "OpenAI"),
         ("anthropic", "ANTHROPIC_KEY", "Anthropic Claude"),
@@ -468,6 +471,7 @@ async def api_config_test():
     _providers = [
         ("mimo", "MIMO_KEY", "MIMO_URL", "MIMO_MODEL", "https://api.xiaomimimo.com/v1"),
         ("zhipu_codingplan", "ZHIPU_CODINGPLAN_KEY", "ZHIPU_CODINGPLAN_URL", "ZHIPU_CODINGPLAN_MODEL", "https://open.bigmodel.cn/api/coding/paas/v4"),
+        ("volcengine_codingplan", "VOLCENGINE_CODINGPLAN_KEY", "VOLCENGINE_CODINGPLAN_URL", "VOLCENGINE_CODINGPLAN_MODEL", "https://ark.cn-beijing.volces.com/api/coding/v3"),
         ("openai", "OPENAI_KEY", "OPENAI_URL", "OPENAI_MODEL", "https://api.openai.com/v1"),
         ("anthropic", "ANTHROPIC_KEY", "ANTHROPIC_URL", "ANTHROPIC_MODEL", "https://api.anthropic.com"),
         ("kimi", "KIMI_KEY", "KIMI_URL", "KIMI_MODEL", "https://api.moonshot.cn/v1"),

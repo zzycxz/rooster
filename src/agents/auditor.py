@@ -103,7 +103,9 @@ class Auditor:
 
         # 4. 执行 LLM 请求（始终使用文本模型，不再需要 vision 模型）
         # 4. Execute LLM request (always text model, vision model no longer needed)
-        target_model = settings.AUDITOR_TEXT_MODEL
+        # 直接使用 LLMClient 构造时根据 provider 自动解析的默认模型名
+        # Use the default model name resolved from provider at LLMClient construction time
+        target_model = self.llm_client.model_name
         logger.info(
             f"🔍 [Auditor] 发起审计 LLM 调用: model={target_model}, has_images={has_images}, provider={self.llm_client.provider}"
         )
@@ -111,7 +113,7 @@ class Auditor:
         try:
             _timeout = getattr(settings, "AUDITOR_TIMEOUT_SECONDS", 60.0)
             response = await asyncio.wait_for(
-                self.llm_client.chat_non_stream(messages=messages, model=target_model, temperature=0.1),
+                self.llm_client.chat_non_stream(messages=messages, temperature=0.1),
                 timeout=_timeout,
             )
             raw_content = response.content or ""

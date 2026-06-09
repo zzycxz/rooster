@@ -109,6 +109,9 @@ class SkillLoader:
             # 健康检查
             missing = self._check_dependencies(meta_data)
 
+            # 缺依赖时自动 disabled，避免 LLM 调用后运行时报错
+            deps_ok = len(missing) == 0
+
             skill = SkillMeta(
                 name=name,
                 description=meta_data.get("description", ""),
@@ -117,8 +120,12 @@ class SkillLoader:
                 platform=platforms,
                 missing_deps=missing,
                 full_path=path,
-                enabled=enabled
+                enabled=enabled and deps_ok,
             )
+            if not deps_ok:
+                logger.warning(
+                    f"[SkillLoader] Skill '{name}' disabled — missing dependencies: {', '.join(missing)}"
+                )
             self.skills[name] = skill
 
         except Exception as e:

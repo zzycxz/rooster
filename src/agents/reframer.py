@@ -17,7 +17,7 @@ class Reframer:
 
     def __init__(self, llm_client: LLMClient = None):
         self.llm_client = llm_client or LLMClient(
-            provider=settings.STRATEGIST_MODEL_MODE, model=settings.STRATEGIST_MODEL_NAME
+            provider=settings.STRATEGIST_MODEL_MODE
         )
         # 加载外部 Prompt 资产
         # Load external Prompt assets

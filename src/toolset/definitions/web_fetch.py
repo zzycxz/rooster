@@ -32,11 +32,13 @@ class WebFetchTool(BaseTool):
     name: str = "web_fetch"
     kit: str = "Browser"
     description: str = (
-        "Fetch a web page and extract information using a prompt. "
-        "Downloads the page, converts HTML to clean Markdown, then uses a fast AI model "
-        "to summarize or answer questions about the content. Results cached 15 minutes. "
-        "Use this to READ web page content (e.g. articles, documentation, GitHub pages). "
-        "Do NOT use this for file downloads — use download_file or multimedia_download instead."
+        "Headless web page reader — fetch a URL and extract/summarize its content using AI. "
+        "Downloads HTML, converts to clean Markdown, then summarizes against your prompt. Cached 15 min.\n"
+        "Requires: url, prompt. Optional: mode ('summary' or 'raw').\n"
+        "Use when: you need to READ article content, documentation, API responses, or any static web page.\n"
+        "NOT for: clicking buttons, filling forms, logging in (use browser_nav + browser_act instead), "
+        "downloading files (use multimedia_download), web search (use web_search). "
+        "Key difference from browser_nav: this is headless (no browser launched), fast, read-only."
     )
     domain: str = "recon"
     args_schema: Type[BaseModel] = WebFetchArgs
@@ -150,9 +152,11 @@ class BatchWebFetchTool(BaseTool):
     name: str = "batch_web_fetch"
     kit: str = "Browser"
     description: str = (
-        "Fetch multiple web pages concurrently (max 5 URLs) and summarize each against the same prompt. "
-        "Use this instead of calling web_fetch multiple times when you need to compare or extract info from several pages. "
-        "Much faster than sequential web_fetch calls."
+        "Headless batch reader — fetch up to 5 URLs concurrently and summarize each against the same prompt. "
+        "Use instead of calling web_fetch multiple times when comparing or extracting info from several pages. "
+        "Much faster than sequential calls.\n"
+        "Requires: urls (list, max 5), prompt. Optional: mode.\n"
+        "NOT for: browser interaction (use browser_nav + browser_act)."
     )
     domain: str = "recon"
     args_schema: Type[BaseModel] = BatchWebFetchArgs

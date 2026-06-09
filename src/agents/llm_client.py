@@ -110,7 +110,7 @@ def _get_provider_min_interval(provider: str) -> float:
 # ===== Provider rotation pool =====
 # All available providers, select the least busy each call
 # Ordered by response speed, fastest to slowest; local as final fallback
-PROVIDER_POOL = ["mimo", "zhipu_codingplan", "jiutian", "local"]
+PROVIDER_POOL = ["mimo", "zhipu_codingplan", "volcengine_codingplan", "jiutian", "local"]
 
 
 def _inline_system_for_mimo(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
