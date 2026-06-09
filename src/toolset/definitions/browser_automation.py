@@ -116,6 +116,7 @@ class BrowserReadTool(BrowserBaseTool):
 class BrowserClickTool(BrowserBaseTool):
     name: str = "browser_click"
     kit: str = "Browser"
+    risk_level: str = "medium"
     fc_hidden: bool = True  # [Round 10] Use browser_act(action="click", index=...) instead
     description: str = "点击。输入 ID。"
     domain: str = "UI"
@@ -145,6 +146,7 @@ class BrowserClickTool(BrowserBaseTool):
 class BrowserTypeTool(BrowserBaseTool):
     name: str = "browser_type"
     kit: str = "Browser"
+    risk_level: str = "medium"
     fc_hidden: bool = True  # [Round 10] Use browser_act(action="type", index=..., text=...) instead
     description: str = (
         "在浏览器输入框中输入文字。通过 data-rooster-id 定位输入框，"
@@ -326,6 +328,7 @@ class BrowserPaginationTool(BrowserBaseTool):
 class BrowserActTool(BrowserBaseTool):
     """[Round 10] Unified browser interaction macro: click, scroll, or type in one tool."""
 
+    risk_level: str = "medium"
     name: str = "browser_act"
     kit: str = "Browser"
     description: str = (

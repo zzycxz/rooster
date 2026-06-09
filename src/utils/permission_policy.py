@@ -37,6 +37,26 @@ _RISK_RANKS: Dict[str, int] = {
     "critical": 4,
 }
 
+# Reverse mapping: threshold → max risk level to expose in FC schemas
+# "Need confirmation" ≠ "should not be visible". Only strict policy hides tools.
+_THRESHOLD_TO_MAX_RISK: Dict[int, Optional[str]] = {
+    2: "medium",   # strict: hide high/critical (file_system, interpreter, task_scheduler)
+    3: None,       # balanced: show all tools, high-risk ones require confirmation at execution
+    4: None,       # permissive: no filtering
+}
+
+
+def get_max_risk_level_for_policy(policy_name: str) -> Optional[str]:
+    """Get the max risk level that should be exposed in FC schemas for a given policy.
+
+    Returns None when no filtering is needed (balanced / permissive).
+    This is the single source of truth for policy → risk-level mapping.
+    Note: this only controls *visibility* in FC schemas. Execution-time confirmation
+    is governed by ToolPermissionPolicy.check() independently.
+    """
+    threshold = _POLICY_THRESHOLDS.get(policy_name, 3)
+    return _THRESHOLD_TO_MAX_RISK.get(threshold)
+
 
 @dataclass
 class ToolPermissionPolicy:

@@ -49,6 +49,7 @@ class MultimediaDownloadTool(BaseTool):
 
     name: str = "multimedia_download"
     kit: str = "Multimedia"
+    risk_level: str = "medium"
     description: str = (
         "Download and resource search tool. Actions:\n"
         "- 'download': Start downloading a file by URI (magnet/ed2k/http). Requires: uri. "

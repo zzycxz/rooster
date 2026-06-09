@@ -6,6 +6,7 @@ metadata:
     emoji: "🐙"
     platform: ["any"]
     category: "development"
+    kits: ["Browser"]
     requires:
       python_packages: []
       bins: ["gh"]

@@ -6,6 +6,7 @@ metadata:
     emoji: "🔍"
     platform: ["any"]
     category: "search"
+    kits: ["Browser"]
 ---
 
 # Web Search — 网页搜索

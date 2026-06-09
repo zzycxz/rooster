@@ -6,6 +6,7 @@ metadata:
     emoji: "🖥️"
     platform: ["windows"]
     category: "automation"
+    kits: ["Vision"]
     requires:
       python_packages: ["ultralytics", "pyautogui"]
       bins: []

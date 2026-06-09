@@ -38,6 +38,31 @@ class SkillHint:
         }
 
 
+# ---------------------------------------------------------------------------
+# [Phase 3] SkillIndex hint → ToolRouter Kit mapping
+# Resolved dynamically from SKILL.md frontmatter (kits field) and built-in index.
+# No hardcoded mapping — third-party skills declare their own kits.
+# ---------------------------------------------------------------------------
+
+
+def hint_to_forced_kits(hint_skill: str) -> set:
+    """Convert a SkillIndex hint_skill to a set of Kit names for ToolRouter.
+
+    Looks up the skill in the global SkillIndex. Kits are declared per-skill
+    in SKILL.md frontmatter (``kits: ["Vision", "Browser"]``) or in
+    _BUILTIN_SKILLS entries. Returns empty set if the skill has no kits.
+    """
+    try:
+        idx = get_skill_index()
+        for entry in idx._index:
+            if entry.get("name") == hint_skill:
+                kits = entry.get("kits", [])
+                return set(kits) if kits else set()
+    except Exception:
+        pass
+    return set()
+
+
 class SkillIndex:
     """
     v1: TF-IDF 关键词匹配（零外部依赖）
@@ -49,31 +74,37 @@ class SkillIndex:
             "name": "media_download",
             "keywords": ["下载", "download", "电影", "音乐", "安装", "install", "视频", "video"],
             "model_hint": "fast",
+            "kits": ["Multimedia", "Browser"],
         },
         {
             "name": "web_search",
             "keywords": ["搜索", "查找", "search", "find", "查询", "查一下", "搜一下"],
             "model_hint": "fast",
+            "kits": ["Browser"],
         },
         {
             "name": "code_agent",
             "keywords": ["代码", "编程", "python", "写代码", "debug", "bug", "脚本", "script", "函数", "function"],
             "model_hint": "reasoning",
+            "kits": ["Interpreter"],
         },
         {
             "name": "file_agent",
             "keywords": ["文件", "读取", "写入", "目录", "路径", "file", "read", "write", "folder"],
             "model_hint": "standard",
+            "kits": ["FileSystem", "Office"],
         },
         {
             "name": "browser_agent",
             "keywords": ["浏览器", "网页", "截图", "点击", "browser", "screenshot", "webpage"],
             "model_hint": "standard",
+            "kits": ["Browser"],
         },
         {
             "name": "schedule_agent",
             "keywords": ["定时", "提醒", "每天", "每周", "schedule", "remind", "daily", "weekly"],
             "model_hint": "fast",
+            "kits": ["System"],
         },
     ]
 
@@ -115,7 +146,17 @@ class SkillIndex:
             return None
         desc = desc_match.group(1).strip().strip("\"'")
         keywords = [w for w in re.findall(r"\w+", desc.lower()) if len(w) > 2]
-        return {"name": skill_name, "keywords": keywords, "model_hint": "standard"}
+        result = {"name": skill_name, "keywords": keywords, "model_hint": "standard"}
+
+        # Extract kits from frontmatter: kits: ["Vision", "Browser"]
+        kits_match = re.search(r'kits\s*:\s*\[([^\]]*)\]', content)
+        if kits_match:
+            kits_raw = kits_match.group(1)
+            kits = [k.strip().strip("\"'") for k in kits_raw.split(",") if k.strip()]
+            if kits:
+                result["kits"] = kits
+
+        return result
 
     def query(self, text: str) -> Optional[SkillHint]:
         """查询最匹配的技能，返回 SkillHint 或 None（置信度不足时）。"""

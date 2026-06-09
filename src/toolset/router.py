@@ -137,6 +137,7 @@ class ToolRouter:
         recently_used: List[str],
         all_fc_schemas: List[Dict],
         kit_map: Dict[str, str],
+        forced_kits: Optional[Set[str]] = None,
     ) -> List[Dict]:
         """
         Return a filtered (and capped) FC schema list for this ReAct step.
@@ -147,6 +148,7 @@ class ToolRouter:
             recently_used:    Tool names used in earlier steps of this run.
             all_fc_schemas:   Full FC schema list from ToolRegistry.
             kit_map:          {tool_name: kit_name} for every registered tool.
+            forced_kits:      SkillIndex-derived kits to always include.
 
         Returns:
             Subset of all_fc_schemas (never empty — falls back to full set).
@@ -156,8 +158,9 @@ class ToolRouter:
 
             enabled: bool = getattr(settings, "TOOL_ROUTER_ENABLED", True)
             max_tools: int = getattr(settings, "TOOL_ROUTER_MAX_TOOLS", 20)
+            safe_fallback: bool = getattr(settings, "TOOL_ROUTER_SAFE_FALLBACK", True)
         except Exception:
-            enabled, max_tools = True, 20
+            enabled, max_tools, safe_fallback = True, 20, True
 
         if not enabled:
             return all_fc_schemas
@@ -166,6 +169,10 @@ class ToolRouter:
         target_kits: Set[str] = set(_ALWAYS_INCLUDE_KITS)
         matched_kits = self._match_kits(prompt)
         target_kits.update(matched_kits)
+
+        # [Phase 3] Force-include kits derived from SkillIndex hint
+        if forced_kits:
+            target_kits.update(forced_kits)
 
         # Include kits of recently-used tools (continuity)
         for name in recently_used:
@@ -189,10 +196,34 @@ class ToolRouter:
         # Always include recently used tools by name (regardless of kit)
         selected_names.update(recently_used[-5:])
 
-        # --- 3. Fallback guard: if selection is too small, send everything ---
+        # --- 3. Fallback guard ---
+        # [Phase 4] When no kits matched, return System + forced_kits (not all tools).
+        # Models can discover more tools via tool_info / skill_read.
         if len(selected_names) < _MIN_TOOLS_BEFORE_FALLBACK and not matched_kits:
-            logger.debug(f"[ToolRouter] Step {step}: no kit match, falling back to all {len(all_fc_schemas)} schemas")
-            return all_fc_schemas
+            if safe_fallback:
+                # Safe fallback: System kit + forced_kits + meta-tools only
+                fallback_names: Set[str] = set()
+                for schema in all_fc_schemas:
+                    name = schema.get("function", {}).get("name", "")
+                    if kit_map.get(name, "general") in _ALWAYS_INCLUDE_KITS:
+                        fallback_names.add(name)
+                    if name in _META_TOOL_NAMES:
+                        fallback_names.add(name)
+                if forced_kits:
+                    for schema in all_fc_schemas:
+                        name = schema.get("function", {}).get("name", "")
+                        if kit_map.get(name, "general") in forced_kits:
+                            fallback_names.add(name)
+                logger.debug(
+                    f"[ToolRouter] Step {step}: safe fallback → {len(fallback_names)} tools "
+                    f"(System + forced_kits={forced_kits})"
+                )
+                result = [s for s in all_fc_schemas if s.get("function", {}).get("name", "") in fallback_names]
+                return result if result else all_fc_schemas  # ultimate safety net
+            else:
+                # Legacy fallback: expose all tools
+                logger.debug(f"[ToolRouter] Step {step}: legacy fallback to all {len(all_fc_schemas)} schemas")
+                return all_fc_schemas
 
         # --- 4. Build filtered list preserving original registry order ---
         result = [s for s in all_fc_schemas if s.get("function", {}).get("name", "") in selected_names]

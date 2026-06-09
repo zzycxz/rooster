@@ -5,6 +5,7 @@ metadata:
   rooster:
     emoji: "⚡"
     category: "automation"
+    kits: ["Multimedia", "Browser"]
     platform: ["windows"]
     requires:
       python_packages:

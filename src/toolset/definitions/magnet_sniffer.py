@@ -27,6 +27,7 @@ class ResourceArgs(BaseModel):
 class MagnetSnifferTool(BaseTool):
     name: str = "magnet_sniffer"
     kit: str = "Network"
+    risk_level: str = "medium"
     fc_hidden: bool = True  # [Merge] 已合并到 multimedia_download(action="search")
     description: str = (
         "[DEPRECATED] Use multimedia_download(action='search') instead. "

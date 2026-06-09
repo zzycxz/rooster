@@ -6,6 +6,7 @@ metadata:
     emoji: "📊"
     platform: ["any"]
     category: "data"
+    kits: ["Interpreter", "Office"]
     requires:
       python_packages: ["pandas", "matplotlib", "openpyxl"]
       bins: []

@@ -15,6 +15,7 @@ class FeishuPushFileArgs(BaseModel):
 class FeishuPushFileTool(Tool):
     name = "feishu_push_file"
     kit = "Network"
+    risk_level: str = "medium"
     description = (
         "仅限飞书渠道：将本地文件推送至飞书对话框。非飞书渠道（网页/命令行）不可使用此工具，文件直接在本地查看即可。"
     )

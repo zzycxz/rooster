@@ -5,6 +5,7 @@ metadata:
   rooster:
     emoji: "🌤️"
     category: "utility"
+    kits: ["Browser"]
     platform: ["any"]
     author: "rooster-community"
     requires:

@@ -109,24 +109,44 @@ class ToolRegistry:
         prompt: str,
         step: int = 1,
         recently_used: Optional[List[str]] = None,
+        forced_kits: Optional[set] = None,
+        max_risk_level: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """[Round 8] Return routed FC schemas based on task context.
 
         Uses ToolRouter to select only the relevant kit schemas instead of
         sending all 46 schemas every step. Falls back to full set if routing
         would leave the LLM with too few tools.
+
+        Args:
+            forced_kits:    SkillIndex-derived kits to always include.
+            max_risk_level: If set, filter out tools above this risk level
+                            ('low' | 'medium' | 'high' | 'critical').
         """
         from toolset.router import ToolRouter
 
         all_schemas = self.get_all_fc_schemas()
         kit_map: Dict[str, str] = {tool.name: getattr(tool, "kit", "general") for tool in self._tools.values()}
-        return ToolRouter.get().select_schemas(
+        result = ToolRouter.get().select_schemas(
             prompt=prompt,
             step=step,
             recently_used=recently_used or [],
             all_fc_schemas=all_schemas,
             kit_map=kit_map,
+            forced_kits=forced_kits,
         )
+
+        # [Phase 2] Post-filter: remove tools above max_risk_level
+        if max_risk_level is not None:
+            from utils.permission_policy import _RISK_RANKS
+            risk_map = {t.name: getattr(t, "risk_level", "low") for t in self._tools.values()}
+            max_rank = _RISK_RANKS.get(max_risk_level, 4)
+            result = [
+                s for s in result
+                if _RISK_RANKS.get(risk_map.get(s["function"]["name"], "low"), 1) <= max_rank
+            ]
+
+        return result
 
     def get_compact_kit_overview(self) -> str:
         """
@@ -269,9 +289,9 @@ def _auto_init_get_tools_by_domain(self, domain: str):
     return _original_get_tools_by_domain(self, domain)
 
 
-def _auto_init_get_fc_schemas_for_prompt(self, prompt, step=1, recently_used=None):
+def _auto_init_get_fc_schemas_for_prompt(self, prompt, step=1, recently_used=None, forced_kits=None, max_risk_level=None):
     _ensure_initialized()
-    return _original_get_fc_schemas_for_prompt(self, prompt, step, recently_used)
+    return _original_get_fc_schemas_for_prompt(self, prompt, step, recently_used, forced_kits, max_risk_level)
 
 
 def _auto_init_get_kit_names(self):

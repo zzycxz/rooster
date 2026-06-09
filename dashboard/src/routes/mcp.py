@@ -339,6 +339,58 @@ async def api_mcp_market():
     return {"servers": market_list}
 
 
+@router.get("/modelscope/search")
+async def api_mcp_modelscope_search(q: str = "", limit: int = 20):
+    """从 ModelScope 搜索社区 MCP Server。"""
+    import urllib.parse
+    import httpx
+
+    try:
+        # 使用占位接口地址，您可以随时将其替换为真实的官方接口。
+        url = f"https://modelscope.cn/api/v1/mcp/search?q={urllib.parse.quote(q)}&limit={limit}"
+        
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(url)
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                items = data.get("items", [])
+                if items:
+                    return {"items": items}
+            else:
+                logger.debug(f"[MCP API] ModelScope API returned {resp.status_code}, fallback to mock.")
+    except Exception as e:
+        logger.warning(f"[MCP API] ModelScope search failed: {e}, fallback to mock.")
+
+    # 兜底测试数据（Mock），方便前端在没有真实接口时也能调试 UI
+    mock_results = [
+        {
+            "name": "modelscope-mcp-server",
+            "runtime": "python",
+            "command": "uvx modelscope-mcp-server",
+            "description": "魔搭官方 MCP Server，支持 AI 图像生成、资源搜索与发现。",
+            "category": "ai",
+            "emoji": "🤖",
+            "author": "ModelScope"
+        },
+        {
+            "name": "modelscope-image-mcp",
+            "runtime": "python",
+            "command": "uvx modelscope-image-mcp",
+            "description": "专用于魔搭社区图像生成流程的 MCP 工具。",
+            "category": "media",
+            "emoji": "🖼️",
+            "author": "Community"
+        }
+    ]
+    
+    # 模拟简单的本地关键字过滤
+    if q:
+        mock_results = [r for r in mock_results if q.lower() in r["name"].lower() or q.lower() in r["description"].lower()]
+        
+    return {"items": mock_results}
+
+
 @router.get("/status")
 async def api_mcp_status():
     """获取所有 MCP Server 的运行状态。"""

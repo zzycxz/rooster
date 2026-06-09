@@ -6,6 +6,7 @@ metadata:
     emoji: "🔧"
     platform: ["any"]
     category: "development"
+    kits: ["Interpreter"]
     requires:
       python_packages: ["psutil"]
       bins: []

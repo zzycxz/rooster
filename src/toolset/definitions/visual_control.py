@@ -332,6 +332,7 @@ class DesktopClickTool(BaseTool):
 
     name: str = "desktop_click"
     kit: str = "Vision"
+    risk_level: str = "medium"
     fc_hidden: bool = True  # [Round 10] Use desktop_act(action="click") instead
     description: str = (
         "Click on a UI element on the local desktop by element ID (from desktop_grounding_scan) "
@@ -385,6 +386,7 @@ class DesktopTypeTool(BaseTool):
 
     name: str = "desktop_type"
     kit: str = "Vision"
+    risk_level: str = "medium"
     fc_hidden: bool = True  # [Round 10] Use desktop_act(action="type") instead
     description: str = (
         "Type text into the currently focused input field on the local desktop. "
@@ -508,6 +510,7 @@ class DesktopActTool(BaseTool):
 
     name: str = "desktop_act"
     kit: str = "Vision"
+    risk_level: str = "medium"
     description: str = (
         "MANDATORY for all desktop UI interaction tasks. "
         "Use this tool when the task involves opening apps, clicking buttons, typing text, "

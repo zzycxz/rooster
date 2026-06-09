@@ -580,6 +580,9 @@ function app() {
         available_online: 'Available Online',
         install: 'Install',
         clawhub_search: 'ClawHub Search',
+        modelscope_search: 'ModelScope Search',
+        searching_modelscope: 'Searching ModelScope...',
+        search_modelscope_placeholder: 'Search ModelScope online...',
         local_filter: 'Local',
         show_label: 'Show',
         per_page: 'per page',
@@ -1230,6 +1233,9 @@ function app() {
         available_online: '在线可用',
         install: '安装',
         clawhub_search: 'ClawHub 搜索',
+        modelscope_search: 'ModelScope 搜索',
+        searching_modelscope: '正在搜索魔搭社区...',
+        search_modelscope_placeholder: '在线搜索魔搭社区 (ModelScope)...',
         local_filter: '本地',
         show_label: '每页',
         per_page: '条',
@@ -1817,6 +1823,11 @@ function app() {
     monitorTab:         'health', // 'health' | 'metrics'
     mcpServers:        [],
     mcpLoading:        false,
+    mcpSearchMode:     'local', // 'local' or 'online'
+    mcpSearchQuery:    '',
+    modelscopeResults: [],
+    modelscopeSearching: false,
+    modelscopeSearched:  false,
     mcpHealth:         { uv_available: false, npx_available: false },
     marketSkills:       [],
     marketLoading:      false,
@@ -1863,6 +1874,19 @@ function app() {
       const s = Math.floor((Date.now() - this._startTime) / 1000);
       const m = Math.floor(s / 60), h = Math.floor(m / 60);
       return h ? `${h}h ${m%60}m` : m ? `${m}m ${s%60}s` : `${s}s`;
+    },
+    get currentMcpServers() {
+      if (this.mcpSearchMode === 'online') {
+        return this.modelscopeResults;
+      }
+      if (!this.mcpSearchQuery.trim()) {
+        return this.mcpServers;
+      }
+      const q = this.mcpSearchQuery.toLowerCase();
+      return this.mcpServers.filter(s => 
+        s.name.toLowerCase().includes(q) || 
+        (s.description && s.description.toLowerCase().includes(q))
+      );
     },
     get configGroups() {
       if (!this.config) return [];
@@ -3220,6 +3244,45 @@ function app() {
         this.addToast('✗ Search Failed', e.message, 'error');
       } finally {
         this.clawhubSearching = false;
+      }
+    },
+
+    async searchModelscope() {
+      const q = (this.mcpSearchQuery || '').trim();
+      if (!q) return;
+      this.modelscopeSearching = true;
+      this.modelscopeSearched = false;
+      
+      try {
+        const headers = {};
+        if (this._wsToken) headers['X-API-Key'] = this._wsToken;
+        const res = await fetch(`/api/mcp/modelscope/search?q=${encodeURIComponent(q)}&limit=30`, { headers });
+        const json = await res.json();
+        const results = json.items || [];
+        
+        // Match with locally installed MCPs to attach status and 'installed' flag
+        const installedMap = {};
+        this.mcpServers.forEach(s => {
+          if (s.installed) installedMap[s.name] = s;
+        });
+        
+        this.modelscopeResults = results.map(s => {
+          const local = installedMap[s.name];
+          return {
+            ...s,
+            installed: !!local,
+            status: local ? local.status : 'uninstalled',
+            url: local ? local.url : '',
+            can_uninstall: local ? local.can_uninstall : true
+          };
+        });
+        this.modelscopeSearched = true;
+      } catch (e) {
+        this.modelscopeResults = [];
+        this.modelscopeSearched = true;
+        this.addToast('✗ ModelScope Search Failed', e.message, 'error');
+      } finally {
+        this.modelscopeSearching = false;
       }
     },
 

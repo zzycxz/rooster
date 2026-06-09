@@ -5,6 +5,7 @@ metadata:
   rooster:
     emoji: "🧠"
     category: "meta"
+    kits: ["System"]
     platform: ["any"]
     requires:
       python_packages: []

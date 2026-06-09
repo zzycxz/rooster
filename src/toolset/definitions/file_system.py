@@ -27,6 +27,7 @@ class FileSystemOpTool(BaseTool):
 
     name: str = "file_system_op"
     kit: str = "FileSystem"
+    risk_level: str = "high"
     description: str = (
         "File System operations. Actions:\n"
         "- 'read': Read a text file's content. Requires: path.\n"

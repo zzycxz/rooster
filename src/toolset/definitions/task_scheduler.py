@@ -234,6 +234,7 @@ class TaskSchedulerTool(BaseTool):
 
     name: str = "task_scheduler_create"
     kit: str = "System"
+    risk_level: str = "high"
     fc_hidden: bool = True  # [Round 10] Use task_scheduler(action="create") instead
     description: str = (
         "Create a scheduled task to run a Python script at a fixed time. "
@@ -279,6 +280,7 @@ class TaskSchedulerDeleteTool(BaseTool):
 
     name: str = "task_scheduler_delete"
     kit: str = "System"
+    risk_level: str = "high"
     fc_hidden: bool = True  # [Round 10] Use task_scheduler(action="delete") instead
     description: str = (
         "Delete an existing scheduled task by name. Uses Windows Task Scheduler on Windows, launchd on macOS."
@@ -321,6 +323,7 @@ class TaskSchedulerMacroTool(BaseTool):
 
     name: str = "task_scheduler"
     kit: str = "System"
+    risk_level: str = "high"
     description: str = (
         "Manage scheduled tasks. Use action='create' to set up a Python script to run at a fixed time "
         "(Windows Task Scheduler / macOS launchd), or action='delete' to remove a task by name."

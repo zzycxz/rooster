@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.6.0] - 2026-06-09
+
+> **涵盖**: 工具暴露优化 — 安全门控生效 | SkillIndex→ToolRouter 串联 | 安全 fallback | Skill 文档补全 | 架构隐患修复
+> **核心范式**: Skill 做认知入口，Toolset 做执行入口。SkillIndex 识别任务域 → 强制关联 Kit → ToolRouter 只暴露相关工具 → PermissionPolicy 按风险等级过滤。模糊任务不再暴露全量工具。
+
+---
+
+### Added
+
+- **工具 risk_level 全量声明**：为 14 个高危/中危工具补齐 `risk_level` 声明，使 `ToolPermissionPolicy` 的执行前门控逻辑真正生效。`file_system_op`、`python_interpreter`、`task_scheduler_*` 声明为 `high`（balanced 策略下执行前需确认）；`desktop_click/type/act`、`browser_click/type/act`、`multimedia_download`、`magnet_sniffer`、`feishu_push_file` 声明为 `medium`。(`src/toolset/definitions/` 下 8 个文件)
+- **ToolRouter risk-aware 暴露过滤**：`get_fc_schemas_for_prompt()` 新增 `max_risk_level` 后置过滤参数。根据当前安全策略（strict→只暴露 low，balanced→暴露 low+medium，permissive→不过滤），在模型规划阶段即排除高风险工具，避免模型发现并尝试调用会被拦截的工具。(`src/toolset/registry.py`, `src/agents/executor.py`)
+- **SkillIndex hint → ToolRouter forced_kits 串联**：新增 `hint_to_forced_kits()` 函数，将 SkillIndex 的任务域识别结果（如 `visual-control`）转换为 Kit 集合（如 `{"Vision"}`），传入 ToolRouter 强制包含。修复了"SkillIndex 说这是视觉任务但 ToolRouter 不路由 Vision Kit"的断联问题。(`src/agents/skill_index.py`, `src/toolset/router.py`, `src/agents/executor.py`, `src/agents/runners/mission_runner.py`)
+- **ToolRouter 安全 fallback**：当零 Kit 匹配时，从暴露全部 47 个工具改为只暴露 System Kit + forced_kits + meta-tools。模型可通过 `tool_info`/`skill_read` 自我发现更多工具，而非一开始看到全量。新增 `TOOL_ROUTER_SAFE_FALLBACK` 配置开关（默认 true，设 false 可回退到旧行为）。(`src/toolset/router.py`)
+- **SKILL.md kits 字段动态声明**：所有 15 个 SKILL.md 的 YAML frontmatter 新增 `kits` 字段（如 `kits: ["Vision"]`）。`_parse_skill_md()` 解析时动态提取该字段，`hint_to_forced_kits()` 从 SkillIndex 索引动态查找。第三方开发者只需在 SKILL.md 中声明 kits，ToolRouter 即可自动关联对应 Kit，零代码改动。(`skills/*/SKILL.md`, `src/agents/skill_index.py`)
+- **permission_policy 阈值查询接口**：新增 `get_max_risk_level_for_policy(policy_name)` 函数，封装策略→风险等级的映射逻辑，消除 Executor 中的魔法数字。安全域的阈值变更只需改 `permission_policy.py` 一个文件。(`src/utils/permission_policy.py`)
+- **office-documents SKILL.md**：Office 文档处理操作手册，覆盖 Word/Excel/PDF/PPT 四个工具的标准工作流、工具选择策略和中文排版要求。(`skills/office-documents/SKILL.md`)
+- **browser-automation SKILL.md**：浏览器自动化操作手册，覆盖导航→交互→验证的标准工作流，明确 `browser_act` 统一宏工具与 `fc_hidden` 子工具的关系。(`skills/browser-automation/SKILL.md`)
+- **skill_hint 全链路传递**：`AgentRunConfig` 新增 `skill_hint` 字段，`MissionRunner.run_with_decision()` → `run()` → `AgentRunConfig` → `executor` 全链路传递 SkillIndex hint，确保 forced_kits 在每一步 ReAct 中生效。(`src/agents/executor.py`, `src/agents/runners/mission_runner.py`)
+
+### Changed
+
+- **ToolRouter.select_schemas() 签名扩展**：新增 `forced_kits: Optional[Set[str]]` 参数，在 Kit 关键词匹配后追加 SkillIndex 强制包含的 Kit。默认 `None`，向后兼容。(`src/toolset/router.py`)
+- **ToolRouter fallback 双模切换**：fallback 逻辑从无条件全量暴露改为安全模式（System+forced_kits）+ 旧模式（全量），通过 `TOOL_ROUTER_SAFE_FALLBACK` 配置切换。(`src/toolset/router.py`)
+- **Registry.get_fc_schemas_for_prompt() 签名扩展**：新增 `forced_kits` 和 `max_risk_level` 参数。auto-init wrapper 同步更新签名。(`src/toolset/registry.py`)
+- **Executor FC Schema 缓存 key 扩展**：缓存 key 从纯 `recently_used` 扩展为 `recently_used + skill_hint + max_risk_level`，确保策略或 hint 变化时缓存失效。(`src/agents/executor.py`)
+- **_BUILTIN_SKILLS 补齐 kits 字段**：SkillIndex 的 6 个内置 skill 条目（media_download、web_search、code_agent、file_agent、browser_agent、schedule_agent）统一补齐 `kits` 字段。(`src/agents/skill_index.py`)
+- **移除 _SKILL_TO_KIT_MAP 硬编码字典**：删除 16 条硬编码映射，改为从 SkillIndex 索引动态解析。第三方 SKILL.md 的 kits 声明自动生效。(`src/agents/skill_index.py`)
+
+### Tests
+
+- **tests/test_risk_levels.py**（7 个测试）：验证全部工具的 risk_level 声明正确性、高/中危工具过滤、max_risk_level 参数效果。
+- **tests/test_skill_to_kit_mapping.py**（15 个测试）：验证 SKILL.md kits 字段解析、内置 skill kits 声明、动态 hint_to_forced_kits() 一致性、permission_policy 接口。
+- **tests/test_tool_router_enhanced.py**（5 个测试）：验证 forced_kits 强制 Kit 包含、安全 fallback 只返回 System Kit、legacy fallback 回退。
+
+### Architecture Notes
+
+本次改动建立了三层工具暴露策略的完整闭环：
+
+```
+SkillIndex（识别任务域）
+  → forced_kits（强制关联 Kit）
+    → ToolRouter（关键词 + forced_kits 选 Kit）
+      → risk_level 过滤（按策略排除高风险工具）
+        → FC schemas 暴露给模型（5~20 个，非全量 47 个）
+```
+
+| 策略 | 模型可见范围 | 执行门控 |
+|------|------------|---------|
+| strict | low + medium（隐藏 high/critical） | medium 需确认 |
+| balanced | **全部可见**（不过滤） | high 需确认（file_system_op、python_interpreter、task_scheduler） |
+| permissive | 全部可见 | critical 才确认 |
+
+> **设计原则**：「需要确认」≠「不应该看到」。file_system_op 和 python_interpreter 是基础兜底能力，balanced 策略下模型应能看到它们，仅在执行时触发确认即可。只有 strict 模式才会从视野中隐藏 high 工具。
+
+模糊任务（无关键词匹配）：
+- 旧行为：暴露全部 47 个工具
+- 新行为：暴露 System Kit（~8 个）+ SkillIndex hint Kit
+
+---
+
 ## [0.5.8] - 2026-06-09
 
 > **涵盖**: 模型配置范式统一 | 多模态链路修复 | HITL 引擎级拦截 | Strategist 流式解析加固 | 工具 DI 上下文接通 | REMAND 纠错上下文增强

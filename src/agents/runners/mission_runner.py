@@ -343,6 +343,7 @@ class MissionRunner:
         dynamic_event_handler: AgentEventHandler,
         pre_planned_plan: Optional[MissionPlan] = None,
         decision_model_tier: Optional[str] = None,
+        skill_hint: Optional[dict] = None,
     ) -> None:
         """执行多步任务编排。"""  # Execute multi-step task orchestration
         archiver = VaultArchiver(settings.EVIDENCE_ROOT, msg.session_id)
@@ -734,6 +735,7 @@ class MissionRunner:
                     policy_override=subtask_policy,
                     blackboard=blackboard,
                     images=images,
+                    skill_hint=skill_hint,
                 )
 
                 # Each subtask gets its own LLMClient instance.
@@ -1406,6 +1408,7 @@ class MissionRunner:
             dynamic_event_handler=dynamic_event_handler,
             pre_planned_plan=plan_decision.plan,
             decision_model_tier=plan_decision.model_tier,
+            skill_hint=skill_hint,
         )
 
     # ----------------------------------------------------------------

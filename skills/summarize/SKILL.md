@@ -6,6 +6,7 @@ metadata:
     emoji: "📝"
     platform: ["any"]
     category: "document"
+    kits: ["System"]
     requires:
       python_packages: []
       bins: []

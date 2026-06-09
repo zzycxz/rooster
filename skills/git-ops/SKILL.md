@@ -6,6 +6,7 @@ metadata:
     emoji: "🌿"
     platform: ["windows", "any"]
     category: "development"
+    kits: ["Interpreter", "FileSystem"]
     requires:
       python_packages: []
       bins: ["git"]

@@ -6,6 +6,7 @@ metadata:
     emoji: "📄"
     platform: ["any"]
     category: "document"
+    kits: ["Office", "FileSystem"]
     requires:
       python_packages: ["pypdf", "pdfplumber"]
       bins: []

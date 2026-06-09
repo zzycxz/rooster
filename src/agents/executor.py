@@ -111,6 +111,10 @@ class AgentRunConfig(BaseModel):
         None, exclude=True, description="Per-mission 共享协调黑板（MissionBlackboard 实例），由 MissionRunner 注入"
     )
     spawn_depth: int = Field(default=0, description="Recursion depth limit for spawned subagents")
+    skill_hint: Optional[dict] = Field(
+        default=None, exclude=True,
+        description="SkillIndex hint from Strategist routing, used to force relevant Kits into ToolRouter"
+    )
 
     @classmethod
     def for_subtask(cls, msg, session, subtask, tool_registry, group_id: str, allowed_paths=None) -> "AgentRunConfig":
@@ -418,14 +422,42 @@ class AgentExecutor:
             if config.tool_registry:
                 # [V12 B3.2] FC Schema Caching
                 recent_tools_hash = "|".join(_recently_used_tools[-5:])
-                if _cached_fc_schemas is None or recent_tools_hash != _cached_recent_tools_hash:
+
+                # [Phase 3] Compute forced_kits from SkillIndex hint
+                _forced_kits = None
+                if config.skill_hint:
+                    try:
+                        from agents.skill_index import hint_to_forced_kits
+                        _forced_kits = hint_to_forced_kits(config.skill_hint.get("hint_skill", ""))
+                    except Exception:
+                        _forced_kits = None
+
+                # [Phase 2] Compute max_risk_level from active policy
+                _max_risk_level = None
+                try:
+                    from utils.permission_policy import get_max_risk_level_for_policy
+                    _active_policy = getattr(config, "policy_override", None)
+                    if _active_policy is None:
+                        from utils.permission_policy import get_global_policy
+                        _active_policy = get_global_policy()
+                    _policy_name = getattr(_active_policy, "policy", "balanced")
+                    _max_risk_level = get_max_risk_level_for_policy(_policy_name)
+                except Exception:
+                    _max_risk_level = None
+
+                # Include forced_kits and hint in cache key
+                _hint_hash = str(config.skill_hint) if config.skill_hint else ""
+                _cache_key = f"{recent_tools_hash}|{_hint_hash}|{_max_risk_level}"
+                if _cached_fc_schemas is None or _cache_key != _cached_recent_tools_hash:
                     fc_schemas = config.tool_registry.get_fc_schemas_for_prompt(
                         prompt=config.prompt,
                         step=step,
                         recently_used=_recently_used_tools,
+                        forced_kits=_forced_kits,
+                        max_risk_level=_max_risk_level,
                     )
                     _cached_fc_schemas = fc_schemas
-                    _cached_recent_tools_hash = recent_tools_hash
+                    _cached_recent_tools_hash = _cache_key
                 else:
                     fc_schemas = _cached_fc_schemas
             else:

@@ -5,6 +5,7 @@ metadata:
   rooster:
     emoji: "📧"
     category: "comms"
+    kits: ["Comms"]
     platform: ["any"]
     author: "rooster-community"
     requires:

@@ -45,6 +45,7 @@ class PythonInterpreterTool(BaseTool):
 
     name: str = "python_interpreter"
     kit: str = "Interpreter"
+    risk_level: str = "high"
     description: str = (
         "Execute Python code for data analysis, plotting, calculations, file operations, or automation scripts. "
         "Default: local subprocess (direct host access, safe with AST check). "
